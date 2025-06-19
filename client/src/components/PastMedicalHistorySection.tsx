@@ -49,9 +49,11 @@ interface MemoizedInputProps {
   placeholder: string;
   className?: string;
   onClick?: () => void;
+  onBlur?: () => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
-const MemoizedInput = memo(({ value, onChange, placeholder, className, onClick, onBlur, onKeyDown }: MemoizedInputProps & { onBlur?: () => void; onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void }) => {
+const MemoizedInput = memo(({ value, onChange, placeholder, className, onClick, onBlur, onKeyDown }: MemoizedInputProps) => {
   return (
     <Input
       value={value}
@@ -63,11 +65,6 @@ const MemoizedInput = memo(({ value, onChange, placeholder, className, onClick, 
       onKeyDown={onKeyDown}
     />
   );
-}, (prevProps, nextProps) => {
-  // Only re-render if value or placeholder actually changed
-  return prevProps.value === nextProps.value && 
-         prevProps.placeholder === nextProps.placeholder &&
-         prevProps.className === nextProps.className;
 });
 
 MemoizedInput.displayName = 'MemoizedInput';
