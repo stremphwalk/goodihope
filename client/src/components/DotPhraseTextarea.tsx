@@ -4,7 +4,7 @@ import type { CustomDotPhrase } from '@/components/DotPhraseManager';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { CalculationModal } from './CalculationModal';
-import { CalculationResult } from '../lib/calculations/types';
+import { CalculationResult } from './CalculationModal';
 import getCaretCoordinates from 'textarea-caret';
 
 interface DotPhraseTextareaProps {
@@ -147,7 +147,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   }, [onChange]);
 
   // Handle keydown for autocomplete and smart options
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const cursor = e.currentTarget.selectionStart;
     setCurrentPosition(cursor);
 
@@ -225,7 +225,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         setActiveSmartIdx(null);
       }
     }
-  };
+  }, [value, onChange, showSuggestions, suggestions, selectedSuggestion, smartOptions, activeSmartIdx]);
 
   // Expand dot phrase in textarea
   const expandDotPhrase = (dotKey: string) => {
@@ -419,24 +419,25 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   };
 
   // Handle calculation result
-  const handleCalculationResult = (result: CalculationResult) => {
+  const handleCalculationResult = useCallback((result: CalculationResult) => {
     if (!textareaRef.current) return;
     
     const textarea = textareaRef.current;
     const beforeText = value.substring(0, currentPosition - 5); // Remove "/calc"
     const afterText = value.substring(currentPosition);
-    const newValue = `${beforeText}${result.name}: ${result.value} ${result.unit}${afterText}`;
+    const resultValue = typeof result.value === 'number' ? result.value.toString() : result.value;
+    const newValue = `${beforeText}${result.name}: ${resultValue} ${result.unit}${afterText}`;
     
     onChange(newValue);
     textarea.focus();
     
     // Set cursor position after the inserted result
-    const newPosition = beforeText.length + result.name.length + result.value.toString().length + result.unit.length + 3; // +3 for ": " and space
+    const newPosition = beforeText.length + result.name.length + resultValue.length + result.unit.length + 3; // +3 for ": " and space
     setTimeout(() => {
       textarea.selectionStart = newPosition;
       textarea.selectionEnd = newPosition;
     }, 0);
-  };
+  }, [value, currentPosition, onChange]);
 
   // Handle cursor position changes
   const handleSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
