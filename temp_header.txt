@@ -1,0 +1,436 @@
+import React, { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { 
+  Stethoscope, 
+  Thermometer, 
+  Eye, 
+  Heart, 
+  HeartPulse, 
+  Pill,
+  Copy,
+  Trash2,
+  CheckCircle,
+  RotateCcw,
+  Brain,
+  Bone,
+  Shield,
+  Activity,
+  ChevronDown,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Search,
+  FileText,
+  TrendingUp,
+  Users,
+  TestTube,
+  Beaker,
+  Zap,
+  Languages,
+  X,
+  Camera,
+  Plus
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { MedicationSection } from "@/components/MedicationSection";
+import { ChiefComplaintSection, type ChiefComplaintData } from "@/components/ChiefComplaintSection";
+import { type MedicationData, formatMedicationsForNote } from "@/lib/medicationUtils";
+
+// Allergies and Social History data structures
+interface AllergiesData {
+  hasAllergies: boolean;
+  allergiesList: string[];
+}
+
+interface SocialHistoryData {
+  smoking: {
+    status: boolean;
+    details: string; // cigarettes per day or pack years
+  };
+  alcohol: {
+    status: boolean;
+    details: string; // number of consumptions
+  };
+  drugs: {
+    status: boolean;
+    details: string; // drugs used
+  };
+}
+
+const labCategories = {
+  "CBC": {
+    icon: TestTube,
+    color: "bg-red-600",
+    tests: {
+      "WBC": { name: "White Blood Cells", range: "4.0-11.0", unit: "×10⁹/L" },
+      "RBC": { name: "Red Blood Cells", range: "4.2-5.4 (M), 3.6-5.0 (F)", unit: "×10¹²/L" },
+      "Hemoglobin": { name: "Hemoglobin", range: "140-180 (M), 120-160 (F)", unit: "g/L" },
+      "Hematocrit": { name: "Hematocrit", range: "0.42-0.52 (M), 0.37-0.47 (F)", unit: "L/L" },
+      "Platelets": { name: "Platelets", range: "150-450", unit: "×10⁹/L" }
+    }
+  },
+  "BMP": {
+    icon: Beaker,
+    color: "bg-blue-600",
+    tests: {
+      "Sodium": { name: "Sodium", range: "136-145", unit: "mmol/L" },
+      "Potassium": { name: "Potassium", range: "3.5-5.0", unit: "mmol/L" },
+      "Chloride": { name: "Chloride", range: "98-107", unit: "mmol/L" },
+      "CO2": { name: "CO2", range: "22-29", unit: "mmol/L" },
+      "Urea": { name: "Urea", range: "2.5-7.1", unit: "mmol/L" },
+      "Creatinine": { name: "Creatinine", range: "62-115 (M), 53-97 (F)", unit: "μmol/L" },
+      "Glucose": { name: "Glucose", range: "3.9-5.6", unit: "mmol/L" }
+    }
+  },
+  "LFTs": {
+    icon: Activity,
+    color: "bg-green-600",
+    tests: {
+      "ALT": { name: "ALT", range: "7-56", unit: "U/L" },
+      "AST": { name: "AST", range: "10-40", unit: "U/L" },
+      "ALP": { name: "Alkaline Phosphatase", range: "44-147", unit: "U/L" },
+      "Total_Bilirubin": { name: "Total Bilirubin", range: "5-21", unit: "μmol/L" },
+      "Albumin": { name: "Albumin", range: "35-50", unit: "g/L" }
+    }
+  },
+  "Coagulation": {
+    icon: Heart,
+    color: "bg-purple-600",
+    tests: {
+      "PT": { name: "Prothrombin Time", range: "11-13", unit: "seconds" },
+      "INR": { name: "INR", range: "0.8-1.1", unit: "" },
+      "PTT": { name: "Partial Thromboplastin Time", range: "25-35", unit: "seconds" }
+    }
+  },
+  "Cardiac": {
+    icon: HeartPulse,
+    color: "bg-red-500",
+    tests: {
+      "Troponin": { name: "Troponin I", range: "<40", unit: "ng/L" },
+      "CK_MB": { name: "CK-MB", range: "0-6.3", unit: "μg/L" },
+      "BNP": { name: "BNP", range: "<100", unit: "ng/L" }
+    }
+  },
+  "Inflammatory": {
+    icon: Shield,
+    color: "bg-orange-600",
+    tests: {
+      "ESR": { name: "ESR", range: "0-22 (M), 0-29 (F)", unit: "mm/hr" },
+      "CRP": { name: "C-Reactive Protein", range: "<3.0", unit: "mg/L" },
+      "Procalcitonin": { name: "Procalcitonin", range: "<0.25", unit: "μg/L" }
+    }
+  },
+  "Blood Gases": {
+    icon: Zap,
+    color: "bg-sky-600",
+    tests: {
+      "pH": { name: "pH", range: "7.35-7.45", unit: "" },
+      "pCO2": { name: "pCO2", range: "35-45", unit: "mmHg" },
+      "pO2": { name: "pO2", range: "80-100", unit: "mmHg" },
+      "HCO3": { name: "HCO3", range: "22-26", unit: "mmol/L" },
+      "Base_Excess": { name: "Base Excess", range: "-2 to +2", unit: "mmol/L" },
+      "O2_Sat": { name: "O2 Saturation", range: "95-100", unit: "%" },
+      "Lactate": { name: "Lactate", range: "0.5-2.2", unit: "mmol/L" }
+    }
+  }
+};
+
+const imagingRegions = {
+  "CNS": {
+    name: "CNS",
+    modalities: ["CT", "MRI", "Angiography"],
+    color: "bg-pink-600",
+    icon: Brain,
+    systemMapping: "NEUROLOGICAL"
+  },
+  "HEENT": {
+    name: "HEENT",
+    modalities: ["CT", "MRI", "X-Ray"],
+    color: "bg-green-600",
+    icon: Eye,
+    systemMapping: "NEUROLOGICAL"
+  },
+  "Thyroid": {
+    name: "Thyroid",
+    modalities: ["Ultrasound", "CT", "Nuclear Medicine"],
+    color: "bg-emerald-600",
+    icon: Activity,
+    systemMapping: "HEMODYNAMIC"
+  },
+  "Thorax": {
+    name: "Thorax",
+    modalities: ["X-Ray", "CT", "Angiography", "Ultrasound"],
+    color: "bg-cyan-600",
+    icon: HeartPulse,
+    systemMapping: "RESPIRATORY"
+  },
+  "Abdomen": {
+    name: "Abdomen",
+    modalities: ["X-Ray", "CT", "Ultrasound", "MRI"],
+    color: "bg-orange-600",
+    icon: Pill,
+    systemMapping: "GASTROINTESTINAL"
+  },
+  "GU": {
+    name: "Genitourinary",
+    modalities: ["Ultrasound", "CT", "MRI", "X-Ray"],
+    color: "bg-purple-600",
+    icon: Shield,
+    systemMapping: "NEPHRO-METABOLIC"
+  },
+  "Lower_Limbs": {
+    name: "Lower Limbs",
+    modalities: ["X-Ray", "CT", "MRI", "Ultrasound"],
+    color: "bg-indigo-600",
+    icon: Bone,
+    systemMapping: "HEMATO-INFECTIOUS"
+  }
+};
+
+const imagingFindings = {
+  "CT_CNS": {
+    concise: "CT head: no significant findings",
+    detailed: "CT head: No signs of acute hemorrhage, mass effect, or midline shift. No evidence of acute infarction.",
+    concise_fr: "TDM cérébrale: aucune anomalie significative",
+    detailed_fr: "TDM cérébrale: Aucun signe d'hémorragie aiguë, d'effet de masse ou de déviation de la ligne médiane. Aucune évidence d'infarctus aigu."
+  },
+  "MRI_CNS": {
+    concise: "MRI brain: no significant findings",
+    detailed: "MRI brain: No signs of acute infarction, hemorrhage, or space-occupying lesion. Normal ventricular size and configuration.",
+    concise_fr: "IRM cérébrale: aucune anomalie significative",
+    detailed_fr: "IRM cérébrale: Aucun signe d'infarctus aigu, d'hémorragie ou de lésion occupant l'espace. Taille et configuration ventriculaires normales."
+  },
+  "Angiography_CNS": {
+    concise: "Cerebral angiography: no significant findings",
+    detailed: "Cerebral angiography: Patent major cerebral vessels. No evidence of stenosis, occlusion, or vascular malformation."
+  },
+  "CT_HEENT": {
+    concise: "CT head and neck: no significant findings",
+    detailed: "CT head and neck: No signs of fracture, foreign body, or soft tissue swelling. Normal anatomical structures."
+  },
+  "MRI_HEENT": {
+    concise: "MRI head and neck: no significant findings",
+    detailed: "MRI head and neck: No signs of mass lesion, inflammation, or structural abnormality."
+  },
+  "X-Ray_HEENT": {
+    concise: "X-ray head and neck: no significant findings",
+    detailed: "X-ray head and neck: No signs of fracture or foreign body. Normal bony alignment."
+  },
+  "Ultrasound_Thyroid": {
+    concise: "Thyroid ultrasound: no significant findings",
+    detailed: "Thyroid ultrasound: Normal size and echogenicity. No nodules or cystic lesions identified.",
+    concise_fr: "Échographie thyroïdienne: aucune anomalie significative",
+    detailed_fr: "Échographie thyroïdienne: Taille et échogénicité normales. Aucun nodule ou lésion kystique identifié."
+  },
+  "CT_Thyroid": {
+    concise: "CT thyroid: no significant findings",
+    detailed: "CT thyroid: Normal size and enhancement pattern. No mass lesion or lymphadenopathy.",
+    concise_fr: "TDM thyroïde: aucune anomalie significative",
+    detailed_fr: "TDM thyroïde: Taille normale et patron de rehaussement normal. Aucune lésion de masse ou lymphadénopathie."
+  },
+  "Nuclear Medicine_Thyroid": {
+    concise: "Thyroid scan: no significant findings",
+    detailed: "Thyroid scan: Normal uptake and distribution. No cold or hot nodules identified.",
+    concise_fr: "Scintigraphie thyroïdienne: aucune anomalie significative",
+    detailed_fr: "Scintigraphie thyroïdienne: Captation et distribution normales. Aucun nodule froid ou chaud identifié."
+  },
+  "X-Ray_Thorax": {
+    concise: "Chest X-ray: no significant findings",
+    detailed: "Chest X-ray: No signs of pneumonia, volume overload, or effusion. Normal cardiac silhouette and lung fields.",
+    concise_fr: "Radiographie pulmonaire: aucune anomalie significative",
+    detailed_fr: "Radiographie pulmonaire: Aucun signe de pneumonie, de surcharge volumique ou d'épanchement. Silhouette cardiaque et champs pulmonaires normaux."
+  },
+  "CT_Thorax": {
+    concise: "CT chest: no significant findings",
+    detailed: "CT chest: No signs of pulmonary embolism, pneumonia, or mass lesion. Normal mediastinal structures.",
+    concise_fr: "TDM thoracique: aucune anomalie significative",
+    detailed_fr: "TDM thoracique: Aucun signe d'embolie pulmonaire, de pneumonie ou de lésion de masse. Structures médiastinales normales."
+  },
+  "Angiography_Thorax": {
+    concise: "CT angiography chest: no significant findings",
+    detailed: "CT angiography chest: No signs of pulmonary embolism or aortic pathology. Patent pulmonary arteries.",
+    concise_fr: "Angiographie CT thoracique: aucune anomalie significative",
+    detailed_fr: "Angiographie CT thoracique: Aucun signe d'embolie pulmonaire ou de pathologie aortique. Artères pulmonaires perméables."
+  },
+  "Ultrasound_Thorax": {
+    concise: "Chest ultrasound: no significant findings",
+    detailed: "Chest ultrasound: No signs of pleural effusion or pneumothorax. Normal diaphragmatic movement.",
+    concise_fr: "Échographie thoracique: aucune anomalie significative",
+    detailed_fr: "Échographie thoracique: Aucun signe d'épanchement pleural ou de pneumothorax. Mouvement diaphragmatique normal."
+  },
+  "X-Ray_Abdomen": {
+    concise: "Abdominal X-ray: no significant findings",
+    detailed: "Abdominal X-ray: No signs of bowel obstruction, free air, or foreign body. Normal bowel gas pattern.",
+    concise_fr: "Radiographie abdominale: aucune anomalie significative",
+    detailed_fr: "Radiographie abdominale: Aucun signe d'obstruction intestinale, d'air libre ou de corps étranger. Gaz intestinal normal."
+  },
+  "CT_Abdomen": {
+    concise: "CT abdomen: no significant findings",
+    detailed: "CT abdomen: No signs of obstruction, perforation, or mass lesion. Normal organ enhancement.",
+    concise_fr: "TDM abdominale: aucune anomalie significative",
+    detailed_fr: "TDM abdominale: Aucun signe d'obstruction, de perforation ou de lésion de masse. Rehaussement organique normal."
+  },
+  "Ultrasound_Abdomen": {
+    concise: "Abdominal ultrasound: no significant findings",
+    detailed: "Abdominal ultrasound: No signs of organomegaly, mass lesion, or free fluid.",
+    concise_fr: "Échographie abdominale: aucune anomalie significative",
+    detailed_fr: "Échographie abdominale: Aucun signe d'organomégalie, de lésion de masse ou de liquide libre."
+  },
+  "MRI_Abdomen": {
+    concise: "MRI abdomen: no significant findings",
+    detailed: "MRI abdomen: No signs of mass lesion, inflammation, or vascular abnormality.",
+    concise_fr: "IRM abdominale: aucune anomalie significative",
+    detailed_fr: "IRM abdominale: Aucun signe de lésion de masse, d'inflammation ou d'anomalie vasculaire."
+  },
+  "Ultrasound_GU": {
+    concise: "GU ultrasound: no significant findings",
+    detailed: "GU ultrasound: No signs of hydronephrosis, stones, or mass lesion. Normal bladder wall thickness."
+  },
+  "CT_GU": {
+    concise: "CT urogram: no significant findings",
+    detailed: "CT urogram: No signs of stones, obstruction, or mass lesion. Normal renal enhancement and excretion."
+  },
+  "MRI_GU": {
+    concise: "MRI pelvis: no significant findings",
+    detailed: "MRI pelvis: No signs of mass lesion, inflammation, or structural abnormality."
+  },
+  "X-Ray_GU": {
+    concise: "KUB X-ray: no significant findings",
+    detailed: "KUB X-ray: No signs of stones or foreign body. Normal bony pelvis."
+  },
+  "X-Ray_Lower_Limbs": {
+    concise: "Lower limb X-ray: no significant findings",
+    detailed: "Lower limb X-ray: No signs of fracture, dislocation, or bony abnormality. Normal joint spaces."
+  },
+  "CT_Lower_Limbs": {
+    concise: "CT lower limbs: no significant findings",
+    detailed: "CT lower limbs: No signs of fracture, mass lesion, or vascular abnormality."
+  },
+  "MRI_Lower_Limbs": {
+    concise: "MRI lower limbs: no significant findings",
+    detailed: "MRI lower limbs: No signs of soft tissue injury, mass lesion, or bone marrow abnormality."
+  },
+  "Ultrasound_Lower_Limbs": {
+    concise: "Lower limb ultrasound: no significant findings",
+    detailed: "Lower limb ultrasound: No signs of deep vein thrombosis or arterial insufficiency. Normal flow patterns."
+  }
+};
+
+const intubationParameters = {
+  "Mode": { name: "Ventilator Mode", options: ["AC/VC", "SIMV", "PSV", "CPAP", "BiPAP"], unit: "" },
+  "TV": { name: "Tidal Volume", range: "200-800", unit: "mL", min: 200, max: 800, step: 10 },
+  "RR": { name: "Respiratory Rate", range: "8-35", unit: "/min", min: 8, max: 35, step: 1 },
+  "PEEP": { name: "PEEP", range: "0-20", unit: "cmH2O", min: 0, max: 20, step: 1 },
+  "FiO2": { name: "FiO2", range: "21-100", unit: "%", min: 21, max: 100, step: 1 },
+  "Peak_Pressure": { name: "Peak Pressure", range: "10-50", unit: "cmH2O", min: 10, max: 50, step: 1 },
+  "Plateau_Pressure": { name: "Plateau Pressure", range: "10-40", unit: "cmH2O", min: 10, max: 40, step: 1 },
+  "Mean_Pressure": { name: "Mean Airway Pressure", range: "5-25", unit: "cmH2O", min: 5, max: 25, step: 1 }
+};
+
+const rosOptions = {
+  General: {
+    detailed: "No fevers, chills, night sweats, or weight loss",
+    concise: "No constitutional symptoms"
+  },
+  HEENT: {
+    detailed: "No headaches, visual changes, hearing loss, sore throat, or nasal congestion",
+    concise: "No HEENT symptoms"
+  },
+  Cardiovascular: {
+    detailed: "No chest pain, palpitations, shortness of breath, or lower extremity edema",
+    concise: "No cardiovascular symptoms"
+  },
+  Respiratory: {
+    detailed: "No cough, shortness of breath, wheezing, or chest tightness",
+    concise: "No respiratory symptoms"
+  },
+  Gastrointestinal: {
+    detailed: "No abdominal pain, nausea, vomiting, diarrhea, or constipation",
+    concise: "No gastrointestinal symptoms"
+  },
+  Genitourinary: {
+    detailed: "No urinary frequency, urgency, dysuria, or hematuria",
+    concise: "No genitourinary symptoms"
+  },
+  Musculoskeletal: {
+    detailed: "No joint pain, muscle aches, back pain, or stiffness",
+    concise: "No musculoskeletal symptoms"
+  },
+  Neurological: {
+    detailed: "No headaches, dizziness, weakness, numbness, or changes in coordination",
+    concise: "No neurological symptoms"
+  },
+  Psychiatric: {
+    detailed: "No depression, anxiety, mood changes, or sleep disturbances",
+    concise: "No psychiatric symptoms"
+  },
+  Skin: {
+    detailed: "No rashes, lesions, itching, or changes in moles",
+    concise: "No skin symptoms"
+  },
+  Endocrine: {
+    detailed: "No heat or cold intolerance, excessive thirst, or changes in appetite",
+    concise: "No endocrine symptoms"
+  },
+  Hematologic: {
+    detailed: "No easy bruising, bleeding, or swollen lymph nodes",
+    concise: "No hematologic symptoms"
+  }
+};
+
+const physicalExamOptions = {
+  General: "Alert, well-appearing, in no acute distress",
+  Vital: "Afebrile, normotensive, normal heart rate and respiratory rate",
+  HEENT: "NCAT, PERRL, EOMI, no lymphadenopathy, throat clear",
+  Cardiovascular: "Regular rate and rhythm, no murmurs, rubs, or gallops",
+  Respiratory: "Clear to auscultation bilaterally, no wheezes or rales", 
+  Gastrointestinal: "Soft, non-tender, non-distended, normal bowel sounds",
+  Genitourinary: "Deferred or normal external genitalia",
+  Musculoskeletal: "Normal range of motion, no joint swelling or tenderness",
+  Neurological: "Alert and oriented x3, cranial nerves II-XII intact, normal strength and sensation",
+  Skin: "Warm, dry, intact, no rashes or lesions",
+  Extremities: "No clubbing, cyanosis, or edema"
+};
+
+const systemIcons = {
+  General: Thermometer,
+  HEENT: Eye,
+  Cardiovascular: Heart,
+  Respiratory: HeartPulse,
+  Gastrointestinal: Pill,
+  Genitourinary: Shield,
+  Musculoskeletal: Bone,
+  Neurological: Brain,
+  Psychiatric: Activity,
+  Skin: CheckCircle,
+  Endocrine: Activity,
+  Hematologic: Heart,
+  Vital: Activity,
+  Extremities: Bone
+};
+
+const systemColors = {
+  General: "bg-blue-600",
+  HEENT: "bg-emerald-600", 
+  Cardiovascular: "bg-red-600",
+  Respiratory: "bg-cyan-600",
+  Gastrointestinal: "bg-orange-600",
+  Genitourinary: "bg-purple-600",
+  Musculoskeletal: "bg-amber-600",
+  Neurological: "bg-indigo-600",
+  Psychiatric: "bg-pink-600",
+  Skin: "bg-teal-600",
+  Endocrine: "bg-green-600",
+  Hematologic: "bg-rose-600",
+  Vital: "bg-slate-600",
+  Extremities: "bg-yellow-600"
+};
+

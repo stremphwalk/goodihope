@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AriNote - Medical Documentation Platform</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .imaging-region { transition: all 0.2s; }
+        .imaging-region:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .note-output { font-family: 'Courier New', monospace; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useContext, createContext } = React;
+
+        // Language Context
+        const LanguageContext = createContext();
+
+        const translations = {
+            en: {
+                'app.title': 'AriNote - Medical Documentation',
+                'language.switch': 'Switch to French',
+                'note.type.admission': 'Admission Note',
+                'note.type.progress': 'Progress Note',
+                'note.type.consultation': 'Consultation Note',
+                'admission.general': 'General',
+                'admission.icu': 'ICU',
+                'progress.general': 'General',
+                'progress.icu': 'ICU',
+                'imagery.title': 'Imagery',
+                'imagery.regions.cns': 'CNS',
+                'imagery.regions.heent': 'HEENT',
+                'imagery.regions.thorax': 'Thorax',
+                'imagery.regions.abdomen': 'Abdomen',
+                'imagery.regions.gu': 'Genitourinary',
+                'imagery.modalities.xray': 'X-Ray',
+                'imagery.modalities.ct': 'CT',
+                'imagery.modalities.mri': 'MRI',
+                'imagery.modalities.ultrasound': 'Ultrasound',
+                'imagery.normal': 'Normal',
+                'imagery.custom': 'Custom Result',
+                'generate.note': 'Generate Note',
+                'clear.all': 'Clear All'
+            },
+            fr: {
+                'app.title': 'AriNote - Documentation Médicale',
+                'language.switch': 'Passer à l\'anglais',
+                'note.type.admission': 'Note d\'admission',
+                'note.type.progress': 'Note d\'évolution',
+                'note.type.consultation': 'Note de consultation',
+                'admission.general': 'Général',
+                'admission.icu': 'Soins intensifs',
+                'progress.general': 'Général',
+                'progress.icu': 'Soins intensifs',
+                'imagery.title': 'Imagerie',
+                'imagery.regions.cns': 'SNC',
+                'imagery.regions.heent': 'TORL',
+                'imagery.regions.thorax': 'Thorax',
+                'imagery.regions.abdomen': 'Abdomen',
+                'imagery.regions.gu': 'Génito-urinaire',
+                'imagery.modalities.xray': 'Radiographie',
+                'imagery.modalities.ct': 'TDM',
+                'imagery.modalities.mri': 'IRM',
+                'imagery.modalities.ultrasound': 'Échographie',
+                'imagery.normal': 'Normal',
+                'imagery.custom': 'Résultat personnalisé',
+                'generate.note': 'Générer la note',
+                'clear.all': 'Tout effacer'
+            }
+        };
+
+        function LanguageProvider({ children }) {
+            const [language, setLanguage] = useState('en');
+            
+            const t = (key) => {
+                return translations[language][key] || key;
+            };
+
+            return (
+                <LanguageContext.Provider value={{ language, setLanguage, t }}>
+                    {children}
+                </LanguageContext.Provider>
+            );
+        }
+
+        function useLanguage() {
+            return useContext(LanguageContext);
+        }
+
+        // Imaging findings database
+        const imagingFindings = {
+            "X-Ray_CNS": {
+                concise: "X-Ray CNS: Normal skull radiograph with no acute abnormalities",
+                detailed: "X-Ray CNS: Normal skull radiograph showing intact calvarium, normal bone density, and no evidence of fracture or mass effect",
+                concise_fr: "Radiographie SNC: Radiographie crânienne normale sans anomalie aiguë",
+                detailed_fr: "Radiographie SNC: Radiographie crânienne normale montrant une calvaria intacte, densité osseuse normale, et aucune évidence de fracture ou d'effet de masse"
+            },
+            "CT_CNS": {
+                concise: "CT head: Normal brain parenchyma with no acute abnormalities",
+                detailed: "CT head: Normal brain parenchyma with preserved gray-white matter differentiation, no evidence of hemorrhage, mass effect, or midline shift",
+                concise_fr: "TDM cérébrale: Parenchyme cérébral normal sans anomalie aiguë",
+                detailed_fr: "TDM cérébrale: Parenchyme cérébral normal avec différentiation substance grise-blanche préservée, aucune évidence d'hémorragie, effet de masse ou déviation de la ligne médiane"
+            },
+            "X-Ray_Thorax": {
+                concise: "Chest X-ray: Clear lungs with normal cardiac silhouette",
+                detailed: "Chest X-ray: Clear lung fields bilaterally with no consolidation or pleural effusion. Normal cardiac silhouette and mediastinal contours",
+                concise_fr: "Radiographie pulmonaire: Poumons clairs avec silhouette cardiaque normale",
+                detailed_fr: "Radiographie pulmonaire: Champs pulmonaires clairs bilatéralement sans consolidation ni épanchement pleural. Silhouette cardiaque et contours médiastinaux normaux"
+            },
+            "CT_Thorax": {
+                concise: "CT chest: Normal lung parenchyma and mediastinal structures",
+                detailed: "CT chest: Normal lung parenchyma with no nodules or masses. Clear airways and normal mediastinal lymph nodes",
+                concise_fr: "TDM thoracique: Parenchyme pulmonaire et structures médiastinales normaux",
+                detailed_fr: "TDM thoracique: Parenchyme pulmonaire normal sans nodules ni masses. Voies respiratoires dégagées et ganglions médiastinaux normaux"
+            },
+            "X-Ray_Abdomen": {
+                concise: "Abdominal X-ray: Normal bowel gas pattern with no obstruction",
+                detailed: "Abdominal X-ray: Normal bowel gas pattern throughout small and large bowel. No evidence of obstruction or free air",
+                concise_fr: "Radiographie abdominale: Distribution gazeuse intestinale normale sans obstruction",
+                detailed_fr: "Radiographie abdominale: Distribution gazeuse intestinale normale dans l'intestin grêle et le côlon. Aucune évidence d'obstruction ou d'air libre"
+            }
+        };
+
+        // Main App Component
+        function App() {
+            const { language, setLanguage, t } = useLanguage();
+            const [noteType, setNoteType] = useState('admission');
+            const [admissionType, setAdmissionType] = useState('general');
+            const [progressType, setProgressType] = useState('general');
+            const [selectedImagingRegions, setSelectedImagingRegions] = useState(new Set());
+            const [selectedImagingModalities, setSelectedImagingModalities] = useState({});
+            const [imagingResults, setImagingResults] = useState({});
+            const [generatedNote, setGeneratedNote] = useState('');
+
+            const imagingRegions = {
+                "CNS": { name: "CNS", modalities: ["X-Ray", "CT", "MRI"] },
+                "HEENT": { name: "HEENT", modalities: ["CT", "MRI", "X-Ray"] },
+                "Thorax": { name: "Thorax", modalities: ["X-Ray", "CT", "Ultrasound"] },
+                "Abdomen": { name: "Abdomen", modalities: ["X-Ray", "CT", "Ultrasound", "MRI"] },
+                "GU": { name: "Genitourinary", modalities: ["Ultrasound", "CT", "MRI"] }
+            };
+
+            const toggleImagingRegion = (region) => {
+                const newSelected = new Set(selectedImagingRegions);
+                if (newSelected.has(region)) {
+                    newSelected.delete(region);
+                    const newModalities = { ...selectedImagingModalities };
+                    delete newModalities[region];
+                    setSelectedImagingModalities(newModalities);
+                    
+                    const newResults = { ...imagingResults };
+                    Object.keys(newResults).forEach(key => {
+                        if (key.endsWith(`_${region}`)) {
+                            delete newResults[key];
+                        }
+                    });
+                    setImagingResults(newResults);
+                } else {
+                    newSelected.add(region);
+                }
+                setSelectedImagingRegions(newSelected);
+            };
+
+            const selectImagingModality = (region, modality) => {
+                const newModalities = { ...selectedImagingModalities };
+                newModalities[region] = modality;
+                setSelectedImagingModalities(newModalities);
+            };
+
+            const toggleImagingNormal = (region, modality, mode) => {
+                const key = `${modality}_${region}`;
+                const newResults = { ...imagingResults };
+                newResults[key] = {
+                    normal: true,
+                    customResult: "",
+                    mode: mode
+                };
+                setImagingResults(newResults);
+            };
+
+            const generateNote = () => {
+                let noteText = "";
+                
+                if (noteType === "admission") {
+                    if (admissionType === "icu") {
+                        // ICU Admission Note
+                        noteText = language === 'fr' 
+                            ? "NOTE D'ADMISSION AUX SOINS INTENSIFS\n\nHISTOIRE DE LA MALADIE ACTUELLE:\n[Entrer l'histoire de la maladie actuelle]\n\n"
+                            : "ICU ADMISSION NOTE\n\nHISTORY OF PRESENTING ILLNESS:\n[Enter history of presenting illness]\n\n";
+                        
+                        // Add ICU system sections with imaging
+                        const icuSections = language === 'fr' ? {
+                            "NEUROLOGIQUE": { imagingRegions: ["CNS", "HEENT"] },
+                            "RESPIRATOIRE": { imagingRegions: ["Thorax"] },
+                            "HÉMODYNAMIQUE": { imagingRegions: [] },
+                            "GASTRO-INTESTINAL": { imagingRegions: ["Abdomen"] },
+                            "NÉPHRO-MÉTABOLIQUE": { imagingRegions: ["GU"] }
+                        } : {
+                            "NEUROLOGICAL": { imagingRegions: ["CNS", "HEENT"] },
+                            "RESPIRATORY": { imagingRegions: ["Thorax"] },
+                            "HEMODYNAMIC": { imagingRegions: [] },
+                            "GASTROINTESTINAL": { imagingRegions: ["Abdomen"] },
+                            "NEPHRO-METABOLIC": { imagingRegions: ["GU"] }
+                        };
+
+                        Object.entries(icuSections).forEach(([sectionName, config]) => {
+                            noteText += `${sectionName}:\n`;
+                            
+                            // Add imaging findings for this section
+                            const sectionImagingFindings = [];
+                            config.imagingRegions.forEach(regionKey => {
+                                const selectedModality = selectedImagingModalities[regionKey];
+                                if (selectedModality) {
+                                    const resultKey = `${selectedModality}_${regionKey}`;
+                                    const currentResult = imagingResults[resultKey];
+                                    const findings = imagingFindings[resultKey];
+                                    
+                                    if (currentResult && currentResult.normal && findings) {
+                                        const mode = currentResult.mode || "concise";
+                                        const textKey = language === 'fr' ? `${mode}_fr` : mode;
+                                        const findingsText = findings[textKey] || findings[mode];
+                                        sectionImagingFindings.push(findingsText);
+                                    }
+                                }
+                            });
+                            
+                            if (sectionImagingFindings.length > 0) {
+                                noteText += sectionImagingFindings.join("\n") + "\n";
+                            } else {
+                                noteText += language === 'fr' 
+                                    ? `[Entrer les résultats ${sectionName.toLowerCase()}]\n`
+                                    : `[Enter ${sectionName.toLowerCase()} findings]\n`;
+                            }
+                            noteText += "\n";
+                        });
+                    } else {
+                        // General Admission Note
+                        noteText = language === 'fr'
+                            ? "NOTE D'ADMISSION\n\nRAISON D'ADMISSION:\n[Entrer la raison d'admission]\n\nHISTOIRE DE LA MALADIE ACTUELLE:\n[Entrer l'histoire de la maladie actuelle]\n\n"
+                            : "ADMISSION NOTE\n\nREASON FOR ADMISSION:\n[Enter reason for admission]\n\nHISTORY OF PRESENTING ILLNESS:\n[Enter history of presenting illness]\n\n";
+                    }
+                } else if (noteType === "progress") {
+                    if (progressType === "icu") {
+                        // ICU Progress Note - same structure as ICU admission
+                        noteText = language === 'fr' 
+                            ? "NOTE D'ÉVOLUTION SOINS INTENSIFS\n\nHISTOIRE DE LA MALADIE ACTUELLE:\n[Entrer le statut actuel]\n\n"
+                            : "ICU PROGRESS NOTE\n\nHISTORY OF PRESENTING ILLNESS:\n[Enter current status]\n\n";
+                        
+                        // Add same ICU sections as admission
+                        const icuSections = language === 'fr' ? {
+                            "NEUROLOGIQUE": { imagingRegions: ["CNS", "HEENT"] },
+                            "RESPIRATOIRE": { imagingRegions: ["Thorax"] },
+                            "HÉMODYNAMIQUE": { imagingRegions: [] },
+                            "GASTRO-INTESTINAL": { imagingRegions: ["Abdomen"] },
+                            "NÉPHRO-MÉTABOLIQUE": { imagingRegions: ["GU"] }
+                        } : {
+                            "NEUROLOGICAL": { imagingRegions: ["CNS", "HEENT"] },
+                            "RESPIRATORY": { imagingRegions: ["Thorax"] },
+                            "HEMODYNAMIC": { imagingRegions: [] },
+                            "GASTROINTESTINAL": { imagingRegions: ["Abdomen"] },
+                            "NEPHRO-METABOLIC": { imagingRegions: ["GU"] }
+                        };
+
+                        Object.entries(icuSections).forEach(([sectionName, config]) => {
+                            noteText += `${sectionName}:\n`;
+                            
+                            const sectionImagingFindings = [];
+                            config.imagingRegions.forEach(regionKey => {
+                                const selectedModality = selectedImagingModalities[regionKey];
+                                if (selectedModality) {
+                                    const resultKey = `${selectedModality}_${regionKey}`;
+                                    const currentResult = imagingResults[resultKey];
+                                    const findings = imagingFindings[resultKey];
+                                    
+                                    if (currentResult && currentResult.normal && findings) {
+                                        const mode = currentResult.mode || "concise";
+                                        const textKey = language === 'fr' ? `${mode}_fr` : mode;
+                                        const findingsText = findings[textKey] || findings[mode];
+                                        sectionImagingFindings.push(findingsText);
+                                    }
+                                }
+                            });
+                            
+                            if (sectionImagingFindings.length > 0) {
+                                noteText += sectionImagingFindings.join("\n") + "\n";
+                            } else {
+                                noteText += language === 'fr' 
+                                    ? `[Entrer les résultats ${sectionName.toLowerCase()}]\n`
+                                    : `[Enter ${sectionName.toLowerCase()} findings]\n`;
+                            }
+                            noteText += "\n";
+                        });
+                    } else {
+                        noteText = language === 'fr'
+                            ? "NOTE D'ÉVOLUTION\n\nSTATUT ACTUEL:\n[Entrer le statut actuel du patient]\n\n"
+                            : "PROGRESS NOTE\n\nCURRENT STATUS:\n[Enter current patient status]\n\n";
+                    }
+                } else {
+                    noteText = language === 'fr'
+                        ? "NOTE DE CONSULTATION\n\nRAISON DE CONSULTATION:\n[Entrer la raison de consultation]\n\n"
+                        : "CONSULTATION NOTE\n\nREASON FOR CONSULTATION:\n[Enter reason for consultation]\n\n";
+                }
+
+                // Add imaging section for non-ICU notes
+                if ((noteType !== "admission" || admissionType !== "icu") && (noteType !== "progress" || progressType !== "icu")) {
+                    if (selectedImagingRegions.size > 0) {
+                        noteText += language === 'fr' ? "IMAGERIE:\n" : "IMAGING:\n";
+                        const imagingEntries = [];
+                        selectedImagingRegions.forEach(region => {
+                            const selectedModality = selectedImagingModalities[region];
+                            if (selectedModality) {
+                                const resultKey = `${selectedModality}_${region}`;
+                                const currentResult = imagingResults[resultKey];
+                                const findings = imagingFindings[resultKey];
+                                
+                                if (currentResult && currentResult.normal && findings) {
+                                    const mode = currentResult.mode || "concise";
+                                    const textKey = language === 'fr' ? `${mode}_fr` : mode;
+                                    const findingsText = findings[textKey] || findings[mode];
+                                    imagingEntries.push(findingsText);
+                                }
+                            }
+                        });
+                        
+                        if (imagingEntries.length > 0) {
+                            noteText += imagingEntries.join("\n") + "\n\n";
+                        } else {
+                            noteText += language === 'fr' ? "[Entrer les résultats d'imagerie]\n\n" : "[Enter imaging results]\n\n";
+                        }
+                    }
+                }
+
+                noteText += language === 'fr' 
+                    ? "IMPRESSION CLINIQUE:\n[Entrer les impressions cliniques]\n\nPLAN:\n[Entrer le plan de traitement]"
+                    : "CLINICAL IMPRESSION:\n[Enter clinical impressions]\n\nPLAN:\n[Enter treatment plan]";
+
+                setGeneratedNote(noteText);
+            };
+
+            const clearAll = () => {
+                setSelectedImagingRegions(new Set());
+                setSelectedImagingModalities({});
+                setImagingResults({});
+                setGeneratedNote('');
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-50">
+                    <header className="bg-white shadow-sm border-b">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div className="flex justify-between items-center py-4">
+                                <h1 className="text-2xl font-bold text-gray-900">{t('app.title')}</h1>
+                                <button
+                                    onClick={() => setLanguage(language === 'en' ? 'fr' : 'en')}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                >
+                                    {language === 'en' ? 'FR' : 'EN'}
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            {/* Left Column - Controls */}
+                            <div className="space-y-6">
+                                {/* Note Type Selection */}
+                                <div className="bg-white rounded-lg shadow p-6">
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Note Type</h3>
+                                    <div className="space-y-3">
+                                        <div 
+                                            className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                                                noteType === "admission" ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                                            }`}
+                                            onClick={() => setNoteType("admission")}
+                                        >
+                                            <h4 className="font-medium text-gray-900">{t('note.type.admission')}</h4>
+                                        </div>
+                                        
+                                        <div 
+                                            className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                                                noteType === "progress" ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-gray-300"
+                                            }`}
+                                            onClick={() => setNoteType("progress")}
+                                        >
+                                            <h4 className="font-medium text-gray-900">{t('note.type.progress')}</h4>
+                                        </div>
+                                        
+                                        <div 
+                                            className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                                                noteType === "consultation" ? "border-purple-500 bg-purple-50" : "border-gray-200 hover:border-gray-300"
+                                            }`}
+                                            onClick={() => setNoteType("consultation")}
+                                        >
+                                            <h4 className="font-medium text-gray-900">{t('note.type.consultation')}</h4>
+                                        </div>
+                                    </div>
+
+                                    {/* Sub-options */}
+                                    {noteType === "admission" && (
+                                        <div className="mt-4 pt-4 border-t">
+                                            <h4 className="font-medium text-gray-900 mb-3">Admission Type</h4>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div 
+                                                    className={`p-3 border rounded-lg cursor-pointer transition-all ${
+                                                        admissionType === "general" ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                                                    }`}
+                                                    onClick={() => setAdmissionType("general")}
+                                                >
+                                                    <span className="font-medium text-gray-900">{t('admission.general')}</span>
+                                                </div>
+                                                <div 
+                                                    className={`p-3 border rounded-lg cursor-pointer transition-all ${
+                                                        admissionType === "icu" ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                                                    }`}
+                                                    onClick={() => setAdmissionType("icu")}
+                                                >
+                                                    <span className="font-medium text-gray-900">{t('admission.icu')}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {noteType === "progress" && (
+                                        <div className="mt-4 pt-4 border-t">
+                                            <h4 className="font-medium text-gray-900 mb-3">Progress Type</h4>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div 
+                                                    className={`p-3 border rounded-lg cursor-pointer transition-all ${
+                                                        progressType === "general" ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-gray-300"
+                                                    }`}
+                                                    onClick={() => setProgressType("general")}
+                                                >
+                                                    <span className="font-medium text-gray-900">{t('progress.general')}</span>
+                                                </div>
+                                                <div 
+                                                    className={`p-3 border rounded-lg cursor-pointer transition-all ${
+                                                        progressType === "icu" ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-gray-300"
+                                                    }`}
+                                                    onClick={() => setProgressType("icu")}
+                                                >
+                                                    <span className="font-medium text-gray-900">{t('progress.icu')}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Imaging Section */}
+                                <div className="bg-white rounded-lg shadow p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-semibold text-gray-900">{t('imagery.title')}</h3>
+                                        <span className="text-sm text-gray-500">({selectedImagingRegions.size}/{Object.keys(imagingRegions).length})</span>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 gap-4">
+                                        {Object.entries(imagingRegions).map(([regionKey, region]) => {
+                                            const isSelected = selectedImagingRegions.has(regionKey);
+                                            const selectedModality = selectedImagingModalities[regionKey];
+                                            const resultKey = selectedModality ? `${selectedModality}_${regionKey}` : null;
+                                            const currentResult = resultKey ? imagingResults[resultKey] : null;
+                                            
+                                            return (
+                                                <div key={regionKey} className="imaging-region border rounded-lg p-4">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="flex items-center space-x-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => toggleImagingRegion(regionKey)}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span className="font-medium text-gray-900">{t(`imagery.regions.${regionKey.toLowerCase()}`)}</span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {isSelected && (
+                                                        <div className="mt-3 space-y-3">
+                                                            <div>
+                                                                <label className="block text-sm font-medium text-gray-700 mb-1">Modality</label>
+                                                                <select
+                                                                    value={selectedModality || ""}
+                                                                    onChange={(e) => selectImagingModality(regionKey, e.target.value)}
+                                                                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                                                >
+                                                                    <option value="">Select modality</option>
+                                                                    {region.modalities.map(modality => (
+                                                                        <option key={modality} value={modality}>
+                                                                            {t(`imagery.modalities.${modality.toLowerCase()}`)}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                            
+                                                            {selectedModality && (
+                                                                <div className="space-y-2">
+                                                                    <div className="flex space-x-2">
+                                                                        <button
+                                                                            onClick={() => toggleImagingNormal(regionKey, selectedModality, "concise")}
+                                                                            className={`px-3 py-1 text-sm border rounded ${
+                                                                                currentResult?.normal && currentResult?.mode === "concise"
+                                                                                    ? "bg-green-100 border-green-500 text-green-700"
+                                                                                    : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                                                                            }`}
+                                                                        >
+                                                                            {t('imagery.normal')} (Concise)
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => toggleImagingNormal(regionKey, selectedModality, "detailed")}
+                                                                            className={`px-3 py-1 text-sm border rounded ${
+                                                                                currentResult?.normal && currentResult?.mode === "detailed"
+                                                                                    ? "bg-green-100 border-green-500 text-green-700"
+                                                                                    : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                                                                            }`}
+                                                                        >
+                                                                            {t('imagery.normal')} (Detailed)
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex space-x-4">
+                                    <button
+                                        onClick={generateNote}
+                                        className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                                    >
+                                        {t('generate.note')}
+                                    </button>
+                                    <button
+                                        onClick={clearAll}
+                                        className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                                    >
+                                        {t('clear.all')}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Right Column - Generated Note */}
+                            <div className="bg-white rounded-lg shadow p-6">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">Generated Note</h3>
+                                <div className="bg-gray-50 rounded-lg p-4 min-h-96">
+                                    <pre className="note-output text-sm text-gray-800">
+                                        {generatedNote || (language === 'fr' ? 'Cliquez sur "Générer la note" pour commencer...' : 'Click "Generate Note" to begin...')}
+                                    </pre>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        function MainApp() {
+            return (
+                <LanguageProvider>
+                    <App />
+                </LanguageProvider>
+            );
+        }
+
+        ReactDOM.render(<MainApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>

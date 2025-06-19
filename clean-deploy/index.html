@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arinote - Medical Documentation Tool</title>
+    <meta name="description" content="Professional Review of Systems medical documentation tool for healthcare professionals. Generate comprehensive clinical notes in English and French.">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#64748b'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .accordion-content.expanded {
+            max-height: 1000px;
+        }
+        .btn {
+            @apply px-4 py-2 rounded-md font-medium transition-colors;
+        }
+        .btn-primary {
+            @apply bg-blue-600 text-white hover:bg-blue-700;
+        }
+        .btn-secondary {
+            @apply bg-gray-200 text-gray-900 hover:bg-gray-300;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app">
+        <div class="container mx-auto p-6 max-w-4xl">
+            <!-- Header -->
+            <div class="mb-8 text-center">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">Arinote</h1>
+                <p class="text-gray-600" id="subtitle">Review of Systems - Medical Documentation Tool</p>
+                
+                <!-- Language Toggle -->
+                <div class="mt-4">
+                    <button onclick="toggleLanguage()" class="btn btn-secondary" id="langToggle">
+                        Français
+                    </button>
+                </div>
+            </div>
+
+            <!-- Note Type Selection -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4" id="noteTypeTitle">Note Type</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <label class="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                        <input type="radio" name="noteType" value="admission" class="mr-3" checked>
+                        <span id="admissionText">Admission Note</span>
+                    </label>
+                    <label class="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                        <input type="radio" name="noteType" value="progress" class="mr-3">
+                        <span id="progressText">Progress Note</span>
+                    </label>
+                    <label class="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                        <input type="radio" name="noteType" value="consultation" class="mr-3">
+                        <span id="consultationText">Consultation Note</span>
+                    </label>
+                </div>
+                
+                <!-- ICU Toggle -->
+                <div class="mt-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="icuToggle" class="mr-3">
+                        <span id="icuText">ICU Note</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Review of Systems -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold mb-4" id="rosTitle">Review of Systems</h2>
+                
+                <!-- Systems -->
+                <div class="space-y-4" id="systemsContainer">
+                    <!-- Systems will be populated by JavaScript -->
+                </div>
+                
+                <!-- Generate Button -->
+                <div class="mt-8 text-center">
+                    <button onclick="generateNote()" class="btn btn-primary text-lg px-8 py-3" id="generateBtn">
+                        Generate Clinical Note
+                    </button>
+                </div>
+            </div>
+
+            <!-- Generated Note -->
+            <div id="generatedNote" class="bg-white rounded-lg shadow-md p-6 mt-6 hidden">
+                <h2 class="text-xl font-semibold mb-4" id="noteTitle">Generated Clinical Note</h2>
+                <div id="noteContent" class="bg-gray-100 p-4 rounded-md whitespace-pre-wrap"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Language state
+        let currentLanguage = 'en';
+        
+        // Translations
+        const translations = {
+            en: {
+                subtitle: "Review of Systems - Medical Documentation Tool",
+                noteTypeTitle: "Note Type",
+                admissionText: "Admission Note",
+                progressText: "Progress Note",
+                consultationText: "Consultation Note",
+                icuText: "ICU Note",
+                rosTitle: "Review of Systems",
+                generateBtn: "Generate Clinical Note",
+                noteTitle: "Generated Clinical Note",
+                langToggle: "Français",
+                general: "General",
+                cardiovascular: "Cardiovascular",
+                respiratory: "Respiratory",
+                gastrointestinal: "Gastrointestinal",
+                genitourinary: "Genitourinary",
+                neurological: "Neurological",
+                musculoskeletal: "Musculoskeletal",
+                dermatological: "Dermatological",
+                psychiatric: "Psychiatric",
+                endocrine: "Endocrine",
+                hematological: "Hematological",
+                noSymptoms: "No symptoms reported",
+                positiveFindings: "Positive findings noted"
+            },
+            fr: {
+                subtitle: "Revue des systèmes - Outil de documentation médicale",
+                noteTypeTitle: "Type de note",
+                admissionText: "Note d'admission",
+                progressText: "Note d'évolution",
+                consultationText: "Note de consultation",
+                icuText: "Note de soins intensifs",
+                rosTitle: "Revue des systèmes",
+                generateBtn: "Générer la note clinique",
+                noteTitle: "Note clinique générée",
+                langToggle: "English",
+                general: "Général",
+                cardiovascular: "Cardiovasculaire",
+                respiratory: "Respiratoire",
+                gastrointestinal: "Gastro-intestinal",
+                genitourinary: "Génito-urinaire",
+                neurological: "Neurologique",
+                musculoskeletal: "Musculo-squelettique",
+                dermatological: "Dermatologique",
+                psychiatric: "Psychiatrique",
+                endocrine: "Endocrinien",
+                hematological: "Hématologique",
+                noSymptoms: "Aucun symptôme signalé",
+                positiveFindings: "Résultats positifs notés"
+            }
+        };
+
+        // Systems data
+        const systems = [
+            'general', 'cardiovascular', 'respiratory', 'gastrointestinal',
+            'genitourinary', 'neurological', 'musculoskeletal', 'dermatological',
+            'psychiatric', 'endocrine', 'hematological'
+        ];
+
+        // Initialize the app
+        function initApp() {
+            createSystemSections();
+            updateLanguage();
+        }
+
+        // Create system sections
+        function createSystemSections() {
+            const container = document.getElementById('systemsContainer');
+            container.innerHTML = '';
+            
+            systems.forEach(system => {
+                const section = document.createElement('div');
+                section.className = 'border rounded-lg';
+                section.innerHTML = `
+                    <button class="w-full p-4 text-left font-medium flex items-center justify-between hover:bg-gray-50" 
+                            onclick="toggleSection('${system}')">
+                        <span id="${system}Title">${translations[currentLanguage][system]}</span>
+                        <svg class="w-5 h-5 transform transition-transform" id="${system}Icon">
+                            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div class="accordion-content p-4 border-t" id="${system}Content">
+                        <div class="space-y-3">
+                            <label class="flex items-center">
+                                <input type="radio" name="${system}" value="negative" class="mr-3" checked>
+                                <span id="${system}Negative">${translations[currentLanguage].noSymptoms}</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="${system}" value="positive" class="mr-3">
+                                <span id="${system}Positive">${translations[currentLanguage].positiveFindings}</span>
+                            </label>
+                            <div class="mt-3">
+                                <textarea class="w-full p-2 border rounded-md" 
+                                         rows="3" 
+                                         placeholder="Additional notes..."
+                                         id="${system}Notes"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(section);
+            });
+        }
+
+        // Toggle language
+        function toggleLanguage() {
+            currentLanguage = currentLanguage === 'en' ? 'fr' : 'en';
+            updateLanguage();
+        }
+
+        // Update all text based on current language
+        function updateLanguage() {
+            const t = translations[currentLanguage];
+            
+            document.getElementById('subtitle').textContent = t.subtitle;
+            document.getElementById('noteTypeTitle').textContent = t.noteTypeTitle;
+            document.getElementById('admissionText').textContent = t.admissionText;
+            document.getElementById('progressText').textContent = t.progressText;
+            document.getElementById('consultationText').textContent = t.consultationText;
+            document.getElementById('icuText').textContent = t.icuText;
+            document.getElementById('rosTitle').textContent = t.rosTitle;
+            document.getElementById('generateBtn').textContent = t.generateBtn;
+            document.getElementById('noteTitle').textContent = t.noteTitle;
+            document.getElementById('langToggle').textContent = t.langToggle;
+            
+            // Update system sections
+            systems.forEach(system => {
+                const title = document.getElementById(`${system}Title`);
+                const negative = document.getElementById(`${system}Negative`);
+                const positive = document.getElementById(`${system}Positive`);
+                
+                if (title) title.textContent = t[system];
+                if (negative) negative.textContent = t.noSymptoms;
+                if (positive) positive.textContent = t.positiveFindings;
+            });
+        }
+
+        // Toggle section accordion
+        function toggleSection(systemId) {
+            const content = document.getElementById(`${systemId}Content`);
+            const icon = document.getElementById(`${systemId}Icon`);
+            
+            content.classList.toggle('expanded');
+            icon.classList.toggle('rotate-180');
+        }
+
+        // Generate clinical note
+        function generateNote() {
+            const noteType = document.querySelector('input[name="noteType"]:checked').value;
+            const isICU = document.getElementById('icuToggle').checked;
+            const t = translations[currentLanguage];
+            
+            let note = `${t.noteTypeTitle}: ${t[noteType + 'Text']}\n`;
+            if (isICU) note += `${t.icuText}\n`;
+            note += `\n${t.rosTitle}:\n\n`;
+            
+            systems.forEach(system => {
+                const finding = document.querySelector(`input[name="${system}"]:checked`).value;
+                const notes = document.getElementById(`${system}Notes`).value;
+                
+                note += `${t[system]}: `;
+                note += finding === 'negative' ? t.noSymptoms : t.positiveFindings;
+                if (notes.trim()) {
+                    note += ` - ${notes.trim()}`;
+                }
+                note += '\n';
+            });
+            
+            document.getElementById('noteContent').textContent = note;
+            document.getElementById('generatedNote').classList.remove('hidden');
+            document.getElementById('generatedNote').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>

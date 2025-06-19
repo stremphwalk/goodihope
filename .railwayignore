@@ -1,0 +1,44 @@
+# Development files
+.git
+.gitignore
+README.md
+.env.example
+*.log
+
+# Build artifacts that will be regenerated
+dist/
+build/
+
+# Development directories
+node_modules/
+.dev/
+
+# Documentation
+docs/
+*.md
+
+# Test files
+test/
+tests/
+__tests__/
+*.test.*
+*.spec.*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Keep necessary assets
+!attached_assets/
+!data/ 
