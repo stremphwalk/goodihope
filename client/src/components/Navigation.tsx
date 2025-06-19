@@ -40,8 +40,8 @@ export function Navigation() {
           {/* Logo/Brand */}
           <div className="flex items-center gap-3">
             {/* AriNote Logo - Clipboard with dots and red cross */}
-            <div className="arinote-logo" style={{ width: 40, height: 40, position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <img src="/AriNote_Logo_Transparent.png" alt="AriNote logo" style={{ width: 40, height: 40, objectFit: 'contain', display: 'block' }} />
+            <div className="arinote-logo" style={{ width: 256, height: 256, position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <img src="/AriNote_Logo_Vector.svg" alt="AriNote logo" style={{ width: 256, height: 256, objectFit: 'contain', display: 'block' }} />
             </div>
             <span style={{ fontFamily: 'Inter, Manrope, Arial, sans-serif', fontWeight: 600, color: '#2D3748', fontSize: '1.5rem', letterSpacing: '-0.01em' }}>AriNote</span>
           </div>

@@ -32,7 +32,7 @@ export function StartupAnimation({
   if (!isVisible) return null;
 
   const DefaultLogo = () => (
-    <img src="/AriNote_Logo_Transparent.png" alt="AriNote logo" style={{ width: 48, height: 48, objectFit: 'contain', display: 'block' }} />
+    <img src="/AriNote_Logo_Vector.svg" alt="AriNote logo" style={{ width: 144, height: 144, objectFit: 'contain', display: 'block' }} />
   );
 
   return (
