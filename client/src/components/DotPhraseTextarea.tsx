@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { dotPhrases } from '@/lib/dotPhrases';
 import type { CustomDotPhrase } from '@/components/DotPhraseManager';
 import DatePicker from 'react-datepicker';
@@ -123,7 +123,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   }, [value]);
 
   // Handle typing in textarea
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     const cursor = e.target.selectionStart;
     setCurrentPosition(cursor);
@@ -144,7 +144,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       setShowSuggestions(false);
       setCurrentDot(null);
     }
-  };
+  }, [onChange]);
 
   // Handle keydown for autocomplete and smart options
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

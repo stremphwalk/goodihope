@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Stethoscope } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -32,12 +32,12 @@ export function ChiefComplaintSection({ data, onChange }: ChiefComplaintSectionP
     }
   }, [data.selectedTemplate, onChange]);
 
-  const handleFieldChange = (field: keyof ChiefComplaintData, value: string) => {
+  const handleFieldChange = useCallback((field: keyof ChiefComplaintData, value: string) => {
     onChange({
       ...data,
       [field]: value
     });
-  };
+  }, [data, onChange]);
 
   return (
     <div className="space-y-6">

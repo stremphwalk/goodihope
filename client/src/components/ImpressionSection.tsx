@@ -193,7 +193,7 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
     setExpandedEntries(newExpanded);
   }, [expandedEntries]);
 
-  const toggleAllEntries = () => {
+  const toggleAllEntries = useCallback(() => {
     if (allExpanded) {
       setExpandedEntries(new Set());
       setAllExpanded(false);
@@ -202,9 +202,9 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
       setExpandedEntries(allIds);
       setAllExpanded(true);
     }
-  };
+  }, [allExpanded, data.entries]);
 
-  const deleteEntry = (entryId: string) => {
+  const deleteEntry = useCallback((entryId: string) => {
     const updatedEntries = data.entries.filter(entry => entry.id !== entryId);
     
     // If we have fewer than 3 entries after deletion, ensure we have at least 3 empty ones
@@ -224,10 +224,10 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
     const newExpanded = new Set(expandedEntries);
     newExpanded.delete(entryId);
     setExpandedEntries(newExpanded);
-  };
+  }, [data.entries, onChange, expandedEntries]);
 
   // Main entry drag end
-  const handleMainDragEnd = (event: DragEndEvent) => {
+  const handleMainDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     if (active.id !== over?.id) {
       const oldIndex = data.entries.findIndex(e => e.id === active.id);
@@ -235,10 +235,10 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
       const newEntries = arrayMove(data.entries, oldIndex, newIndex);
       onChange({ entries: newEntries });
     }
-  };
+  }, [data.entries, onChange]);
 
   // Sub-entry drag end
-  const handleSubDragEnd = (entryId: string) => (event: DragEndEvent) => {
+  const handleSubDragEnd = useCallback((entryId: string) => (event: DragEndEvent) => {
     const entry = data.entries.find(e => e.id === entryId);
     if (!entry) return;
     const { active, over } = event;
@@ -249,7 +249,7 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
       const newEntries = data.entries.map(e => e.id === entryId ? { ...e, subEntries: newSubEntries } : e);
       onChange({ entries: newEntries });
     }
-  };
+  }, [data.entries, onChange]);
 
   const generateImpressionText = () => {
     const filledEntries = data.entries.filter(entry => entry.mainImpression.trim());
