@@ -1,12 +1,10 @@
-import { useState, useEffect, useRef, useCallback, memo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { FileText, Plus, X, ChevronDown, ChevronUp, Expand, Minimize, Trash2, GripVertical } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2, GripVertical } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { wrapText, formatSection, formatList } from '@/lib/textFormatting';
-// dnd-kit imports
+import { wrapText } from '@/lib/textFormatting';
 import {
   DndContext,
   closestCenter,
@@ -43,55 +41,38 @@ interface PastMedicalHistorySectionProps {
   setAllExpanded: (val: boolean) => void;
 }
 
-interface MemoizedInputProps {
+// Memoized input component to prevent unnecessary re-renders
+const StableInput = memo(function StableInput({
+  value,
+  onChange,
+  onBlur,
+  onKeyDown,
+  placeholder,
+  className
+}: {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  placeholder: string;
-  className?: string;
-  onClick?: () => void;
   onBlur?: () => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
-}
-
-const MemoizedInput = memo(({ value, onChange, placeholder, className, onClick, onBlur, onKeyDown }: MemoizedInputProps) => {
+  placeholder: string;
+  className?: string;
+}) {
   return (
     <Input
       value={value}
       onChange={onChange}
-      placeholder={placeholder}
-      className={className}
-      onClick={onClick}
       onBlur={onBlur}
       onKeyDown={onKeyDown}
+      placeholder={placeholder}
+      className={className}
     />
   );
 });
 
-MemoizedInput.displayName = 'MemoizedInput';
-
-function DraggablePMHEntry({ entry, entryIndex, children, id }: any) {
+// Draggable wrapper for main entries
+function DraggableMainEntry({ id, children }: { id: string; children: React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : 1,
-      }}
-      {...attributes}
-      className="relative"
-    >
-      <div {...listeners} className="absolute left-0 top-0 bottom-0 flex items-center cursor-grab pl-1 pr-2 z-10">
-        <GripVertical className="text-gray-400" />
-      </div>
-      <div className="pl-7">{children}</div>
-    </div>
-  );
-}
-
-function DraggableSubEntry({ id, children }: any) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  
   return (
     <div
       ref={setNodeRef}
@@ -111,13 +92,41 @@ function DraggableSubEntry({ id, children }: any) {
   );
 }
 
-export function PastMedicalHistorySection({ data, onChange, expandedEntries, setExpandedEntries, allExpanded, setAllExpanded }: PastMedicalHistorySectionProps) {
-  const { language } = useLanguage();
+// Draggable wrapper for sub entries
+function DraggableSubEntry({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+      className="relative"
+      {...attributes}
+    >
+      <div {...listeners} className="absolute left-0 top-0 bottom-0 flex items-center cursor-grab pr-2 z-10">
+        <GripVertical className="text-gray-400" />
+      </div>
+      <div className="pl-6">{children}</div>
+    </div>
+  );
+}
 
-  // dnd-kit sensors
+export function PastMedicalHistorySection({ 
+  data, 
+  onChange, 
+  expandedEntries, 
+  setExpandedEntries, 
+  allExpanded, 
+  setAllExpanded 
+}: PastMedicalHistorySectionProps) {
+  const { language } = useLanguage();
   const sensors = useSensors(useSensor(PointerSensor));
 
-  // Initialize with 3 empty entries if no data exists
+  // Initialize with empty entries if needed
   useEffect(() => {
     if (data.entries.length === 0) {
       const initialEntries: PMHEntry[] = [
@@ -126,56 +135,77 @@ export function PastMedicalHistorySection({ data, onChange, expandedEntries, set
         { id: uuidv4(), mainCondition: '', subEntries: ['', '', ''] },
       ];
       onChange({ entries: initialEntries });
-      // Initially expand the first entry
-      setExpandedEntries(new Set(['1']));
+      setExpandedEntries(new Set([initialEntries[0].id]));
     }
-  }, [data.entries.length, onChange]);
+  }, [data.entries.length, onChange, setExpandedEntries]);
 
-  const updateMainCondition = useCallback((entryId: string, value: string) => {
-    onChange((prevData: PMHData) => ({
-      entries: prevData.entries.map((entry: PMHEntry) => 
-        entry.id === entryId ? { ...entry, mainCondition: value } : entry
-      )
-    }));
+  // Stable handlers using functional updates
+  const handleMainConditionChange = useCallback((entryId: string) => {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      onChange(prevData => ({
+        entries: prevData.entries.map(entry =>
+          entry.id === entryId ? { ...entry, mainCondition: value } : entry
+        )
+      }));
+    };
   }, [onChange]);
 
-  const handleMainConditionBlur = (entryId: string) => {
-    // Only add a new entry if this is the last entry and it's filled
-    const entryIndex = data.entries.findIndex(entry => entry.id === entryId);
-    if (entryIndex === data.entries.length - 1 && data.entries[entryIndex].mainCondition.trim()) {
-      const newId = uuidv4();
-      const updatedEntries = [
-        ...data.entries,
-        { id: newId, mainCondition: '', subEntries: ['', '', ''] }
-      ];
-      onChange({ entries: updatedEntries });
-      setExpandedEntries(new Set([newId]));
-    }
-  };
-
-  const updateSubEntry = useCallback((entryId: string, subIndex: number, value: string) => {
-    onChange((prevData: PMHData) => ({
-      entries: prevData.entries.map((entry: PMHEntry) => {
-        if (entry.id === entryId) {
-          const newSubEntries = [...entry.subEntries];
-          newSubEntries[subIndex] = value;
-          
-          // If this entry is empty and there are non-empty entries below it, reorder
-          if (!value.trim()) {
-            const nonEmptyEntries = newSubEntries.filter((entry, idx) => idx > subIndex && entry.trim());
-            if (nonEmptyEntries.length > 0) {
-              // Remove this empty entry
-              newSubEntries.splice(subIndex, 1);
-              // Add it back at the end
+  const handleSubEntryChange = useCallback((entryId: string, subIndex: number) => {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      onChange(prevData => ({
+        entries: prevData.entries.map(entry => {
+          if (entry.id === entryId) {
+            const newSubEntries = [...entry.subEntries];
+            newSubEntries[subIndex] = value;
+            
+            // Add new sub-entry if the last one is filled
+            if (subIndex === newSubEntries.length - 1 && value.trim()) {
               newSubEntries.push('');
             }
+            
+            return { ...entry, subEntries: newSubEntries };
           }
-          
-          // Add new sub-entry if the last one is filled
-          if (subIndex === newSubEntries.length - 1 && value.trim()) {
+          return entry;
+        })
+      }));
+    };
+  }, [onChange]);
+
+  const handleMainConditionBlur = useCallback((entryId: string) => {
+    return () => {
+      const entryIndex = data.entries.findIndex(entry => entry.id === entryId);
+      const entry = data.entries[entryIndex];
+      
+      // Add new entry if this is the last entry and it's filled
+      if (entryIndex === data.entries.length - 1 && entry.mainCondition.trim()) {
+        const newId = uuidv4();
+        onChange(prevData => ({
+          entries: [...prevData.entries, { id: newId, mainCondition: '', subEntries: ['', '', ''] }]
+        }));
+        setExpandedEntries(new Set([newId]));
+      }
+    };
+  }, [data.entries, onChange, setExpandedEntries]);
+
+  const handleMainConditionKeyDown = useCallback((entryId: string) => {
+    return (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        handleMainConditionBlur(entryId)();
+      }
+    };
+  }, [handleMainConditionBlur]);
+
+  const removeSubEntry = useCallback((entryId: string, subIndex: number) => {
+    onChange(prevData => ({
+      entries: prevData.entries.map(entry => {
+        if (entry.id === entryId) {
+          const newSubEntries = entry.subEntries.filter((_, index) => index !== subIndex);
+          // Ensure we always have at least 3 empty entries
+          while (newSubEntries.length < 3) {
             newSubEntries.push('');
           }
-          
           return { ...entry, subEntries: newSubEntries };
         }
         return entry;
@@ -183,101 +213,73 @@ export function PastMedicalHistorySection({ data, onChange, expandedEntries, set
     }));
   }, [onChange]);
 
-  const removeSubEntry = (entryId: string, subIndex: number) => {
-    const updatedEntries = data.entries.map(entry => {
-      if (entry.id === entryId) {
-        const newSubEntries = entry.subEntries.filter((_, index) => index !== subIndex);
-        // Ensure we always have at least 3 empty entries
-        while (newSubEntries.length < 3) {
-          newSubEntries.push('');
-        }
-        return { ...entry, subEntries: newSubEntries };
+  const deleteEntry = useCallback((entryId: string) => {
+    onChange(prevData => {
+      const updatedEntries = prevData.entries.filter(entry => entry.id !== entryId);
+      
+      // Ensure we have at least 3 entries
+      const finalEntries = [...updatedEntries];
+      while (finalEntries.length < 3) {
+        finalEntries.push({
+          id: uuidv4(),
+          mainCondition: '',
+          subEntries: ['', '', '']
+        });
       }
-      return entry;
+      
+      return { entries: finalEntries };
     });
     
-    onChange({ entries: updatedEntries });
-  };
-
-  const clearAllEntries = () => {
-    const clearedEntries: PMHEntry[] = [
-      { id: uuidv4(), mainCondition: '', subEntries: ['', '', ''] },
-      { id: uuidv4(), mainCondition: '', subEntries: ['', '', ''] },
-      { id: uuidv4(), mainCondition: '', subEntries: ['', '', ''] },
-    ];
-    onChange({ entries: clearedEntries });
-    setExpandedEntries(new Set(['1']));
-  };
-
-  const toggleEntry = (entryId: string) => {
-    const newExpanded = new Set(expandedEntries);
-    if (newExpanded.has(entryId)) {
+    // Remove from expanded entries
+    setExpandedEntries(prev => {
+      const newExpanded = new Set(prev);
       newExpanded.delete(entryId);
-    } else {
-      newExpanded.add(entryId);
-    }
-    setExpandedEntries(newExpanded);
-  };
+      return newExpanded;
+    });
+  }, [onChange, setExpandedEntries]);
 
-  const toggleAllEntries = () => {
-    if (allExpanded) {
-      setExpandedEntries(new Set());
-      setAllExpanded(false);
-    } else {
-      const allIds = new Set(data.entries.map(entry => entry.id));
-      setExpandedEntries(allIds);
-      setAllExpanded(true);
-    }
-  };
+  const toggleEntry = useCallback((entryId: string) => {
+    setExpandedEntries(prev => {
+      const newExpanded = new Set(prev);
+      if (newExpanded.has(entryId)) {
+        newExpanded.delete(entryId);
+      } else {
+        newExpanded.add(entryId);
+      }
+      return newExpanded;
+    });
+  }, [setExpandedEntries]);
 
-  const deleteEntry = (entryId: string) => {
-    const updatedEntries = data.entries.filter(entry => entry.id !== entryId);
-    
-    // If we have fewer than 3 entries after deletion, ensure we have at least 3 empty ones
-    const finalEntries = [...updatedEntries];
-    while (finalEntries.length < 3) {
-      const newId = uuidv4();
-      finalEntries.push({
-        id: newId,
-        mainCondition: '',
-        subEntries: ['', '', '']
+  const handleMainDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (active.id !== over?.id) {
+      onChange(prevData => {
+        const oldIndex = prevData.entries.findIndex(e => e.id === active.id);
+        const newIndex = prevData.entries.findIndex(e => e.id === over?.id);
+        return { entries: arrayMove(prevData.entries, oldIndex, newIndex) };
       });
     }
-    
-    onChange({ entries: finalEntries });
-    
-    // Remove from expanded entries if it was expanded
-    const newExpanded = new Set(expandedEntries);
-    newExpanded.delete(entryId);
-    setExpandedEntries(newExpanded);
-  };
+  }, [onChange]);
 
-  // Main entry drag end
-  const handleMainDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (active.id !== over?.id) {
-      const oldIndex = data.entries.findIndex(e => e.id === active.id);
-      const newIndex = data.entries.findIndex(e => e.id === over?.id);
-      const newEntries = arrayMove(data.entries, oldIndex, newIndex);
-      onChange({ entries: newEntries });
-    }
-  };
+  const handleSubDragEnd = useCallback((entryId: string) => {
+    return (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (active.id !== over?.id) {
+        onChange(prevData => ({
+          entries: prevData.entries.map(entry => {
+            if (entry.id === entryId) {
+              const oldIndex = entry.subEntries.findIndex((_, i) => `${entryId}-sub-${i}` === active.id);
+              const newIndex = entry.subEntries.findIndex((_, i) => `${entryId}-sub-${i}` === over?.id);
+              return { ...entry, subEntries: arrayMove(entry.subEntries, oldIndex, newIndex) };
+            }
+            return entry;
+          })
+        }));
+      }
+    };
+  }, [onChange]);
 
-  // Sub-entry drag end
-  const handleSubDragEnd = (entryId: string) => (event: DragEndEvent) => {
-    const entry = data.entries.find(e => e.id === entryId);
-    if (!entry) return;
-    const { active, over } = event;
-    if (active.id !== over?.id) {
-      const oldIndex = entry.subEntries.findIndex((_, i) => `${entryId}-sub-${i}` === active.id);
-      const newIndex = entry.subEntries.findIndex((_, i) => `${entryId}-sub-${i}` === over?.id);
-      const newSubEntries = arrayMove(entry.subEntries, oldIndex, newIndex);
-      const newEntries = data.entries.map(e => e.id === entryId ? { ...e, subEntries: newSubEntries } : e);
-      onChange({ entries: newEntries });
-    }
-  };
-
-  const generatePMHText = () => {
+  const generatePMHText = useCallback(() => {
     const filledEntries = data.entries.filter(entry => entry.mainCondition.trim());
     
     if (filledEntries.length === 0) {
@@ -289,21 +291,18 @@ export function PastMedicalHistorySection({ data, onChange, expandedEntries, set
     let pmhText = language === 'fr' ? "ANTÉCÉDENTS MÉDICAUX :\n" : "PAST MEDICAL HISTORY:\n";
     
     filledEntries.forEach((entry, index) => {
-      // Format main condition with proper wrapping
       const mainCondition = wrapText(entry.mainCondition);
       pmhText += `${index + 1}. ${mainCondition}\n`;
       
-      // Format sub-entries with proper indentation and wrapping
       const filledSubEntries = entry.subEntries.filter(sub => sub.trim());
       filledSubEntries.forEach(subEntry => {
-        // 5 spaces + dash for first line, 7 spaces for continuation
         const wrappedSubEntry = wrapText(subEntry, "     - ", "       ");
         pmhText += `${wrappedSubEntry}\n`;
       });
     });
     
     return pmhText.trim();
-  };
+  }, [data.entries, language]);
 
   return (
     <div className="space-y-4">
@@ -311,7 +310,7 @@ export function PastMedicalHistorySection({ data, onChange, expandedEntries, set
         <SortableContext items={data.entries.map(e => e.id)} strategy={verticalListSortingStrategy}>
           <div className="space-y-4">
             {data.entries.map((entry, entryIndex) => (
-              <DraggablePMHEntry key={entry.id} id={entry.id} entry={entry} entryIndex={entryIndex}>
+              <DraggableMainEntry key={entry.id} id={entry.id}>
                 <div
                   className={`p-4 border-2 rounded-lg transition-all duration-200 ${
                     entry.mainCondition.trim() 
@@ -328,22 +327,13 @@ export function PastMedicalHistorySection({ data, onChange, expandedEntries, set
                     }`}>
                       {entryIndex + 1}
                     </div>
-                    <MemoizedInput
+                    <StableInput
                       value={entry.mainCondition}
-                      onChange={(e) => updateMainCondition(entry.id, e.target.value)}
+                      onChange={handleMainConditionChange(entry.id)}
+                      onBlur={handleMainConditionBlur(entry.id)}
+                      onKeyDown={handleMainConditionKeyDown(entry.id)}
                       placeholder={language === 'fr' ? 'Entrer la condition principale...' : 'Enter main condition...'}
-                      onClick={() => {
-                        if (!expandedEntries.has(entry.id)) {
-                          setExpandedEntries(new Set([entry.id]));
-                        }
-                      }}
                       className="flex-1 font-medium"
-                      onBlur={() => handleMainConditionBlur(entry.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleMainConditionBlur(entry.id);
-                        }
-                      }}
                     />
                     <div className="flex items-center space-x-1">
                       {entry.mainCondition.trim() && (
@@ -384,20 +374,22 @@ export function PastMedicalHistorySection({ data, onChange, expandedEntries, set
                             <DraggableSubEntry key={`${entry.id}-sub-${subIndex}`} id={`${entry.id}-sub-${subIndex}`}>
                               <div className="flex items-center space-x-2">
                                 <div className="w-2 h-2 bg-indigo-400 rounded-full flex-shrink-0 mt-2"></div>
-                                <MemoizedInput
+                                <StableInput
                                   value={subEntry}
-                                  onChange={(e) => updateSubEntry(entry.id, subIndex, e.target.value)}
+                                  onChange={handleSubEntryChange(entry.id, subIndex)}
                                   placeholder={language === 'fr' ? 'Entrer un détail...' : 'Enter detail...'}
                                   className="flex-1"
                                 />
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => removeSubEntry(entry.id, subIndex)}
-                                  className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                >
-                                  <X className="w-4 h-4" />
-                                </Button>
+                                {subEntry.trim() && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => removeSubEntry(entry.id, subIndex)}
+                                    className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )}
                               </div>
                             </DraggableSubEntry>
                           ))}
@@ -406,11 +398,12 @@ export function PastMedicalHistorySection({ data, onChange, expandedEntries, set
                     </DndContext>
                   )}
                 </div>
-              </DraggablePMHEntry>
+              </DraggableMainEntry>
             ))}
           </div>
         </SortableContext>
       </DndContext>
+
       {/* Instructions */}
       <div className="mt-6 p-3 bg-blue-50 rounded-lg border border-blue-200">
         <p className="text-sm text-blue-800">
