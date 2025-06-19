@@ -36,7 +36,7 @@ export interface PMHData {
 
 interface PastMedicalHistorySectionProps {
   data: PMHData;
-  onChange: (data: PMHData) => void;
+  onChange: (data: PMHData | ((prevData: PMHData) => PMHData)) => void;
   expandedEntries: Set<string>;
   setExpandedEntries: (entries: Set<string>) => void;
   allExpanded: boolean;
@@ -132,11 +132,12 @@ export function PastMedicalHistorySection({ data, onChange, expandedEntries, set
   }, [data.entries.length, onChange]);
 
   const updateMainCondition = useCallback((entryId: string, value: string) => {
-    const updatedEntries = data.entries.map(entry => 
-      entry.id === entryId ? { ...entry, mainCondition: value } : entry
-    );
-    onChange({ entries: updatedEntries });
-  }, [data.entries, onChange]);
+    onChange((prevData: PMHData) => ({
+      entries: prevData.entries.map((entry: PMHEntry) => 
+        entry.id === entryId ? { ...entry, mainCondition: value } : entry
+      )
+    }));
+  }, [onChange]);
 
   const handleMainConditionBlur = (entryId: string) => {
     // Only add a new entry if this is the last entry and it's filled
@@ -153,34 +154,34 @@ export function PastMedicalHistorySection({ data, onChange, expandedEntries, set
   };
 
   const updateSubEntry = useCallback((entryId: string, subIndex: number, value: string) => {
-    const updatedEntries = data.entries.map(entry => {
-      if (entry.id === entryId) {
-        const newSubEntries = [...entry.subEntries];
-        newSubEntries[subIndex] = value;
-        
-        // If this entry is empty and there are non-empty entries below it, reorder
-        if (!value.trim()) {
-          const nonEmptyEntries = newSubEntries.filter((entry, idx) => idx > subIndex && entry.trim());
-          if (nonEmptyEntries.length > 0) {
-            // Remove this empty entry
-            newSubEntries.splice(subIndex, 1);
-            // Add it back at the end
+    onChange((prevData: PMHData) => ({
+      entries: prevData.entries.map((entry: PMHEntry) => {
+        if (entry.id === entryId) {
+          const newSubEntries = [...entry.subEntries];
+          newSubEntries[subIndex] = value;
+          
+          // If this entry is empty and there are non-empty entries below it, reorder
+          if (!value.trim()) {
+            const nonEmptyEntries = newSubEntries.filter((entry, idx) => idx > subIndex && entry.trim());
+            if (nonEmptyEntries.length > 0) {
+              // Remove this empty entry
+              newSubEntries.splice(subIndex, 1);
+              // Add it back at the end
+              newSubEntries.push('');
+            }
+          }
+          
+          // Add new sub-entry if the last one is filled
+          if (subIndex === newSubEntries.length - 1 && value.trim()) {
             newSubEntries.push('');
           }
+          
+          return { ...entry, subEntries: newSubEntries };
         }
-        
-        // Add new sub-entry if the last one is filled
-        if (subIndex === newSubEntries.length - 1 && value.trim()) {
-          newSubEntries.push('');
-        }
-        
-        return { ...entry, subEntries: newSubEntries };
-      }
-      return entry;
-    });
-    
-    onChange({ entries: updatedEntries });
-  }, [data.entries, onChange]);
+        return entry;
+      })
+    }));
+  }, [onChange]);
 
   const removeSubEntry = (entryId: string, subIndex: number) => {
     const updatedEntries = data.entries.map(entry => {
