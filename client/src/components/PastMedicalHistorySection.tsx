@@ -63,6 +63,11 @@ const MemoizedInput = memo(({ value, onChange, placeholder, className, onClick, 
       onKeyDown={onKeyDown}
     />
   );
+}, (prevProps, nextProps) => {
+  // Only re-render if value or placeholder actually changed
+  return prevProps.value === nextProps.value && 
+         prevProps.placeholder === nextProps.placeholder &&
+         prevProps.className === nextProps.className;
 });
 
 MemoizedInput.displayName = 'MemoizedInput';

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -102,7 +102,7 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
     }
   }, [data.entries.length, onChange]);
 
-  const updateMainImpression = (entryId: string, value: string) => {
+  const updateMainImpression = useCallback((entryId: string, value: string) => {
     const updatedEntries = data.entries.map(entry => 
       entry.id === entryId ? { ...entry, mainImpression: value } : entry
     );
@@ -125,9 +125,9 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
     }
     
     onChange({ entries: updatedEntries });
-  };
+  }, [data.entries, onChange, setExpandedEntries]);
 
-  const updateSubEntry = (entryId: string, subIndex: number, value: string) => {
+  const updateSubEntry = useCallback((entryId: string, subIndex: number, value: string) => {
     const updatedEntries = data.entries.map(entry => {
       if (entry.id === entryId) {
         const newSubEntries = [...entry.subEntries];
@@ -155,9 +155,9 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
     });
     
     onChange({ entries: updatedEntries });
-  };
+  }, [data.entries, onChange]);
 
-  const removeSubEntry = (entryId: string, subIndex: number) => {
+  const removeSubEntry = useCallback((entryId: string, subIndex: number) => {
     const updatedEntries = data.entries.map(entry => {
       if (entry.id === entryId) {
         const newSubEntries = entry.subEntries.filter((_, index) => index !== subIndex);
@@ -171,9 +171,9 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
     });
     
     onChange({ entries: updatedEntries });
-  };
+  }, [data.entries, onChange]);
 
-  const clearAllEntries = () => {
+  const clearAllEntries = useCallback(() => {
     const clearedEntries: ImpressionEntry[] = [
       { id: '1', mainImpression: '', subEntries: ['', '', ''] },
       { id: '2', mainImpression: '', subEntries: ['', '', ''] },
@@ -181,9 +181,9 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
     ];
     onChange({ entries: clearedEntries });
     setExpandedEntries(new Set(['1']));
-  };
+  }, [onChange]);
 
-  const toggleEntry = (entryId: string) => {
+  const toggleEntry = useCallback((entryId: string) => {
     const newExpanded = new Set(expandedEntries);
     if (newExpanded.has(entryId)) {
       newExpanded.delete(entryId);
@@ -191,7 +191,7 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
       newExpanded.add(entryId);
     }
     setExpandedEntries(newExpanded);
-  };
+  }, [expandedEntries]);
 
   const toggleAllEntries = () => {
     if (allExpanded) {
