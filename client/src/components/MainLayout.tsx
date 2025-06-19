@@ -79,8 +79,8 @@ export function MainLayout({
       <div className="flex h-screen">
         <Sidebar className="medical-sidebar border-r border-gray-200">
           {/* Logo */}
-          <div className="medical-header py-6">
-            <img src="/arinote-logo.png" alt="AriNote Logo" className="h-10 w-auto" />
+          <div className="medical-header py-6 flex flex-col items-center">
+            <span style={{ fontFamily: 'Inter, Manrope, Arial, sans-serif', fontWeight: 600, color: '#2D3748', fontSize: '1.35rem', letterSpacing: '-0.01em' }}>AriNote</span>
           </div>
           {/* Main menu */}
           <nav className="flex flex-col gap-3 px-3">
@@ -88,7 +88,6 @@ export function MainLayout({
               <div key={menu.key} className="menu-item">
                 <button
                   className={`medical-nav-button ${selectedMenu === menu.key ? 'medical-nav-active' : ''}`}
-                  style={{ marginBottom: idx === MAIN_MENUS.length - 1 ? 0 : '0.75rem' }}
                   onClick={() => {
                     setSelectedMenu(menu.key);
                     if (menu.key === "medical-notes") {
