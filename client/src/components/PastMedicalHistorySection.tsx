@@ -231,24 +231,20 @@ export function PastMedicalHistorySection({
     });
     
     // Remove from expanded entries
-    setExpandedEntries(prev => {
-      const newExpanded = new Set(prev);
-      newExpanded.delete(entryId);
-      return newExpanded;
-    });
-  }, [onChange, setExpandedEntries]);
+    const newExpanded = new Set(expandedEntries);
+    newExpanded.delete(entryId);
+    setExpandedEntries(newExpanded);
+  }, [onChange, setExpandedEntries, expandedEntries]);
 
   const toggleEntry = useCallback((entryId: string) => {
-    setExpandedEntries(prev => {
-      const newExpanded = new Set(prev);
-      if (newExpanded.has(entryId)) {
-        newExpanded.delete(entryId);
-      } else {
-        newExpanded.add(entryId);
-      }
-      return newExpanded;
-    });
-  }, [setExpandedEntries]);
+    const newExpanded = new Set(expandedEntries);
+    if (newExpanded.has(entryId)) {
+      newExpanded.delete(entryId);
+    } else {
+      newExpanded.add(entryId);
+    }
+    setExpandedEntries(newExpanded);
+  }, [setExpandedEntries, expandedEntries]);
 
   const handleMainDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
