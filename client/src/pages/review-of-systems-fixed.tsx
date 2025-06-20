@@ -897,6 +897,17 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     handleOptionChange();
   }, [handleOptionChange]);
 
+  // Real-time PMH synchronization - triggers immediately on every keystroke for admission notes
+  useEffect(() => {
+    if (noteType === "admission") {
+      // Immediate update without diff-patch-merge for PMH changes to ensure real-time sync
+      const newGeneratedText = generateTextFromOptions();
+      setCurrentText(newGeneratedText);
+      setNote(newGeneratedText);
+      setInitialGeneratedText(newGeneratedText);
+    }
+  }, [pmhData, noteType, language, generateTextFromOptions]);
+
   // Additional effect to ensure medication changes trigger note updates
   useEffect(() => {
     handleOptionChange();
