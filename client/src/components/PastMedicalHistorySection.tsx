@@ -176,11 +176,21 @@ export function PastMedicalHistorySection({
   // Sub-drag state
   const subSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  // Sync generated note to Note Preview
+  // Sync generated note to Note Preview and sync data to parent
   useEffect(() => {
     const pmhText = generateNote(entries);
     setNotePreview(`PAST MEDICAL HISTORY:\n${pmhText ? pmhText : ''}`);
-  }, [entries]);
+    
+    // Sync internal PMH entries to parent component data structure
+    const parentData: PMHData = {
+      entries: entries.map(entry => ({
+        id: entry.id,
+        mainCondition: entry.value,
+        subEntries: entry.subEntries.map(sub => sub.value)
+      }))
+    };
+    onChange(parentData);
+  }, [entries, onChange]);
 
   // Drag and drop for main entries
   const handleDragEnd = (event: any) => {

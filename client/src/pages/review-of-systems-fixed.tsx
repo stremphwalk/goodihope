@@ -900,10 +900,8 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
   // Real-time PMH synchronization - bypasses diff-patch-merge for immediate updates
   useEffect(() => {
     if (noteType === "admission") {
-      console.log('PMH data changed:', pmhData);
-      const newGeneratedText = generateTextFromOptions();
-      console.log('Generated text:', newGeneratedText.substring(0, 200) + '...');
       // Direct update without diff-patch-merge for PMH real-time sync
+      const newGeneratedText = generateTextFromOptions();
       setNote(newGeneratedText);
       setCurrentText(newGeneratedText);
       setInitialGeneratedText(newGeneratedText);
