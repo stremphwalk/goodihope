@@ -34,6 +34,20 @@ export function StableInput({ value, onChange, placeholder, className }: StableI
     setInternalValue(value);
   };
 
+  const handleClick = (e: React.MouseEvent) => {
+    // Prevent any event bubbling that might interfere
+    e.stopPropagation();
+    // Ensure the input gets focus on click
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Prevent any interference with click detection
+    e.stopPropagation();
+  };
+
   return (
     <input
       ref={inputRef}
@@ -42,8 +56,11 @@ export function StableInput({ value, onChange, placeholder, className }: StableI
       onChange={handleChange}
       onBlur={handleBlur}
       onFocus={handleFocus}
+      onClick={handleClick}
+      onMouseDown={handleMouseDown}
       placeholder={placeholder}
-      className={className}
+      className={`${className} cursor-text`}
+      style={{ userSelect: 'text' }}
     />
   );
 }
