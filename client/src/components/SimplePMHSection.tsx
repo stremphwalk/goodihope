@@ -49,6 +49,12 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
       const newEntries = [...prev];
       const newSubEntries = [...newEntries[entryIndex].subEntries];
       newSubEntries[subIndex] = value;
+      
+      // Auto-add new sub-entry if user is typing in the last one and it has content
+      if (subIndex === newSubEntries.length - 1 && value.trim() !== '') {
+        newSubEntries.push('');
+      }
+      
       newEntries[entryIndex] = { ...newEntries[entryIndex], subEntries: newSubEntries };
       updateParent(newEntries);
       return newEntries;

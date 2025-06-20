@@ -30,16 +30,35 @@ export function StableInput({ value, onChange, placeholder, className }: StableI
   };
 
   const handleFocus = () => {
+    // Store current scroll position before any potential scroll changes
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    
     // Ensure we're using the latest external value when focusing
     setInternalValue(value);
+    
+    // Restore scroll position after any DOM updates
+    setTimeout(() => {
+      window.scrollTo(scrollX, scrollY);
+    }, 0);
   };
 
   const handleClick = (e: React.MouseEvent) => {
     // Prevent any event bubbling that might interfere
     e.stopPropagation();
+    
+    // Store current scroll position
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    
     // Ensure the input gets focus on click
     if (inputRef.current) {
       inputRef.current.focus();
+      
+      // Restore scroll position immediately after focus
+      requestAnimationFrame(() => {
+        window.scrollTo(scrollX, scrollY);
+      });
     }
   };
 
@@ -60,7 +79,10 @@ export function StableInput({ value, onChange, placeholder, className }: StableI
       onMouseDown={handleMouseDown}
       placeholder={placeholder}
       className={`${className} cursor-text`}
-      style={{ userSelect: 'text' }}
+      style={{ 
+        userSelect: 'text',
+        scrollBehavior: 'auto'
+      }}
     />
   );
 }
