@@ -94,8 +94,8 @@ app.get('/health', async (req, res) => {
       }
     }
 
-    // Use process.env.PORT for Railway/production, fallback to 5001 for development
-    const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 5001;
+    // Use process.env.PORT for Railway/production, fallback to 5000 for development
+    const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
     log(`Attempting to start server on port ${port}...`);
     
     server.listen(port, "0.0.0.0", () => {

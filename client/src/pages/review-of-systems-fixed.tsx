@@ -55,7 +55,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { PastMedicalHistorySection, PMHData } from "@/components/PastMedicalHistorySection";
+import { SimplePMHSection, PMHData } from "@/components/SimplePMHSection";
 import { ImpressionSection, ImpressionData } from "@/components/ImpressionSection";
 import { MedicationSection } from "@/components/MedicationSectionNew";
 import { ChiefComplaintSection, type ChiefComplaintData } from "@/components/ChiefComplaintSection";
@@ -897,6 +897,8 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     handleOptionChange();
   }, [handleOptionChange]);
 
+
+
   // Additional effect to ensure medication changes trigger note updates
   useEffect(() => {
     handleOptionChange();
@@ -1014,46 +1016,22 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     </div>
   );
 
-  // For PMH, render Expand All and Clear buttons as controls in the header
-  const [pmhExpandedEntries, setPmhExpandedEntries] = useState<Set<string>>(new Set());
-  const [pmhAllExpanded, setPmhAllExpanded] = useState(false);
-
-  const toggleAllPmhEntries = () => {
-    if (pmhAllExpanded) {
-      setPmhExpandedEntries(new Set());
-      setPmhAllExpanded(false);
-    } else {
-      setPmhExpandedEntries(new Set(pmhData.entries.map(entry => entry.id)));
-      setPmhAllExpanded(true);
-    }
-  };
-
+  // Clear PMH function for the new simple component
   const clearAllPmhEntries = () => {
     setPmhData({ entries: [
       { id: '1', mainCondition: '', subEntries: ['', '', ''] },
       { id: '2', mainCondition: '', subEntries: ['', '', ''] },
-      { id: '3', mainCondition: '', subEntries: ['', '', ''] },
+      { id: '3', mainCondition: '', subEntries: ['', '', ''] }
     ] });
-    setPmhExpandedEntries(new Set(['1']));
-    setPmhAllExpanded(false);
   };
 
   const pmhControls = (
-    <>
-      <button
-        onClick={toggleAllPmhEntries}
-        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm transition-colors flex items-center gap-1"
-      >
-        {pmhAllExpanded ? <Minimize className="w-4 h-4" /> : <Expand className="w-4 h-4" />}
-        <span>{pmhAllExpanded ? (language === 'fr' ? 'Réduire tout' : 'Collapse All') : (language === 'fr' ? 'Développer tout' : 'Expand All')}</span>
-      </button>
-      <button
-        onClick={clearAllPmhEntries}
-        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm transition-colors"
-      >
-        {language === 'fr' ? 'Effacer' : 'Clear'}
-      </button>
-    </>
+    <button
+      onClick={clearAllPmhEntries}
+      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm transition-colors"
+    >
+      {language === 'fr' ? 'Effacer' : 'Clear'}
+    </button>
   );
 
   // Render the main content based on selectedSubOption
@@ -1215,13 +1193,9 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       case "pmh":
         return (
           <SectionWrapper title={sectionTitle["pmh"]} sectionKey="pmh" controls={pmhControls}>
-            <PastMedicalHistorySection
+            <SimplePMHSection
               data={pmhData}
               onChange={setPmhData}
-              expandedEntries={pmhExpandedEntries}
-              setExpandedEntries={setPmhExpandedEntries}
-              allExpanded={pmhAllExpanded}
-              setAllExpanded={setPmhAllExpanded}
             />
           </SectionWrapper>
         );

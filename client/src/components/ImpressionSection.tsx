@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { StableInput } from './StableInput';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { FileText, Plus, X, ChevronDown, ChevronUp, Expand, Minimize, Trash2, GripVertical } from 'lucide-react';
@@ -331,15 +332,10 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
                       }`}>
                         {entryIndex + 1}
                       </div>
-                      <Input
+                      <StableInput
                         placeholder={language === 'fr' ? 'Entrer l\'impression clinique principale...' : 'Enter main clinical impression...'}
                         value={entry.mainImpression}
-                        onChange={(e) => updateMainImpression(entry.id, e.target.value)}
-                        onClick={() => {
-                          if (!expandedEntries.has(entry.id)) {
-                            setExpandedEntries(new Set([entry.id]));
-                          }
-                        }}
+                        onChange={(value) => updateMainImpression(entry.id, value)}
                         className="flex-1 font-medium"
                       />
                       <div className="flex items-center space-x-1">
