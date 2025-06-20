@@ -377,10 +377,10 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
                               <DraggableSubEntry key={`${entry.id}-sub-${subIndex}`} id={`${entry.id}-sub-${subIndex}`}>
                                 <div className="flex items-center space-x-2">
                                   <div className="w-2 h-2 bg-orange-400 rounded-full flex-shrink-0 mt-2"></div>
-                                  <Input
+                                  <StableInput
                                     placeholder={language === 'fr' ? 'Ajouter des détails...' : 'Add details...'}
                                     value={subEntry}
-                                    onChange={(e) => updateSubEntry(entry.id, subIndex, e.target.value)}
+                                    onChange={(value) => updateSubEntry(entry.id, subIndex, value)}
                                     className="flex-1 text-sm"
                                   />
                                   <Button
