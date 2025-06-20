@@ -897,13 +897,15 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     handleOptionChange();
   }, [handleOptionChange]);
 
-  // Real-time PMH synchronization - triggers immediately on every keystroke for admission notes
+  // Real-time PMH synchronization - bypasses diff-patch-merge for immediate updates
   useEffect(() => {
     if (noteType === "admission") {
-      // Immediate update without diff-patch-merge for PMH changes to ensure real-time sync
+      console.log('PMH data changed:', pmhData);
       const newGeneratedText = generateTextFromOptions();
-      setCurrentText(newGeneratedText);
+      console.log('Generated text:', newGeneratedText.substring(0, 200) + '...');
+      // Direct update without diff-patch-merge for PMH real-time sync
       setNote(newGeneratedText);
+      setCurrentText(newGeneratedText);
       setInitialGeneratedText(newGeneratedText);
     }
   }, [pmhData, noteType, language, generateTextFromOptions]);
