@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
-import { StableInput } from './StableInput';
 
 export interface PMHData {
   entries: Array<{
@@ -17,103 +17,88 @@ interface SimplePMHSectionProps {
 }
 
 export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
-  // Initialize with 3 empty entries if data is empty
-  const [entries, setEntries] = useState(() => {
+  // Initialize with 3 empty entries if no data exists
+  useEffect(() => {
     if (data.entries.length === 0) {
-      return [
+      const initialEntries = [
         { id: '1', mainCondition: '', subEntries: ['', '', ''] },
         { id: '2', mainCondition: '', subEntries: ['', '', ''] },
-        { id: '3', mainCondition: '', subEntries: ['', '', ''] }
+        { id: '3', mainCondition: '', subEntries: ['', '', ''] },
       ];
+      onChange({ entries: initialEntries });
     }
-    return data.entries;
-  });
+  }, [data.entries.length, onChange]);
 
-  // Direct parent update - no debouncing needed with blur-based updates
-  const updateParent = useCallback((newEntries: typeof entries) => {
-    onChange({ entries: newEntries });
-  }, [onChange]);
-
-  // Simple direct handlers - only update parent when user finishes typing (blur)
-  const handleMainConditionChange = (index: number, value: string) => {
-    setEntries(prev => {
-      const newEntries = [...prev];
-      newEntries[index] = { ...newEntries[index], mainCondition: value };
-      updateParent(newEntries);
-      return newEntries;
-    });
+  const updateMainCondition = (entryId: string, value: string) => {
+    const updatedEntries = data.entries.map(entry => 
+      entry.id === entryId ? { ...entry, mainCondition: value } : entry
+    );
+    onChange({ entries: updatedEntries });
   };
 
-  const handleSubEntryChange = (entryIndex: number, subIndex: number, value: string) => {
-    setEntries(prev => {
-      const newEntries = [...prev];
-      const newSubEntries = [...newEntries[entryIndex].subEntries];
-      newSubEntries[subIndex] = value;
-      newEntries[entryIndex] = { ...newEntries[entryIndex], subEntries: newSubEntries };
-      updateParent(newEntries);
-      return newEntries;
+  const updateSubEntry = (entryId: string, subIndex: number, value: string) => {
+    const updatedEntries = data.entries.map(entry => {
+      if (entry.id === entryId) {
+        const newSubEntries = [...entry.subEntries];
+        newSubEntries[subIndex] = value;
+        return { ...entry, subEntries: newSubEntries };
+      }
+      return entry;
     });
+    onChange({ entries: updatedEntries });
   };
 
   const addMainEntry = () => {
-    setEntries(prev => {
-      const newEntries = [...prev, {
-        id: Date.now().toString(),
-        mainCondition: '',
-        subEntries: ['', '', '']
-      }];
-      updateParent(newEntries);
-      return newEntries;
-    });
+    const newEntries = [...data.entries, {
+      id: Date.now().toString(),
+      mainCondition: '',
+      subEntries: ['', '', '']
+    }];
+    onChange({ entries: newEntries });
   };
 
-  const addSubEntry = (entryIndex: number) => {
-    setEntries(prev => {
-      const newEntries = [...prev];
-      newEntries[entryIndex] = {
-        ...newEntries[entryIndex],
-        subEntries: [...newEntries[entryIndex].subEntries, '']
-      };
-      updateParent(newEntries);
-      return newEntries;
+  const addSubEntry = (entryId: string) => {
+    const updatedEntries = data.entries.map(entry => {
+      if (entry.id === entryId) {
+        return {
+          ...entry,
+          subEntries: [...entry.subEntries, '']
+        };
+      }
+      return entry;
     });
+    onChange({ entries: updatedEntries });
   };
 
-  const removeMainEntry = (index: number) => {
-    if (entries.length > 1) {
-      setEntries(prev => {
-        const newEntries = prev.filter((_, i) => i !== index);
-        updateParent(newEntries);
-        return newEntries;
-      });
+  const removeMainEntry = (entryId: string) => {
+    if (data.entries.length > 1) {
+      const updatedEntries = data.entries.filter(entry => entry.id !== entryId);
+      onChange({ entries: updatedEntries });
     }
   };
 
-  const removeSubEntry = (entryIndex: number, subIndex: number) => {
-    setEntries(prev => {
-      const newEntries = [...prev];
-      if (newEntries[entryIndex].subEntries.length > 1) {
-        newEntries[entryIndex] = {
-          ...newEntries[entryIndex],
-          subEntries: newEntries[entryIndex].subEntries.filter((_, i) => i !== subIndex)
-        };
-        updateParent(newEntries);
+  const removeSubEntry = (entryId: string, subIndex: number) => {
+    const updatedEntries = data.entries.map(entry => {
+      if (entry.id === entryId && entry.subEntries.length > 3) {
+        const newSubEntries = entry.subEntries.filter((_, index) => index !== subIndex);
+        return { ...entry, subEntries: newSubEntries };
       }
-      return newEntries;
+      return entry;
     });
+    onChange({ entries: updatedEntries });
   };
 
   return (
     <div className="space-y-4">
-      {entries.map((entry, entryIndex) => (
+      {data.entries.map((entry, entryIndex) => (
         <div key={entry.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
           <div className="flex items-start gap-2 mb-3">
             <span className="text-gray-600 font-semibold mt-2 min-w-[20px]">
               {entryIndex + 1}.
             </span>
-            <StableInput
+            <Input
               value={entry.mainCondition}
-              onChange={(value) => handleMainConditionChange(entryIndex, value)}
+              onChange={(e) => updateMainCondition(entry.id, e.target.value)}
               placeholder={`Main condition ${entryIndex + 1}`}
               className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
@@ -121,59 +106,59 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => removeMainEntry(entryIndex)}
-              disabled={entries.length <= 1}
-              className="text-red-600 hover:text-red-700"
+              onClick={() => removeMainEntry(entry.id)}
+              className="text-red-500 hover:text-red-700"
             >
-              <Trash2 size={16} />
+              <Trash2 className="w-4 h-4" />
             </Button>
           </div>
-          
+
+          {/* Sub-entries */}
           <div className="ml-6 space-y-2">
             {entry.subEntries.map((subEntry, subIndex) => (
               <div key={subIndex} className="flex items-center gap-2">
                 <span className="text-gray-500 min-w-[10px]">-</span>
-                <StableInput
+                <Input
                   value={subEntry}
-                  onChange={(value) => handleSubEntryChange(entryIndex, subIndex, value)}
+                  onChange={(e) => updateSubEntry(entry.id, subIndex, e.target.value)}
                   placeholder={`Detail ${subIndex + 1}`}
                   className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeSubEntry(entryIndex, subIndex)}
-                  disabled={entry.subEntries.length <= 1}
-                  className="text-red-600 hover:text-red-700"
-                >
-                  <Trash2 size={14} />
-                </Button>
+                {entry.subEntries.length > 3 && subIndex >= 3 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeSubEntry(entry.id, subIndex)}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
             ))}
-            
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
-              onClick={() => addSubEntry(entryIndex)}
-              className="ml-3 text-blue-600 hover:text-blue-700"
+              onClick={() => addSubEntry(entry.id)}
+              className="text-blue-600 hover:text-blue-800"
             >
-              <Plus size={14} className="mr-1" />
-              Add Detail
+              <Plus className="w-4 h-4 mr-1" />
+              Add detail
             </Button>
           </div>
         </div>
       ))}
-      
+
       <Button
         type="button"
         variant="outline"
         onClick={addMainEntry}
         className="w-full"
       >
-        <Plus size={16} className="mr-2" />
-        Add Condition
+        <Plus className="w-4 h-4 mr-2" />
+        Add Main Condition
       </Button>
     </div>
   );
