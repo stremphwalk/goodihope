@@ -10,25 +10,28 @@ interface StableInputProps {
 export function StableInput({ value, onChange, placeholder, className }: StableInputProps) {
   const [internalValue, setInternalValue] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
-  const isUserTypingRef = useRef(false);
 
-  // Update internal value when external value changes (but not during typing)
+  // Only update internal value when external value changes and input is not focused
   useEffect(() => {
-    if (!isUserTypingRef.current) {
+    if (document.activeElement !== inputRef.current) {
       setInternalValue(value);
     }
   }, [value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
-    isUserTypingRef.current = true;
     setInternalValue(newValue);
-    onChange(newValue);
-    
-    // Reset typing flag after a brief delay
-    setTimeout(() => {
-      isUserTypingRef.current = false;
-    }, 100);
+    // Don't call onChange during typing - only on blur
+  };
+
+  const handleBlur = () => {
+    // Only update parent when user finishes typing (leaves the field)
+    onChange(internalValue);
+  };
+
+  const handleFocus = () => {
+    // Ensure we're using the latest external value when focusing
+    setInternalValue(value);
   };
 
   return (
@@ -37,6 +40,8 @@ export function StableInput({ value, onChange, placeholder, className }: StableI
       type="text"
       value={internalValue}
       onChange={handleChange}
+      onBlur={handleBlur}
+      onFocus={handleFocus}
       placeholder={placeholder}
       className={className}
     />

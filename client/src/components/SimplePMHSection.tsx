@@ -29,16 +29,12 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
     return data.entries;
   });
 
-  // Debounced parent update to prevent excessive re-renders
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  // Direct parent update - no debouncing needed with blur-based updates
   const updateParent = useCallback((newEntries: typeof entries) => {
-    clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      onChange({ entries: newEntries });
-    }, 50); // 50ms debounce
+    onChange({ entries: newEntries });
   }, [onChange]);
 
-  // Simple direct handlers using debounced parent update
+  // Simple direct handlers - only update parent when user finishes typing (blur)
   const handleMainConditionChange = (index: number, value: string) => {
     setEntries(prev => {
       const newEntries = [...prev];
