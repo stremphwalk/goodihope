@@ -1,6 +1,7 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
+import { StableInput } from './StableInput';
 
 export interface PMHData {
   entries: Array<{
@@ -28,17 +29,21 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
     return data.entries;
   });
 
-  // Stable update parent function that doesn't trigger re-renders
+  // Debounced parent update to prevent excessive re-renders
+  const timeoutRef = useRef<NodeJS.Timeout>();
   const updateParent = useCallback((newEntries: typeof entries) => {
-    onChange({ entries: newEntries });
-  }, []);
+    clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      onChange({ entries: newEntries });
+    }, 50); // 50ms debounce
+  }, [onChange]);
 
-  // Simple direct handlers without useCallback to prevent re-renders
+  // Simple direct handlers using debounced parent update
   const handleMainConditionChange = (index: number, value: string) => {
     setEntries(prev => {
       const newEntries = [...prev];
       newEntries[index] = { ...newEntries[index], mainCondition: value };
-      onChange({ entries: newEntries });
+      updateParent(newEntries);
       return newEntries;
     });
   };
@@ -49,7 +54,7 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
       const newSubEntries = [...newEntries[entryIndex].subEntries];
       newSubEntries[subIndex] = value;
       newEntries[entryIndex] = { ...newEntries[entryIndex], subEntries: newSubEntries };
-      onChange({ entries: newEntries });
+      updateParent(newEntries);
       return newEntries;
     });
   };
@@ -61,7 +66,7 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
         mainCondition: '',
         subEntries: ['', '', '']
       }];
-      onChange({ entries: newEntries });
+      updateParent(newEntries);
       return newEntries;
     });
   };
@@ -73,7 +78,7 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
         ...newEntries[entryIndex],
         subEntries: [...newEntries[entryIndex].subEntries, '']
       };
-      onChange({ entries: newEntries });
+      updateParent(newEntries);
       return newEntries;
     });
   };
@@ -82,7 +87,7 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
     if (entries.length > 1) {
       setEntries(prev => {
         const newEntries = prev.filter((_, i) => i !== index);
-        onChange({ entries: newEntries });
+        updateParent(newEntries);
         return newEntries;
       });
     }
@@ -96,7 +101,7 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
           ...newEntries[entryIndex],
           subEntries: newEntries[entryIndex].subEntries.filter((_, i) => i !== subIndex)
         };
-        onChange({ entries: newEntries });
+        updateParent(newEntries);
       }
       return newEntries;
     });
@@ -110,10 +115,9 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
             <span className="text-gray-600 font-semibold mt-2 min-w-[20px]">
               {entryIndex + 1}.
             </span>
-            <input
-              type="text"
+            <StableInput
               value={entry.mainCondition}
-              onChange={(e) => handleMainConditionChange(entryIndex, e.target.value)}
+              onChange={(value) => handleMainConditionChange(entryIndex, value)}
               placeholder={`Main condition ${entryIndex + 1}`}
               className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
@@ -133,10 +137,9 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
             {entry.subEntries.map((subEntry, subIndex) => (
               <div key={subIndex} className="flex items-center gap-2">
                 <span className="text-gray-500 min-w-[10px]">-</span>
-                <input
-                  type="text"
+                <StableInput
                   value={subEntry}
-                  onChange={(e) => handleSubEntryChange(entryIndex, subIndex, e.target.value)}
+                  onChange={(value) => handleSubEntryChange(entryIndex, subIndex, value)}
                   placeholder={`Detail ${subIndex + 1}`}
                   className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
