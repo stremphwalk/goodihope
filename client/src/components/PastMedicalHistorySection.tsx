@@ -1,286 +1,305 @@
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { FileText, Plus, X, ChevronDown, ChevronUp, Expand, Minimize, Trash2 } from 'lucide-react';
-import { useLanguage } from '@/contexts/LanguageContext';
+import { Plus, ChevronDown, ChevronUp, Trash2, GripVertical } from 'lucide-react';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
-export interface PMHEntry {
+interface SubEntry {
   id: string;
-  mainCondition: string;
-  subEntries: string[];
+  value: string;
 }
 
-export interface PMHData {
-  entries: PMHEntry[];
+interface PMHEntry {
+  id: string;
+  value: string;
+  subEntries: SubEntry[];
+  collapsed: boolean;
 }
 
-interface PastMedicalHistorySectionProps {
-  data: PMHData;
-  onChange: (data: PMHData) => void;
-}
-
-export function PastMedicalHistorySection({ data, onChange }: PastMedicalHistorySectionProps) {
-  const { language } = useLanguage();
-  const [expandedEntries, setExpandedEntries] = useState<Set<string>>(new Set());
-  const [allExpanded, setAllExpanded] = useState(false);
-
-  // Initialize with 3 empty entries if no data exists
-  useEffect(() => {
-    if (data.entries.length === 0) {
-      const initialEntries: PMHEntry[] = [
-        { id: '1', mainCondition: '', subEntries: ['', '', ''] },
-        { id: '2', mainCondition: '', subEntries: ['', '', ''] },
-        { id: '3', mainCondition: '', subEntries: ['', '', ''] },
-      ];
-      onChange({ entries: initialEntries });
-      // Initially expand the first entry
-      setExpandedEntries(new Set(['1']));
-    }
-  }, [data.entries.length, onChange]);
-
-  const updateMainCondition = (entryId: string, value: string) => {
-    const updatedEntries = data.entries.map(entry => 
-      entry.id === entryId ? { ...entry, mainCondition: value } : entry
-    );
-    
-    // Add new entry if the last entry's main condition is filled
-    const lastEntry = updatedEntries[updatedEntries.length - 1];
-    if (lastEntry && lastEntry.mainCondition.trim() && entryId === lastEntry.id) {
-      const newId = (updatedEntries.length + 1).toString();
-      updatedEntries.push({
-        id: newId,
-        mainCondition: '',
-        subEntries: ['', '', '']
-      });
-      
-      // Auto-expand the new entry and collapse the previous one
-      setExpandedEntries(new Set([newId]));
-    } else if (value.trim()) {
-      // If user is filling an existing entry, expand it and collapse others
-      setExpandedEntries(new Set([entryId]));
-    }
-    
-    onChange({ entries: updatedEntries });
-  };
-
-  const updateSubEntry = (entryId: string, subIndex: number, value: string) => {
-    const updatedEntries = data.entries.map(entry => {
-      if (entry.id === entryId) {
-        const newSubEntries = [...entry.subEntries];
-        newSubEntries[subIndex] = value;
-        
-        // Add new sub-entry if the last one is filled
-        if (subIndex === newSubEntries.length - 1 && value.trim()) {
-          newSubEntries.push('');
-        }
-        
-        return { ...entry, subEntries: newSubEntries };
-      }
-      return entry;
-    });
-    
-    onChange({ entries: updatedEntries });
-  };
-
-  const removeSubEntry = (entryId: string, subIndex: number) => {
-    const updatedEntries = data.entries.map(entry => {
-      if (entry.id === entryId && entry.subEntries.length > 3) {
-        const newSubEntries = entry.subEntries.filter((_, index) => index !== subIndex);
-        return { ...entry, subEntries: newSubEntries };
-      }
-      return entry;
-    });
-    
-    onChange({ entries: updatedEntries });
-  };
-
-  const clearAllEntries = () => {
-    const clearedEntries: PMHEntry[] = [
-      { id: '1', mainCondition: '', subEntries: ['', '', ''] },
-      { id: '2', mainCondition: '', subEntries: ['', '', ''] },
-      { id: '3', mainCondition: '', subEntries: ['', '', ''] },
-    ];
-    onChange({ entries: clearedEntries });
-    setExpandedEntries(new Set(['1']));
-  };
-
-  const toggleEntry = (entryId: string) => {
-    const newExpanded = new Set(expandedEntries);
-    if (newExpanded.has(entryId)) {
-      newExpanded.delete(entryId);
-    } else {
-      newExpanded.add(entryId);
-    }
-    setExpandedEntries(newExpanded);
-  };
-
-  const toggleAllEntries = () => {
-    if (allExpanded) {
-      setExpandedEntries(new Set());
-      setAllExpanded(false);
-    } else {
-      const allIds = new Set(data.entries.map(entry => entry.id));
-      setExpandedEntries(allIds);
-      setAllExpanded(true);
-    }
-  };
-
-  const deleteEntry = (entryId: string) => {
-    const updatedEntries = data.entries.filter(entry => entry.id !== entryId);
-    
-    // If we have fewer than 3 entries after deletion, ensure we have at least 3 empty ones
-    const finalEntries = [...updatedEntries];
-    while (finalEntries.length < 3) {
-      const newId = (Math.max(...finalEntries.map(e => parseInt(e.id) || 0), 0) + 1).toString();
-      finalEntries.push({
-        id: newId,
-        mainCondition: '',
-        subEntries: ['', '', '']
-      });
-    }
-    
-    onChange({ entries: finalEntries });
-    
-    // Remove from expanded entries if it was expanded
-    const newExpanded = new Set(expandedEntries);
-    newExpanded.delete(entryId);
-    setExpandedEntries(newExpanded);
-  };
-
+function DraggableHandle() {
   return (
-    <Card className="overflow-hidden">
-      <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <FileText className="text-white w-5 h-5" />
-            <h3 className="text-lg font-semibold text-white">
-              {language === 'fr' ? 'Antécédents Médicaux' : 'Past Medical History'}
-            </h3>
-            <span className="text-white/80 text-sm">
-              ({data.entries.filter(entry => entry.mainCondition.trim()).length})
-            </span>
+    <span className="drag-handle cursor-grab text-gray-400 hover:text-gray-700 mr-2 mt-2">
+      <GripVertical size={18} />
+    </span>
+  );
+}
+
+function SubDraggableHandle() {
+  return (
+    <span className="sub-drag-handle cursor-grab text-gray-300 hover:text-gray-600 mr-1 mt-2">
+      <GripVertical size={14} />
+    </span>
+  );
+}
+
+// Fix: Add explicit type for SubEntryInput props
+interface SubEntryInputProps {
+  subEntry: SubEntry;
+  onChange: (val: string) => void;
+  onDelete: () => void;
+}
+
+function SubEntryInput({ subEntry, onChange, onDelete }: SubEntryInputProps) {
+  const { attributes, listeners, setNodeRef } = useSortable({ id: subEntry.id });
+  return (
+    <div ref={setNodeRef} className="flex items-start mb-2 sub-sortable-item group">
+      <SubDraggableHandle {...listeners} {...attributes} />
+      <div className="flex items-center flex-grow">
+        <span className="text-gray-500 mt-2 mr-2">-</span>
+        <input
+          type="text"
+          className="sub-input w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition bg-white"
+          placeholder="Add detail..."
+          value={subEntry.value}
+          onChange={e => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          className="delete-btn ml-2 p-1 rounded-full text-gray-500 hover:bg-red-100 hover:text-red-600 transition opacity-60 group-hover:opacity-100"
+          title="Delete Detail"
+          onClick={onDelete}
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MainEntry({ entry, index, onChange, onDelete, onToggleCollapse, onSubChange, onAddSub, onDeleteSub }: any) {
+  const { attributes, listeners, setNodeRef } = useSortable({ id: entry.id });
+  return (
+    <div ref={setNodeRef} className={`main-input-container relative mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg shadow-sm${entry.collapsed ? ' is-collapsed' : ''}`}> 
+      <div className="flex items-start">
+        <DraggableHandle {...listeners} {...attributes} />
+        <div className="flex-grow">
+          <div className="flex items-center justify-between">
+            <div className="flex items-start flex-grow">
+              <span className="item-number text-gray-500 font-semibold mt-2 mr-2">{index + 1}.</span>
+              <input
+                type="text"
+                className="main-input w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                placeholder={`Condition ${index + 1}`}
+                value={entry.value}
+                onChange={e => onChange(e.target.value)}
+                onKeyUp={e => {
+                  if (e.key === 'Enter' && index === entry.index) onAddSub();
+                }}
+              />
+            </div>
+            <div className="flex items-center self-start ml-2">
+              <button
+                type="button"
+                className="collapse-toggle p-1 rounded-full hover:bg-gray-200 transition"
+                title="Toggle Sub-points"
+                onClick={onToggleCollapse}
+              >
+                {entry.collapsed ? <ChevronDown size={20} /> : <ChevronUp size={20} />}
+              </button>
+              <button
+                type="button"
+                className="delete-btn p-1 rounded-full text-gray-500 hover:bg-red-100 hover:text-red-600 transition opacity-60 hover:opacity-100"
+                title="Delete Condition"
+                onClick={onDelete}
+              >
+                <Trash2 size={20} />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={toggleAllEntries}
-              className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors flex items-center space-x-1"
-            >
-              {allExpanded ? <Minimize className="w-3 h-3" /> : <Expand className="w-3 h-3" />}
-              <span>{allExpanded ? (language === 'fr' ? 'Réduire tout' : 'Collapse All') : (language === 'fr' ? 'Développer tout' : 'Expand All')}</span>
-            </button>
-            <button
-              onClick={clearAllEntries}
-              className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors"
-            >
-              {language === 'fr' ? 'Effacer' : 'Clear'}
-            </button>
+          {/* Sub-entries */}
+          <div className={`sub-input-container mt-2${entry.collapsed ? ' hidden' : ''}`}> 
+            <DndContext sensors={entry.sensors} collisionDetection={closestCenter} onDragEnd={entry.onSubDragEnd}>
+              <SortableContext items={entry.subEntries.map((s: SubEntry) => s.id)} strategy={verticalListSortingStrategy}>
+                {entry.subEntries.map((sub: SubEntry, subIdx: number) => (
+                  <SubEntryInput
+                    key={sub.id}
+                    subEntry={sub}
+                    onChange={(val: string) => onSubChange(subIdx, val)}
+                    onDelete={() => onDeleteSub(subIdx)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+            <Button variant="ghost" size="sm" className="mt-2" onClick={onAddSub}>
+              <Plus size={16} className="mr-1" /> Add Detail
+            </Button>
           </div>
         </div>
       </div>
-      <CardContent className="p-6 space-y-4">
-        <div className="space-y-4">
-          {data.entries.map((entry, entryIndex) => (
-            <div
-              key={entry.id}
-              className={`p-4 border-2 rounded-lg transition-all duration-200 ${
-                entry.mainCondition.trim() 
-                  ? 'border-indigo-200 bg-indigo-50' 
-                  : 'border-gray-200 bg-gray-50'
-              }`}
-            >
-              {/* Entry Number and Main Condition */}
-              <div className="flex items-center space-x-3 mb-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
-                  entry.mainCondition.trim() 
-                    ? 'bg-indigo-600 text-white' 
-                    : 'bg-gray-400 text-white'
-                }`}>
-                  {entryIndex + 1}
-                </div>
-                <Input
-                  placeholder={language === 'fr' ? 'Entrer l\'antécédent médical principal...' : 'Enter main medical condition...'}
-                  value={entry.mainCondition}
-                  onChange={(e) => updateMainCondition(entry.id, e.target.value)}
-                  onClick={() => {
-                    if (!expandedEntries.has(entry.id)) {
-                      setExpandedEntries(new Set([entry.id]));
-                    }
-                  }}
-                  className="flex-1 font-medium"
-                />
-                <div className="flex items-center space-x-1">
-                  {entry.mainCondition.trim() && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleEntry(entry.id)}
-                        className="h-8 w-8 p-0 text-indigo-600 hover:text-indigo-800"
-                      >
-                        {expandedEntries.has(entry.id) ? 
-                          <ChevronUp className="w-4 h-4" /> : 
-                          <ChevronDown className="w-4 h-4" />
-                        }
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteEntry(entry.id)}
-                        className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Sub-entries */}
-              {entry.mainCondition.trim() && expandedEntries.has(entry.id) && (
-                <div className="ml-11 space-y-2">
-                  <Label className="text-sm text-indigo-700 font-medium">
-                    {language === 'fr' ? 'Détails supplémentaires:' : 'Additional details:'}
-                  </Label>
-                  {entry.subEntries.map((subEntry, subIndex) => (
-                    <div key={subIndex} className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-indigo-400 rounded-full flex-shrink-0 mt-2"></div>
-                      <Input
-                        placeholder={language === 'fr' ? 'Ajouter des détails...' : 'Add details...'}
-                        value={subEntry}
-                        onChange={(e) => updateSubEntry(entry.id, subIndex, e.target.value)}
-                        className="flex-1 text-sm"
-                      />
-                      {entry.subEntries.length > 3 && subIndex >= 3 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeSubEntry(entry.id, subIndex)}
-                          className="h-8 w-8 p-0 text-gray-400 hover:text-red-500"
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Instructions */}
-        <div className="mt-6 p-3 bg-blue-50 rounded-lg border border-blue-200">
-          <p className="text-sm text-blue-800">
-            <strong>{language === 'fr' ? 'Instructions:' : 'Instructions:'}</strong>{' '}
-            {language === 'fr' 
-              ? 'Entrez les conditions médicales principales dans les boîtes numérotées. Ajoutez des détails dans les sous-entrées en retrait. De nouvelles boîtes apparaîtront automatiquement selon vos besoins.'
-              : 'Enter main medical conditions in numbered boxes. Add details in indented sub-entries. New boxes will appear automatically as needed.'
-            }
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
+
+function generateNote(entries: PMHEntry[]): string {
+  let formatted = '';
+  entries.forEach((entry, idx) => {
+    if (entry.value.trim()) {
+      formatted += `${idx + 1}. ${entry.value.trim()}\n`;
+      entry.subEntries.forEach(sub => {
+        if (sub.value.trim()) {
+          formatted += `     - ${sub.value.trim()}\n`;
+        }
+      });
+    }
+  });
+  return formatted.trim() || 'Your formatted note will appear here as you type.';
+}
+
+// Accept props for controlled PMH data and callbacks
+interface PastMedicalHistorySectionProps {
+  data: PMHData;
+  onChange: (data: PMHData) => void;
+  expandedEntries?: Set<string>;
+  setExpandedEntries?: (set: Set<string>) => void;
+  allExpanded?: boolean;
+  setAllExpanded?: (val: boolean) => void;
+}
+
+export function PastMedicalHistorySection({
+  data,
+  onChange,
+  expandedEntries,
+  setExpandedEntries,
+  allExpanded,
+  setAllExpanded
+}: PastMedicalHistorySectionProps) {
+  const [entries, setEntries] = useState<PMHEntry[]>([
+    { id: crypto.randomUUID(), value: '', subEntries: [{ id: crypto.randomUUID(), value: '' }], collapsed: false },
+    { id: crypto.randomUUID(), value: '', subEntries: [{ id: crypto.randomUUID(), value: '' }], collapsed: false },
+    { id: crypto.randomUUID(), value: '', subEntries: [{ id: crypto.randomUUID(), value: '' }], collapsed: false },
+  ]);
+  const [allCollapsed, setAllCollapsed] = useState(false);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const [notePreview, setNotePreview] = useState('');
+
+  // Sub-drag state
+  const subSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // Sync generated note to Note Preview and sync data to parent
+  useEffect(() => {
+    const pmhText = generateNote(entries);
+    setNotePreview(`PAST MEDICAL HISTORY:\n${pmhText ? pmhText : ''}`);
+    
+    // Sync internal PMH entries to parent component data structure
+    const parentData: PMHData = {
+      entries: entries.map(entry => ({
+        id: entry.id,
+        mainCondition: entry.value,
+        subEntries: entry.subEntries.map(sub => sub.value)
+      }))
+    };
+    onChange(parentData);
+  }, [entries, onChange]);
+
+  // Drag and drop for main entries
+  const handleDragEnd = (event: any) => {
+    const { active, over } = event;
+    if (active.id !== over?.id) {
+      setEntries(prev => arrayMove(prev, prev.findIndex(e => e.id === active.id), prev.findIndex(e => e.id === over.id)));
+    }
+  };
+
+  // Sub-drag and drop for sub-entries
+  const handleSubDragEnd = (entryIdx: number) => (event: any) => {
+    const { active, over } = event;
+    if (active.id !== over?.id) {
+      setEntries(prev => {
+        const newEntries = [...prev];
+        const subEntries = arrayMove(
+          newEntries[entryIdx].subEntries,
+          newEntries[entryIdx].subEntries.findIndex(s => s.id === active.id),
+          newEntries[entryIdx].subEntries.findIndex(s => s.id === over.id)
+        );
+        newEntries[entryIdx] = { ...newEntries[entryIdx], subEntries };
+        return newEntries;
+      });
+    }
+  };
+
+  // Add, update, delete main entries
+  const addEntry = () => setEntries(prev => ([...prev, { id: crypto.randomUUID(), value: '', subEntries: [{ id: crypto.randomUUID(), value: '' }], collapsed: false }]));
+  const updateEntry = (idx: number, value: string) => setEntries(prev => {
+    const newEntries = [...prev];
+    newEntries[idx].value = value;
+    // Auto-add new entry if last is filled
+    if (idx === prev.length - 1 && value.trim()) {
+      newEntries.push({ id: crypto.randomUUID(), value: '', subEntries: [{ id: crypto.randomUUID(), value: '' }], collapsed: false });
+    }
+    return newEntries;
+  });
+  const deleteEntry = (idx: number) => setEntries(prev => prev.filter((_, i) => i !== idx));
+  const toggleCollapse = (idx: number) => setEntries(prev => prev.map((e, i) => i === idx ? { ...e, collapsed: !e.collapsed } : e));
+
+  // Add, update, delete sub-entries
+  const addSubEntry = (entryIdx: number) => setEntries(prev => {
+    const newEntries = [...prev];
+    newEntries[entryIdx].subEntries.push({ id: crypto.randomUUID(), value: '' });
+    return newEntries;
+  });
+  const updateSubEntry = (entryIdx: number, subIdx: number, value: string) => setEntries(prev => {
+    const newEntries = [...prev];
+    newEntries[entryIdx].subEntries[subIdx].value = value;
+    // Auto-add new sub-entry if last is filled
+    if (subIdx === newEntries[entryIdx].subEntries.length - 1 && value.trim()) {
+      newEntries[entryIdx].subEntries.push({ id: crypto.randomUUID(), value: '' });
+    }
+    return newEntries;
+  });
+  const deleteSubEntry = (entryIdx: number, subIdx: number) => setEntries(prev => {
+    const newEntries = [...prev];
+    newEntries[entryIdx].subEntries = newEntries[entryIdx].subEntries.filter((_, i) => i !== subIdx);
+    return newEntries;
+  });
+
+  // Collapse/Expand all
+  const handleToggleAll = () => {
+    setAllCollapsed(c => !c);
+    setEntries(prev => prev.map(e => ({ ...e, collapsed: !allCollapsed })));
+  };
+
+  return (
+    <div className="container mx-auto p-4 md:p-8 max-w-4xl">
+      <div className="w-full"> {/* Remove grid, use full width */}
+        {/* Input Section */}
+        <div className="bg-white p-6 rounded-xl shadow-md w-full"> {/* Ensure full width */}
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-semibold text-gray-800">Past Medical History</h2>
+            <Button variant="ghost" size="icon" onClick={handleToggleAll} title={allCollapsed ? 'Expand All' : 'Collapse All'}>
+              {allCollapsed ? <ChevronDown size={22} /> : <ChevronUp size={22} />}
+            </Button>
+          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={entries.map(e => e.id)} strategy={verticalListSortingStrategy}>
+              {entries.map((entry, idx) => (
+                <MainEntry
+                  key={entry.id}
+                  entry={{ ...entry, sensors: subSensors, onSubDragEnd: handleSubDragEnd(idx) }}
+                  index={idx}
+                  onChange={(val: string) => updateEntry(idx, val)}
+                  onDelete={() => deleteEntry(idx)}
+                  onToggleCollapse={() => toggleCollapse(idx)}
+                  onSubChange={(subIdx: number, val: string) => updateSubEntry(idx, subIdx, val)}
+                  onAddSub={() => addSubEntry(idx)}
+                  onDeleteSub={(subIdx: number) => deleteSubEntry(idx, subIdx)}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+          <Button variant="outline" size="sm" className="mt-4 w-full" onClick={addEntry}>
+            <Plus size={18} className="mr-1" /> Add Condition
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Export PMHData type for use in other files
+export type PMHData = {
+  entries: Array<{
+    id: string;
+    mainCondition: string;
+    subEntries: string[];
+  }>;
+};
