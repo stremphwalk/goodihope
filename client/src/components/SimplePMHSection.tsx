@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
 
@@ -28,72 +28,67 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
     return data.entries;
   });
 
-  // Update parent whenever entries change
+  // Stable update parent function that doesn't trigger re-renders
   const updateParent = useCallback((newEntries: typeof entries) => {
     onChange({ entries: newEntries });
-  }, [onChange]);
+  }, []);
 
-  // Handle main condition changes
-  const handleMainConditionChange = useCallback((index: number, value: string) => {
+  // Simple direct handlers without useCallback to prevent re-renders
+  const handleMainConditionChange = (index: number, value: string) => {
     setEntries(prev => {
       const newEntries = [...prev];
       newEntries[index] = { ...newEntries[index], mainCondition: value };
-      updateParent(newEntries);
+      onChange({ entries: newEntries });
       return newEntries;
     });
-  }, [updateParent]);
+  };
 
-  // Handle sub-entry changes
-  const handleSubEntryChange = useCallback((entryIndex: number, subIndex: number, value: string) => {
+  const handleSubEntryChange = (entryIndex: number, subIndex: number, value: string) => {
     setEntries(prev => {
       const newEntries = [...prev];
       const newSubEntries = [...newEntries[entryIndex].subEntries];
       newSubEntries[subIndex] = value;
       newEntries[entryIndex] = { ...newEntries[entryIndex], subEntries: newSubEntries };
-      updateParent(newEntries);
+      onChange({ entries: newEntries });
       return newEntries;
     });
-  }, [updateParent]);
+  };
 
-  // Add new main entry
-  const addMainEntry = useCallback(() => {
+  const addMainEntry = () => {
     setEntries(prev => {
       const newEntries = [...prev, {
         id: Date.now().toString(),
         mainCondition: '',
         subEntries: ['', '', '']
       }];
-      updateParent(newEntries);
+      onChange({ entries: newEntries });
       return newEntries;
     });
-  }, [updateParent]);
+  };
 
-  // Add sub-entry to specific main entry
-  const addSubEntry = useCallback((entryIndex: number) => {
+  const addSubEntry = (entryIndex: number) => {
     setEntries(prev => {
       const newEntries = [...prev];
       newEntries[entryIndex] = {
         ...newEntries[entryIndex],
         subEntries: [...newEntries[entryIndex].subEntries, '']
       };
-      updateParent(newEntries);
+      onChange({ entries: newEntries });
       return newEntries;
     });
-  }, [updateParent]);
+  };
 
-  // Remove main entry
-  const removeMainEntry = useCallback((index: number) => {
+  const removeMainEntry = (index: number) => {
     if (entries.length > 1) {
       setEntries(prev => {
         const newEntries = prev.filter((_, i) => i !== index);
-        updateParent(newEntries);
+        onChange({ entries: newEntries });
         return newEntries;
       });
     }
-  }, [entries.length, updateParent]);
+  };
 
-  // Remove sub-entry
-  const removeSubEntry = useCallback((entryIndex: number, subIndex: number) => {
+  const removeSubEntry = (entryIndex: number, subIndex: number) => {
     setEntries(prev => {
       const newEntries = [...prev];
       if (newEntries[entryIndex].subEntries.length > 1) {
@@ -101,11 +96,11 @@ export function SimplePMHSection({ data, onChange }: SimplePMHSectionProps) {
           ...newEntries[entryIndex],
           subEntries: newEntries[entryIndex].subEntries.filter((_, i) => i !== subIndex)
         };
-        updateParent(newEntries);
+        onChange({ entries: newEntries });
       }
       return newEntries;
     });
-  }, [updateParent]);
+  };
 
   return (
     <div className="space-y-4">
