@@ -1,0 +1,41 @@
+{
+  "family": "arinote",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::527015251191:role/arinote-ecs-execution",
+  "containerDefinitions": [
+    {
+      "name": "arinote",
+      "image": "527015251191.dkr.ecr.us-east-1.amazonaws.com/arinote:latest",
+      "portMappings": [
+        {
+          "containerPort": 5000
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "5000"
+        },
+        {
+          "name": "DATABASE_URL",
+          "value": "postgresql://arinote:Cooldude66**@arinote-postgres.ccjom2eu4avz.us-east-1.rds.amazonaws.com:5432/arinote"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/arinote",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

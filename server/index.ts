@@ -3,9 +3,22 @@ dotenv.config();
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { securityHeaders, corsMiddleware, createRateLimiter, errorHandler } from "./security";
 import 'dotenv/config';
 
 const app = express();
+
+// Apply security middleware
+app.use(securityHeaders);
+app.use(corsMiddleware);
+
+// Rate limiting for API endpoints
+app.use('/api', createRateLimiter());
+
+// Stricter rate limiting for image processing endpoints
+app.use('/api/extract-lab-values', createRateLimiter(10));
+app.use('/api/medications/extract-from-image', createRateLimiter(10));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
@@ -68,14 +81,7 @@ app.get('/health', async (req, res) => {
     
     const server = await registerRoutes(app);
 
-    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-      const status = err.status || err.statusCode || 500;
-      const message = err.message || "Internal Server Error";
-
-      log(`Error: ${message}`);
-      res.status(status).json({ message });
-      throw err;
-    });
+    app.use(errorHandler);
 
     // importantly only setup vite in development and after
     // setting up all the other routes so the catch-all route

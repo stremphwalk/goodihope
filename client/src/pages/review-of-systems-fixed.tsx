@@ -55,8 +55,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { SimplePMHSection, PMHData } from "@/components/SimplePMHSection";
-import { ImpressionSection, ImpressionData } from "@/components/ImpressionSection";
+import { SmartPMHSection } from "@/components/SmartPMHSection";
+import { SmartImpressionSection } from "@/components/SmartImpressionSection";
 import { MedicationSection } from "@/components/MedicationSectionNew";
 import { ChiefComplaintSection, type ChiefComplaintData } from "@/components/ChiefComplaintSection";
 import { type MedicationData, formatMedicationsForNote } from "@/lib/medicationUtils";
@@ -225,8 +225,8 @@ function ReviewOfSystems() {
   // HPI/HMA state
   const [hpiText, setHpiText] = useState<string>("");
 
-  const [pmhData, setPmhData] = useState<PMHData>({ entries: [] });
-  const [impressionData, setImpressionData] = useState<ImpressionData>({ entries: [] });
+  const [pmhText, setPmhText] = useState<string>('');
+  const [impressionText, setImpressionText] = useState<string>('');
 
   const [labValues, setLabValues] = useState<LabValue[]>([]);
   const [processedLabValues, setProcessedLabValues] = useState<ProcessedLabValue[]>([]);
@@ -258,6 +258,11 @@ function ReviewOfSystems() {
   const [newSystem, setNewSystem] = React.useState("");
   const [newModality, setNewModality] = React.useState("");
   const [newResult, setNewResult] = React.useState("");
+  
+  // UI state for imagery section - moved to top level to avoid conditional hooks
+  const [expandedSystem, setExpandedSystem] = React.useState<string | null>(null);
+  const [selectedModality, setSelectedModality] = React.useState<string>("");
+  const [resultInput, setResultInput] = React.useState<string>("");
 
   const handleAddStudy = () => {
     if (!newSystem || !newModality) return;
@@ -294,8 +299,8 @@ function ReviewOfSystems() {
     setSelectedSymptoms({} as Record<string, Set<string>>);
     setSelectedPeSystems(new Set());
     setIntubationValues({});
-    setPmhData({ entries: [] });
-    setImpressionData({ entries: [] });
+    setPmhText('');
+    setImpressionText('');
     setChiefComplaint({
       selectedTemplate: "",
       customComplaint: "",
@@ -329,7 +334,7 @@ function ReviewOfSystems() {
 
   // Define tab order for keyboard navigation
   const getTabOrder = useCallback(() => {
-    const baseTabs = ["note-type", "pmh", "allergies", "social", "hpi", "meds", "ros"];
+    const baseTabs = ["note-type", "pmh", "allergies-social", "hpi", "meds", "ros"];
     const icuTabs = ((noteType === "admission" && admissionType === "icu") || (noteType === "progress" && progressType === "icu")) 
       ? ["ventilation"] : [];
     const endTabs = ["impression", "labs", "imagery"];
@@ -390,50 +395,70 @@ function ReviewOfSystems() {
 
     // Generate past medical history text
     const generatePMHText = () => {
-      const filledEntries = pmhData.entries.filter(entry => entry.mainCondition.trim());
-      
-      if (filledEntries.length === 0) {
+      if (!pmhText.trim()) {
         return language === 'fr' 
           ? "ANTÉCÉDENTS MÉDICAUX :\n[Entrer les antécédents médicaux]"
           : "PAST MEDICAL HISTORY:\n[Enter past medical history]";
       }
       
-      let pmhText = language === 'fr' ? "ANTÉCÉDENTS MÉDICAUX :\n" : "PAST MEDICAL HISTORY:\n";
+      // Format the smart text entry input
+      const lines = pmhText.split('\n');
+      const formatted: string[] = [];
+      let conditionCount = 0;
+
+      for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
+
+        if (line.startsWith('#')) {
+          conditionCount++;
+          const condition = line.replace('#', '').trim();
+          formatted.push(`${conditionCount}. ${condition}`);
+        } else if (line.startsWith('-')) {
+          const detail = line.replace('-', '').trim();
+          formatted.push(`     - ${detail}`);
+        } else {
+          conditionCount++;
+          formatted.push(`${conditionCount}. ${line}`);
+        }
+      }
       
-      filledEntries.forEach((entry, index) => {
-        pmhText += `${index + 1}. ${entry.mainCondition}\n`;
-        
-        const filledSubEntries = entry.subEntries.filter(sub => sub.trim());
-        filledSubEntries.forEach(subEntry => {
-          pmhText += `     - ${subEntry}\n`;
-        });
-      });
-      
-      return pmhText.trim();
+      const header = language === 'fr' ? "ANTÉCÉDENTS MÉDICAUX :\n" : "PAST MEDICAL HISTORY:\n";
+      return header + formatted.join('\n');
     };
 
     // Generate impression text
     const generateImpressionText = () => {
-      const filledEntries = impressionData.entries.filter(entry => entry.mainImpression.trim());
-      
-      if (filledEntries.length === 0) {
+      if (!impressionText.trim()) {
         return language === 'fr' 
           ? "IMPRESSION CLINIQUE :\n[Entrer les impressions cliniques]"
           : "CLINICAL IMPRESSION:\n[Enter clinical impressions]";
       }
       
-      let impressionText = language === 'fr' ? "IMPRESSION CLINIQUE :\n" : "CLINICAL IMPRESSION:\n";
+      // Format the smart text entry input
+      const lines = impressionText.split('\n');
+      const formatted: string[] = [];
+      let conditionCount = 0;
+
+      for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
+
+        if (line.startsWith('#')) {
+          conditionCount++;
+          const condition = line.replace('#', '').trim();
+          formatted.push(`${conditionCount}. ${condition}`);
+        } else if (line.startsWith('-')) {
+          const detail = line.replace('-', '').trim();
+          formatted.push(`     - ${detail}`);
+        } else {
+          conditionCount++;
+          formatted.push(`${conditionCount}. ${line}`);
+        }
+      }
       
-      filledEntries.forEach((entry, index) => {
-        impressionText += `${index + 1}. ${entry.mainImpression}\n`;
-        
-        const filledSubEntries = entry.subEntries.filter(sub => sub.trim());
-        filledSubEntries.forEach(subEntry => {
-          impressionText += `     - ${subEntry}\n`;
-        });
-      });
-      
-      return impressionText.trim();
+      const header = language === 'fr' ? "IMPRESSION CLINIQUE :\n" : "CLINICAL IMPRESSION:\n";
+      return header + formatted.join('\n');
     };
 
     // Generate social history text
@@ -798,7 +823,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
 
     return sections.filter(section => section.trim()).join('\n\n');
-  }, [noteType, admissionType, progressType, language, allergies, socialHistory, medications, selectedPeSystems, intubationValues, processedLabValues, pmhData, impressionData, chiefComplaint, hpiText, selectedSymptoms]);
+  }, [noteType, admissionType, progressType, language, allergies, socialHistory, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms]);
 
   // Handle option changes with diff-patch-merge
   const handleOptionChange = useCallback(() => {
@@ -912,17 +937,16 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
   // Additional effect to ensure PMH changes trigger note updates
   useEffect(() => {
     handleOptionChange();
-  }, [pmhData]);
+  }, [pmhText]);
 
-  // Additional effect to ensure allergies changes trigger note updates
-  useEffect(() => {
+  // Update note on blur for allergies and social history to prevent focus issues
+  const handleAllergiesBlur = useCallback(() => {
     handleOptionChange();
-  }, [allergies]);
+  }, [handleOptionChange]);
 
-  // Additional effect to ensure social history changes trigger note updates
-  useEffect(() => {
+  const handleSocialHistoryBlur = useCallback(() => {
     handleOptionChange();
-  }, [socialHistory]);
+  }, [handleOptionChange]);
 
   // Additional effect to ensure ROS and HPI changes trigger note updates
   useEffect(() => {
@@ -952,7 +976,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
   // Additional effect to ensure impression changes trigger note updates
   useEffect(() => {
     handleOptionChange();
-  }, [impressionData]);
+  }, [impressionText]);
 
   // Keyboard navigation for tabs
   useEffect(() => {
@@ -961,6 +985,11 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       if (event.target instanceof HTMLInputElement || 
           event.target instanceof HTMLTextAreaElement || 
           event.target instanceof HTMLSelectElement) {
+        return;
+      }
+      
+      // Don't handle navigation if we're in the allergies-social section
+      if (selectedSubOption === 'allergies-social') {
         return;
       }
 
@@ -1018,11 +1047,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
 
   // Clear PMH function for the new simple component
   const clearAllPmhEntries = () => {
-    setPmhData({ entries: [
-      { id: '1', mainCondition: '', subEntries: ['', '', ''] },
-      { id: '2', mainCondition: '', subEntries: ['', '', ''] },
-      { id: '3', mainCondition: '', subEntries: ['', '', ''] }
-    ] });
+    setPmhText('');
   };
 
   const pmhControls = (
@@ -1043,8 +1068,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       "pmh": "Past Medical History (PMH)",
       "meds": "Medications",
       "labs": "Laboratory Results",
-      "allergies": "Allergies",
-      "social": "Social History",
+      "allergies-social": "Allergies & Social History",
       "imagery": "Imagery",
       "impression": "Impression",
       "ventilation": "Ventilation Parameters"
@@ -1193,9 +1217,9 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       case "pmh":
         return (
           <SectionWrapper title={sectionTitle["pmh"]} sectionKey="pmh" controls={pmhControls}>
-            <SimplePMHSection
-              data={pmhData}
-              onChange={setPmhData}
+            <SmartPMHSection
+              value={pmhText}
+              onChange={setPmhText}
             />
           </SectionWrapper>
         );
@@ -1227,112 +1251,172 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
             </div>
           </SectionWrapper>
         );
-      case "allergies":
+      case "allergies-social":
         return (
-          <SectionWrapper title={sectionTitle["allergies"]} sectionKey="allergies">
-            <div className="space-y-8 w-full max-w-none">
-              {/* Header row with Clear button right-aligned */}
-              <div className="flex items-center justify-between mb-2">
-                <div />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setAllergies({ hasAllergies: false, allergiesList: [] })}
-                  className="text-xs text-red-600 hover:text-white hover:bg-red-500 shadow-sm"
-                >
-                  {language === 'fr' ? 'Effacer' : 'Clear'}
-                </Button>
-              </div>
-              {/* Yes/No buttons centered */}
-              <div className="flex justify-center gap-4 mb-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAllergies({
-                    hasAllergies: true,
-                    allergiesList: allergies.allergiesList
-                  })}
-                  className="w-20"
-                >
-                  {language === 'fr' ? 'Oui' : 'Yes'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAllergies({
-                    hasAllergies: false,
-                    allergiesList: []
-                  })}
-                  className="w-20"
-                >
-                  {language === 'fr' ? 'Non' : 'No'}
-                </Button>
-              </div>
-              {/* Allergy input row centered */}
-              <div className="flex justify-center gap-2 mb-2">
-                <Input
-                  value={newAllergy}
-                  onChange={(e) => setNewAllergy(e.target.value)}
-                  placeholder={language === 'fr' ? 'Ajouter une allergie...' : 'Add allergy...'}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newAllergy.trim()) {
-                      if (!allergies.allergiesList.includes(newAllergy.trim())) {
+          <SectionWrapper title={sectionTitle["allergies-social"]} sectionKey="allergies">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Allergies Section */}
+              <div className="space-y-4">
+                <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-orange-500" />
+                  {language === 'fr' ? 'Allergies' : 'Allergies'}
+                </h4>
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-sm text-gray-600">{language === 'fr' ? 'Patient a des allergies' : 'Patient has allergies'}</span>
+                  <button
+                    onClick={() => setAllergies({
+                      hasAllergies: !allergies.hasAllergies,
+                      allergiesList: allergies.hasAllergies ? [] : allergies.allergiesList
+                    })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
+                      allergies.hasAllergies ? 'bg-orange-500' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        allergies.hasAllergies ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    value={newAllergy}
+                    onChange={(e) => setNewAllergy(e.target.value)}
+                    placeholder={language === 'fr' ? 'Ajouter une allergie...' : 'Add allergy...'}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newAllergy.trim()) {
+                        if (!allergies.allergiesList.includes(newAllergy.trim())) {
+                          setAllergies(prev => ({
+                            hasAllergies: true,
+                            allergiesList: [...prev.allergiesList, newAllergy.trim()]
+                          }));
+                        }
+                        setNewAllergy('');
+                        handleAllergiesBlur();
+                      }
+                    }}
+                    onBlur={handleAllergiesBlur}
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={() => {
+                      if (newAllergy.trim() && !allergies.allergiesList.includes(newAllergy.trim())) {
                         setAllergies(prev => ({
                           hasAllergies: true,
                           allergiesList: [...prev.allergiesList, newAllergy.trim()]
                         }));
+                        setNewAllergy('');
                       }
-                      setNewAllergy('');
-                    }
-                  }}
-                  className="flex-1 max-w-xs"
-                />
-                <Button
-                  onClick={() => {
-                    if (newAllergy.trim() && !allergies.allergiesList.includes(newAllergy.trim())) {
-                      setAllergies(prev => ({
-                        hasAllergies: true,
-                        allergiesList: [...prev.allergiesList, newAllergy.trim()]
-                      }));
-                      setNewAllergy('');
-                    }
-                  }}
-                  size="sm"
-                  variant="outline"
-                  className="px-3"
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              {/* Allergy chips row centered */}
-              {allergies.hasAllergies && allergies.allergiesList.length > 0 && (
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {allergies.allergiesList.map((allergy, index) => (
-                    <Badge key={index} variant="secondary" className="flex items-center gap-1 px-2 py-1 text-sm">
-                      {allergy}
-                      <X
-                        className="w-3 h-3 cursor-pointer ml-1 hover:text-red-600"
-                        onClick={() => setAllergies(prev => ({
-                          hasAllergies: true,
-                          allergiesList: prev.allergiesList.filter((_, i) => i !== index)
-                        }))}
-                      />
-                    </Badge>
-                  ))}
+                    }}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
                 </div>
-              )}
+                {allergies.hasAllergies && allergies.allergiesList.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {allergies.allergiesList.map((allergy, index) => (
+                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                        {allergy}
+                        <X
+                          className="w-3 h-3 cursor-pointer hover:text-red-600"
+                          onClick={() => setAllergies(prev => ({
+                            hasAllergies: true,
+                            allergiesList: prev.allergiesList.filter((_, i) => i !== index)
+                          }))}
+                        />
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              {/* Social History Section */}
+              <div className="space-y-4">
+                <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-pink-500" />
+                  {language === 'fr' ? 'Histoire Sociale' : 'Social History'}
+                </h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">{language === 'fr' ? 'Tabagisme' : 'Smoking'}</span>
+                    <button
+                      onClick={() => setSocialHistory(prev => ({ ...prev, smoking: { status: !prev.smoking.status, details: prev.smoking.status ? '' : prev.smoking.details } }))}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
+                        socialHistory.smoking.status ? 'bg-pink-500' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          socialHistory.smoking.status ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  {socialHistory.smoking.status && (
+                    <Input
+                      placeholder={language === 'fr' ? 'Détails du tabagisme...' : 'Smoking details...'}
+                      value={socialHistory.smoking.details}
+                      onChange={(e) => setSocialHistory(prev => ({ ...prev, smoking: { ...prev.smoking, details: e.target.value } }))}
+                      onBlur={handleSocialHistoryBlur}
+                    />
+                  )}
+                  
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">{language === 'fr' ? 'Alcool' : 'Alcohol'}</span>
+                    <button
+                      onClick={() => setSocialHistory(prev => ({ ...prev, alcohol: { status: !prev.alcohol.status, details: prev.alcohol.status ? '' : prev.alcohol.details } }))}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
+                        socialHistory.alcohol.status ? 'bg-pink-500' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          socialHistory.alcohol.status ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  {socialHistory.alcohol.status && (
+                    <Input
+                      placeholder={language === 'fr' ? 'Détails de l\'alcool...' : 'Alcohol details...'}
+                      value={socialHistory.alcohol.details}
+                      onChange={(e) => setSocialHistory(prev => ({ ...prev, alcohol: { ...prev.alcohol, details: e.target.value } }))}
+                      onBlur={handleSocialHistoryBlur}
+                    />
+                  )}
+                  
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">{language === 'fr' ? 'Drogues' : 'Drugs'}</span>
+                    <button
+                      onClick={() => setSocialHistory(prev => ({ ...prev, drugs: { status: !prev.drugs.status, details: prev.drugs.status ? '' : prev.drugs.details } }))}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
+                        socialHistory.drugs.status ? 'bg-pink-500' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          socialHistory.drugs.status ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  {socialHistory.drugs.status && (
+                    <Input
+                      placeholder={language === 'fr' ? 'Détails des drogues...' : 'Drug details...'}
+                      value={socialHistory.drugs.details}
+                      onChange={(e) => setSocialHistory(prev => ({ ...prev, drugs: { ...prev.drugs, details: e.target.value } }))}
+                      onBlur={handleSocialHistoryBlur}
+                    />
+                  )}
+                </div>
+              </div>
             </div>
           </SectionWrapper>
         );
-      case "social":
-        return (
-          <SectionWrapper title={sectionTitle["social"]} sectionKey="social">
-            {/* Social History UI will go here */}
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">Document social history including smoking, alcohol, and other factors.</p>
-            </div>
-          </SectionWrapper>
-        );
+
       case "imagery": {
         // --- Icons for systems ---
         const systemIcons: Record<string, React.ReactNode> = {
@@ -1344,10 +1428,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
           spine: <Bone className="w-5 h-5 text-orange-600 bg-orange-100 rounded-full p-1" />,
           limb: <Activity className="w-5 h-5 text-blue-600 bg-blue-100 rounded-full p-1" />,
         };
-        // --- UI state for expanded system and selected modality ---
-        const [expandedSystem, setExpandedSystem] = React.useState<string | null>(null);
-        const [selectedModality, setSelectedModality] = React.useState<string>("");
-        const [resultInput, setResultInput] = React.useState<string>("");
+        // UI state is now defined at component top level
 
         // --- Add study handler ---
         const handleAddStudy = () => {
@@ -1450,7 +1531,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       case "impression": 
         return (
           <SectionWrapper title={sectionTitle["impression"]} sectionKey="impression">
-            <ImpressionSection data={impressionData} onChange={setImpressionData} />
+            <SmartImpressionSection value={impressionText} onChange={setImpressionText} />
           </SectionWrapper>
         );
       case "ventilation":
@@ -1463,6 +1544,23 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
           </SectionWrapper>
         );
       default:
+        if (selectedMenu === "dot-phrases") {
+          return (
+            <div className="medical-section-wrapper">
+              <div className="medical-card-header">
+                <h2 className="medical-section-title flex items-center gap-2">
+                  <ClipboardList className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" />
+                  Dot Phrases
+                </h2>
+              </div>
+              <div className="medical-section-content">
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600">Dot phrases functionality will be implemented here.</p>
+                </div>
+              </div>
+            </div>
+          );
+        }
         return null;
     }
   };

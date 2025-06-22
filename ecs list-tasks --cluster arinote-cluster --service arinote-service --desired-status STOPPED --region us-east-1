@@ -1,0 +1,17 @@
+[
+    {
+        "id": "2cc9962a-1957-4c17-bd89-553d8d0bc6ad",
+        "createdAt": "2025-06-21T11:24:56.220000+00:00",
+        "message": "(service arinote-service) has started 1 tasks: (task 98e70f99cad64f8b93fddeda293791fc)."
+    },
+    {
+        "id": "f5453cf5-c2e3-427b-a531-eff5274c52ea",
+        "createdAt": "2025-06-21T11:24:21.426000+00:00",
+        "message": "(service arinote-service) has reached a steady state."
+    },
+    {
+        "id": "f6d434f5-e333-4aae-839a-1a42eb136f50",
+        "createdAt": "2025-06-21T11:23:38.141000+00:00",
+        "message": "(service arinote-service) has started 1 tasks: (task 3a0dd7f9f8594556bd58a31fd8ae939b)."
+    }
+]

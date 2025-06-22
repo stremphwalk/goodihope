@@ -1,0 +1,11 @@
+# AWS Free Tier Configuration - 12 months FREE
+aws_region = "us-east-1"
+environment = "development"
+db_password = "AriNote2024Dev!"
+alert_email = "your-email@domain.com"
+
+# Free Tier Optimized Settings
+db_instance_class = "db.t3.micro"    # 750 hours/month FREE
+ecs_cpu = 256                        # Within free tier limits
+ecs_memory = 512                     # Within free tier limits
+enable_multi_az = false              # Keep costs minimal

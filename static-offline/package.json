@@ -1,5 +1,5 @@
 {
-  "name": "arinote-offline",
+  "name": "@goodihope/arinote-offline",
   "version": "1.0.0",
   "description": "Offline Medical Documentation Platform",
   "type": "module",

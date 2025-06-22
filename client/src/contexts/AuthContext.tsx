@@ -8,8 +8,14 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const CORRECT_PASSWORD = '9354';
 const AUTH_KEY = 'arinote_auth';
+
+// Secure password validation - move to environment variable
+const validatePassword = (password: string): boolean => {
+  // In production, this should validate against a secure backend
+  const correctPassword = import.meta.env.VITE_APP_PASSWORD || '9354';
+  return password === correctPassword;
+};
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -23,7 +29,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = (password: string): boolean => {
-    if (password === CORRECT_PASSWORD) {
+    // Sanitize input
+    const sanitizedPassword = password.trim();
+    if (!sanitizedPassword || sanitizedPassword.length > 50) {
+      return false;
+    }
+    
+    if (validatePassword(sanitizedPassword)) {
       setIsAuthenticated(true);
       sessionStorage.setItem(AUTH_KEY, 'true');
       return true;

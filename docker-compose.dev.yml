@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: arinote-postgres-dev
+    environment:
+      POSTGRES_DB: arinote
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev -d arinote"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: arinote-app-dev
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_URL: postgresql://dev:dev123@postgres:5432/arinote
+      NODE_ENV: development
+      PORT: 5000
+      # Mock AWS services for development
+      AWS_MOCK_MODE: "true"
+      AWS_REGION: us-east-1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/client/node_modules
+    command: npm run dev
+
+  # LocalStack for AWS service mocking
+  localstack:
+    image: localstack/localstack:latest
+    container_name: arinote-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3,lambda,dynamodb,sqs,secretsmanager
+      DEBUG: 1
+      DATA_DIR: /tmp/localstack/data
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - localstack_data:/tmp/localstack
+
+  # Redis for session storage (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: arinote-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  localstack_data:
+  redis_data:

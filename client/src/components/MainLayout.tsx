@@ -47,8 +47,7 @@ export function MainLayout({
         { key: "note-type", label: "Type", icon: <FileText className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" /> },
         { key: "pmh", label: "PMH", icon: <Stethoscope className="w-6 h-6 text-emerald-600 bg-emerald-100 rounded-full p-1" /> },
         { key: "meds", label: "Meds", icon: <Pill className="w-6 h-6 text-purple-600 bg-purple-100 rounded-full p-1" /> },
-        { key: "allergies", label: "Allergies", icon: <AlertCircle className="w-6 h-6 text-orange-500 bg-orange-100 rounded-full p-1" /> },
-        { key: "social", label: "Social", icon: <Users className="w-6 h-6 text-pink-500 bg-pink-100 rounded-full p-1" /> },
+        { key: "allergies-social", label: "Allergies & Social", icon: <Users className="w-6 h-6 text-pink-500 bg-pink-100 rounded-full p-1" /> },
         { key: "hpi", label: "HPI", icon: <ClipboardList className="w-6 h-6 text-cyan-600 bg-cyan-100 rounded-full p-1" /> },
         { key: "physical-exam", label: "Physical Exam", icon: <HeartPulse className="w-6 h-6 text-red-500 bg-red-100 rounded-full p-1" /> },
         ...(isICU ? [{ key: "ventilation", label: "Vent", icon: <Wind className="w-6 h-6 text-sky-500 bg-sky-100 rounded-full p-1" /> }] : []),
@@ -58,10 +57,12 @@ export function MainLayout({
       ],
     },
     {
-      key: "dot-phrases",
-      label: "Dot Phrases",
+      key: "smart-options",
+      label: "Smart Options",
       icon: <ClipboardList className="w-5 h-5" />,
-      subOptions: [],
+      subOptions: [
+        { key: "dot-phrases-main", label: "Dot Phrases", icon: <ClipboardList className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" /> },
+      ],
     },
     {
       key: "calculations",
@@ -73,6 +74,7 @@ export function MainLayout({
 
   const currentMenu = MAIN_MENUS.find((m) => m.key === selectedMenu) || MAIN_MENUS[0];
   const [medicalNotesOpen, setMedicalNotesOpen] = useState(true);
+  const [smartOptionsOpen, setSmartOptionsOpen] = useState(true);
 
   return (
     <SidebarProvider>
@@ -95,6 +97,11 @@ export function MainLayout({
                       if (!medicalNotesOpen && menu.subOptions.length > 0) {
                         setSelectedSubOption(menu.subOptions[0].key);
                       }
+                    } else if (menu.key === "smart-options") {
+                      setSmartOptionsOpen((open) => !open);
+                      if (!smartOptionsOpen && menu.subOptions.length > 0) {
+                        setSelectedSubOption(menu.subOptions[0].key);
+                      }
                     } else {
                       if (menu.subOptions.length > 0) {
                         setSelectedSubOption(menu.subOptions[0].key);
@@ -106,6 +113,9 @@ export function MainLayout({
                   <span>{menu.label}</span>
                   {menu.key === "medical-notes" && (
                     <ChevronDown className={`ml-auto w-4 h-4 transition-transform ${medicalNotesOpen ? "rotate-0" : "-rotate-90"}`} />
+                  )}
+                  {menu.key === "smart-options" && (
+                    <ChevronDown className={`ml-auto w-4 h-4 transition-transform ${smartOptionsOpen ? "rotate-0" : "-rotate-90"}`} />
                   )}
                 </button>
                 {menu.key === "medical-notes" && medicalNotesOpen && menu.subOptions.length > 0 && (
@@ -140,6 +150,22 @@ export function MainLayout({
                     ))}
                   </nav>
                 )}
+                {/* Smart Options subnav toggle */}
+                {menu.key === "smart-options" && smartOptionsOpen && menu.subOptions.length > 0 && (
+                  <nav className="flex flex-col gap-1 mt-2 ml-2">
+                    {menu.subOptions.map((sub) => (
+                      <button
+                        key={sub.key}
+                        className={`medical-subnav-button ${selectedSubOption === sub.key ? 'medical-subnav-active' : ''}`}
+                        onClick={() => setSelectedSubOption(sub.key)}
+                        tabIndex={0}
+                      >
+                        {sub.icon}
+                        <span>{sub.label}</span>
+                      </button>
+                    ))}
+                  </nav>
+                )}
               </div>
             ))}
           </nav>
@@ -165,4 +191,4 @@ export function MainLayout({
       </div>
     </SidebarProvider>
   );
-} 
+}
