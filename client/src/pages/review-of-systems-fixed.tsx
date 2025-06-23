@@ -27,8 +27,6 @@ import {
   Bone,
   Shield,
   Activity,
-  ChevronDown,
-  ChevronUp,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -55,6 +53,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "react-oidc-context";
+import { useTemplate } from "@/contexts/TemplateContext";
 import { SmartPMHSection } from "@/components/SmartPMHSection";
 import { SmartImpressionSection } from "@/components/SmartImpressionSection";
 import { MedicationSection } from "@/components/MedicationSectionNew";
@@ -66,6 +66,8 @@ import { processLabValues, formatLabValuesForNote, type LabValue, type Processed
 import * as DiffMatchPatch from 'diff-match-patch';
 import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
 import HpiSection from '@/components/HpiSection';
+import { TemplateAwareLivePreview } from '@/components/TemplateAwareLivePreview';
+import { type Template, type NoteType, type NoteSubtype } from '@shared/schema';
 
 // Import is correct; RosSymptomAccordion is used inside HpiSection
 
@@ -188,6 +190,14 @@ function ReviewOfSystems() {
   const [admissionType, setAdmissionType] = useState<"general" | "icu">("general");
   const [progressType, setProgressType] = useState<"general" | "icu">("general");
   
+  // Template context
+  const { selectedTemplate, setSelectedTemplate, isTemplateActive } = useTemplate();
+  
+  // Template-related state (keeping local for loading/error states)
+  const [availableTemplates, setAvailableTemplates] = useState<Template[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  
   // New ROS symptom-level selection state
   const [selectedSystem, setSelectedSystem] = useState<string | null>(null);
   const [selectedSymptoms, setSelectedSymptoms] = useState<Record<string, Set<string>>>({}); // systemKey -> Set of symptom keys
@@ -240,6 +250,7 @@ function ReviewOfSystems() {
 
   const { toast } = useToast();
   const { language, setLanguage, t } = useLanguage();
+  const auth = useAuth();
 
   // Sidebar navigation state
   const [selectedMenu, setSelectedMenu] = useState("medical-notes");
@@ -263,6 +274,106 @@ function ReviewOfSystems() {
   const [expandedSystem, setExpandedSystem] = React.useState<string | null>(null);
   const [selectedModality, setSelectedModality] = React.useState<string>("");
   const [resultInput, setResultInput] = React.useState<string>("");
+
+  // Template API functions
+  const getApiHeaders = useCallback((id_token: string) => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${id_token}`,
+  }), []);
+
+  const loadTemplatesForNoteType = useCallback(async (noteType: NoteType | null, subtype: NoteSubtype) => {
+    if (!auth.user?.id_token || !noteType) {
+      setAvailableTemplates([]);
+      return;
+    }
+
+    try {
+      setLoadingTemplates(true);
+      setTemplateError(null);
+      
+      const params = new URLSearchParams();
+      // Add filtering parameters for template compatibility
+      params.append('compatible_note_type', noteType);
+      params.append('compatible_subtype', subtype);
+      
+      const response = await fetch(`/api/templates?${params.toString()}`, {
+        headers: getApiHeaders(auth.user.id_token),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to load templates');
+      }
+      
+      const data = await response.json();
+      const templates = data.map((template: any) => ({
+        ...template,
+        createdAt: new Date(template.createdAt),
+        updatedAt: new Date(template.updatedAt)
+      }));
+      
+      // Filter templates based on compatibility
+      const compatibleTemplates = templates.filter((template: Template) => {
+        const noteTypes = template.compatibleNoteTypes as string[] || [];
+        const subtypes = template.compatibleSubtypes as string[] || [];
+        
+        return noteTypes.includes(noteType) && 
+               (subtypes.length === 0 || subtypes.includes(subtype));
+      });
+      
+      setAvailableTemplates(compatibleTemplates);
+    } catch (error) {
+      console.error('Failed to load templates:', error);
+      setTemplateError(error instanceof Error ? error.message : 'Failed to load templates');
+      setAvailableTemplates([]);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  }, [auth.user?.id_token, getApiHeaders]);
+
+  // Get default content for a section from selected template
+  const getSectionDefaultContent = useCallback((sectionId: string): string => {
+    if (!selectedTemplate) return '';
+    
+    try {
+      const sectionDefaults = selectedTemplate.sectionDefaults as Record<string, string> || {};
+      return sectionDefaults[sectionId] || '';
+    } catch (error) {
+      console.error('Error accessing section defaults:', error);
+      return '';
+    }
+  }, [selectedTemplate]);
+
+  // Track template usage
+  const trackTemplateUsage = useCallback(async (template: Template) => {
+    if (!auth.user?.id_token) return;
+    
+    try {
+      await fetch('/api/template-usage', {
+        method: 'POST',
+        headers: getApiHeaders(auth.user.id_token),
+        body: JSON.stringify({
+          templateId: template.id,
+          patientContext: {
+            noteType,
+            admissionType,
+            progressType,
+            timestamp: new Date().toISOString()
+          }
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to track template usage:', error);
+      // Don't throw error as this is not critical for functionality
+    }
+  }, [auth.user?.id_token, getApiHeaders, noteType, admissionType, progressType]);
+
+  // Handle template selection with usage tracking
+  const handleTemplateSelection = useCallback((template: Template | null) => {
+    setSelectedTemplate(template);
+    if (template) {
+      trackTemplateUsage(template);
+    }
+  }, [trackTemplateUsage]);
 
   const handleAddStudy = () => {
     if (!newSystem || !newModality) return;
@@ -374,6 +485,95 @@ function ReviewOfSystems() {
         : 'Select a note type (Admission, Progress, or Consultation) to start generating your clinical note.';
     }
 
+    // Check if template is active and get template content
+    const templateContent = selectedTemplate ? (() => {
+      try {
+        if (typeof selectedTemplate.content === 'object') {
+          return selectedTemplate.content;
+        }
+        if (typeof selectedTemplate.content === 'string') {
+          return JSON.parse(selectedTemplate.content);
+        }
+        return null;
+      } catch (error) {
+        console.error('Error parsing template content:', error);
+        return null;
+      }
+    })() : null;
+
+    // If template is active, use template-based generation
+    if (templateContent && templateContent.sections && Array.isArray(templateContent.sections)) {
+      return generateTemplateBasedNote(templateContent);
+    }
+
+    // Fallback to default note generation
+    return generateDefaultNote();
+  }, [noteType, selectedTemplate, language, allergies, socialHistory, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, admissionType, progressType]);
+
+  // Template-based note generation
+  const generateTemplateBasedNote = useCallback((templateContent: any) => {
+    const sections: string[] = [];
+    const enabledSections = templateContent.sections
+      .filter((section: any) => section.isEnabled !== false)
+      .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+
+    enabledSections.forEach((templateSection: any) => {
+      const sectionContent = generateSectionContent(templateSection.sectionId, templateSection.customContent);
+      if (sectionContent && sectionContent.trim()) {
+        sections.push(sectionContent);
+      }
+    });
+
+    return sections.filter(section => section.trim()).join('\n\n');
+  }, [language, allergies, socialHistory, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, noteType, admissionType, progressType]);
+
+  // Generate content for a specific section with template custom content
+  const generateSectionContent = useCallback((sectionId: string, customContent?: string) => {
+    // Use custom content from template if available, otherwise generate from current data
+    const defaultContent = customContent || '';
+    
+    switch (sectionId) {
+      case 'note-type':
+        if (defaultContent) return defaultContent;
+        return `${language === 'fr' ? 'TYPE DE NOTE' : 'NOTE TYPE'}: ${noteType?.toUpperCase()}`;
+      
+      case 'pmh':
+        return generatePMHText(defaultContent);
+      
+      case 'allergies-social':
+        return generateAllergiesSocialText(defaultContent);
+      
+      case 'meds':
+        return generateMedicationsText(defaultContent);
+      
+      case 'hpi':
+        return generateHPIText(defaultContent);
+      
+      case 'physical-exam':
+        return generatePhysicalExamText(defaultContent);
+      
+      case 'labs':
+        return generateLabValuesText(defaultContent);
+      
+      case 'imagery':
+        return generateImageryText(defaultContent);
+      
+      case 'impression':
+        return generateImpressionText(defaultContent);
+      
+      case 'ventilation':
+        return generateVentilationText(defaultContent);
+      
+      case 'plan':
+        return generatePlanText(defaultContent);
+      
+      default:
+        return defaultContent || `[${sectionId}]`;
+    }
+  }, [language, pmhText, allergies, socialHistory, medications, selectedPeSystems, processedLabValues, hpiText, impressionText, intubationValues, noteType]);
+
+  // Default note generation (existing logic)
+  const generateDefaultNote = useCallback(() => {
     let generatedText = "";
     
     // Generate allergies text
@@ -823,7 +1023,181 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
 
     return sections.filter(section => section.trim()).join('\n\n');
-  }, [noteType, admissionType, progressType, language, allergies, socialHistory, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms]);
+  }, []);
+
+  // Additional helper functions for template sections
+  const generateAllergiesSocialText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    // Generate allergies text
+    const generateAllergiesText = () => {
+      if (language === 'fr') {
+        if (allergies.hasAllergies && allergies.allergiesList.length > 0) {
+          return `ALLERGIES :\n${allergies.allergiesList.join(', ')}`;
+        } else {
+          return `ALLERGIES :\nAucune allergie connue`;
+        }
+      } else {
+        if (allergies.hasAllergies && allergies.allergiesList.length > 0) {
+          return `ALLERGIES:\n${allergies.allergiesList.join(', ')}`;
+        } else {
+          return `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
+        }
+      }
+    };
+
+    // Generate social history text
+    const generateSocialHistoryText = () => {
+      let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
+      const socialItems = [];
+      
+      // Always include smoking status
+      if (socialHistory.smoking.status) {
+        socialItems.push(language === 'fr' 
+          ? `Tabagisme: ${socialHistory.smoking.details}`
+          : `Smoking: ${socialHistory.smoking.details}`);
+      } else {
+        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+      }
+      
+      // Always include alcohol status
+      if (socialHistory.alcohol.status) {
+        socialItems.push(language === 'fr' 
+          ? `Alcool: ${socialHistory.alcohol.details}`
+          : `Alcohol: ${socialHistory.alcohol.details}`);
+      } else {
+        socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+      }
+      
+      // Always include drugs status
+      if (socialHistory.drugs.status) {
+        socialItems.push(language === 'fr' 
+          ? `Drogues: ${socialHistory.drugs.details}`
+          : `Drugs: ${socialHistory.drugs.details}`);
+      } else {
+        socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+      }
+      
+      socialText += socialItems.join('\n');
+      return socialText.trim();
+    };
+    
+    const allergiesText = generateAllergiesText();
+    const socialText = generateSocialHistoryText();
+    return `${allergiesText}\n\n${socialText}`;
+  }, [allergies, socialHistory, language]);
+
+  const generateHPIText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    const header = language === 'fr' ? "HISTOIRE DE LA MALADIE ACTUELLE :" : "HISTORY OF PRESENT ILLNESS:";
+    const content = hpiText || (language === 'fr' ? "[Entrer l'HMA]" : "[Enter HPI]");
+    
+    // Generate ROS text
+    const generateRosText = () => {
+      if (Object.keys(selectedSymptoms).length === 0) return "";
+      // Each system gets its own sentence. Sentence case for first word, period at end.
+      const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<string>]) => {
+        const symptomList = Array.from(symptoms);
+        if (symptomList.length === 0) return '';
+        const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string}[]} >)[system];
+        const getLabel = (key: string) => {
+          const found = systemObj?.symptoms.find((s: {key: string}) => s.key === key);
+          if (!found) return key.replace(/_/g, ' ');
+          return language === 'fr' ? found.fr : found.en;
+        };
+        let sentence = '';
+        if (language === 'fr') {
+          sentence = symptomList.map(symptom => `pas de ${getLabel(symptom)}`).join(', ');
+        } else {
+          sentence = symptomList.map(symptom => `no ${getLabel(symptom).charAt(0).toLowerCase() + getLabel(symptom).slice(1)}`).join(', ');
+        }
+        // Sentence case: only first letter capitalized
+        sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+        // Ensure sentence ends with a period
+        if (!sentence.endsWith('.')) sentence += '.';
+        return sentence;
+      }).filter(Boolean);
+
+      let rosText = '';
+      if (language === 'fr') {
+        rosText = rosSentences.join(' ');
+        const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+        if (uncoveredSystems.length > 0) {
+          rosText += ' Tous les autres systèmes révisés et négatifs.';
+        }
+      } else {
+        rosText = rosSentences.join(' ');
+        const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+        if (uncoveredSystems.length > 0) {
+          rosText += ' All other systems reviewed and negative.';
+        }
+      }
+      return rosText;
+    };
+    
+    // Add ROS if available
+    const rosText = generateRosText();
+    const fullContent = rosText ? 
+      (content.trim().endsWith('.') ? `${content} ${rosText}` : `${content}. ${rosText}`) : 
+      content;
+    
+    return `${header}\n${fullContent}`;
+  }, [hpiText, selectedSymptoms, language]);
+
+  const generateImageryText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    if (imageryStudies.length === 0) {
+      return language === 'fr' ? "IMAGERIE :\n[Entrer les résultats d'imagerie]" : "IMAGING:\n[Enter imaging results]";
+    }
+    
+    const header = language === 'fr' ? "IMAGERIE :" : "IMAGING:";
+    const studies = imageryStudies.map(study => 
+      `${study.system} ${study.modality}: ${study.result}`
+    ).join('\n');
+    
+    return `${header}\n${studies}`;
+  }, [imageryStudies, language]);
+
+  const generateVentilationText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    const header = language === 'fr' ? "PARAMÈTRES DE VENTILATION :" : "VENTILATION PARAMETERS:";
+    
+    // Generate intubation parameters text
+    const generateIntubationText = () => {
+      if (Object.keys(intubationValues).length === 0) return "";
+      
+      let intubationText = "";
+      Object.entries(intubationValues).forEach(([param, data]) => {
+        if (data.current) {
+          intubationText += `${param}: ${data.current}\n`;
+        }
+      });
+      return intubationText.trim();
+    };
+    
+    const intubationText = generateIntubationText();
+    
+    return intubationText ? `${header}\n${intubationText}` : "";
+  }, [intubationValues, language]);
+
+  const generatePlanText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    return language === 'fr' ? "PLAN :\n[Entrer le plan de traitement]" : "PLAN:\n[Enter treatment plan]";
+  }, [language]);
 
   // Handle option changes with diff-patch-merge
   const handleOptionChange = useCallback(() => {
@@ -917,6 +1291,18 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   };
 
+  // Load templates when note type or subtype changes
+  useEffect(() => {
+    if (noteType) {
+      const subtype = noteType === "admission" ? admissionType : 
+                     noteType === "progress" ? progressType : "general";
+      loadTemplatesForNoteType(noteType, subtype);
+    } else {
+      setAvailableTemplates([]);
+      handleTemplateSelection(null);
+    }
+  }, [noteType, admissionType, progressType, loadTemplatesForNoteType]);
+
   // Update note when options change
   useEffect(() => {
     handleOptionChange();
@@ -977,6 +1363,32 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
   useEffect(() => {
     handleOptionChange();
   }, [impressionText]);
+
+  // Template state persistence
+  useEffect(() => {
+    // Load saved template selection on component mount
+    const savedTemplateId = localStorage.getItem('selectedTemplateId');
+    if (savedTemplateId && availableTemplates.length > 0) {
+      const savedTemplate = availableTemplates.find(t => t.id.toString() === savedTemplateId);
+      if (savedTemplate) {
+        setSelectedTemplate(savedTemplate);
+      }
+    }
+  }, [availableTemplates]);
+
+  // Save selected template to localStorage
+  useEffect(() => {
+    if (selectedTemplate) {
+      localStorage.setItem('selectedTemplateId', selectedTemplate.id.toString());
+    } else {
+      localStorage.removeItem('selectedTemplateId');
+    }
+  }, [selectedTemplate]);
+
+  // Update note when template changes
+  useEffect(() => {
+    handleOptionChange();
+  }, [selectedTemplate, handleOptionChange]);
 
   // Keyboard navigation for tabs
   useEffect(() => {
@@ -1193,6 +1605,124 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                   </div>
                 </div>
               )}
+              
+              {/* Template Selection Section */}
+              {noteType && (
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="font-medium text-gray-900 mb-3">Template Selection</h4>
+                  <div className="space-y-3">
+                    {/* Standard Note Option */}
+                    <div
+                      className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
+                        selectedTemplate === null
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 hover:border-gray-300"
+                      }`}
+                      onClick={() => handleTemplateSelection(null)}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-3 h-3 rounded-full ${selectedTemplate === null ? "bg-blue-500" : "bg-gray-300"}`} />
+                        <div className="flex items-center space-x-2">
+                          <FileText className="w-4 h-4 text-gray-600" />
+                          <span className="font-medium text-gray-900">Standard Note</span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-500 ml-6">Use the default medical note format with all sections</p>
+                    </div>
+
+                    {/* Loading State */}
+                    {loadingTemplates && (
+                      <div className="p-3 border rounded-lg bg-gray-50">
+                        <div className="flex items-center space-x-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          <span className="text-sm text-gray-600">Loading templates...</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Template Error */}
+                    {templateError && (
+                      <div className="p-3 border border-red-200 rounded-lg bg-red-50">
+                        <div className="flex items-center space-x-2">
+                          <AlertCircle className="w-4 h-4 text-red-600" />
+                          <span className="text-sm text-red-600">{templateError}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Available Templates */}
+                    {!loadingTemplates && availableTemplates.map((template) => (
+                      <div
+                        key={template.id}
+                        className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
+                          selectedTemplate?.id === template.id
+                            ? "border-purple-500 bg-purple-50"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                        onClick={() => handleTemplateSelection(template)}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className={`w-3 h-3 rounded-full ${
+                            selectedTemplate?.id === template.id ? "bg-purple-500" : "bg-gray-300"
+                          }`} />
+                          <div className="flex items-center space-x-2">
+                            <ClipboardList className="w-4 h-4 text-purple-600" />
+                            <span className="font-medium text-gray-900">{template.name}</span>
+                            {template.specialty && (
+                              <Badge variant="outline" className="text-xs">
+                                {template.specialty}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        {template.description && (
+                          <p className="text-sm text-gray-500 ml-6 mt-1">{template.description}</p>
+                        )}
+                        <div className="flex items-center space-x-4 ml-6 mt-2 text-xs text-gray-400">
+                          <span>Category: {template.category}</span>
+                          {template.isFavorite && (
+                            <span className="flex items-center space-x-1">
+                              <span className="text-yellow-500">★</span>
+                              <span>Favorite</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* No Templates Message */}
+                    {!loadingTemplates && !templateError && availableTemplates.length === 0 && (
+                      <div className="p-3 border border-dashed rounded-lg bg-gray-50">
+                        <div className="text-center">
+                          <ClipboardList className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                          <p className="text-sm text-gray-600 mb-1">No templates available for this note type</p>
+                          <p className="text-xs text-gray-500">Create templates in Smart Functions → Templates</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Browse All Templates Link */}
+                    {!loadingTemplates && availableTemplates.length > 0 && (
+                      <div className="text-center pt-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-blue-600 hover:text-blue-700"
+                          onClick={() => {
+                            // This would typically navigate to template manager
+                            toast({
+                              title: "Template Manager",
+                              description: "Go to Smart Functions → Templates to manage all templates",
+                            });
+                          }}
+                        >
+                          Browse All Templates
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </SectionWrapper>
         );
@@ -1220,6 +1750,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
             <SmartPMHSection
               value={pmhText}
               onChange={setPmhText}
+              defaultContent={getSectionDefaultContent("pmh")}
             />
           </SectionWrapper>
         );
@@ -1531,7 +2062,11 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       case "impression": 
         return (
           <SectionWrapper title={sectionTitle["impression"]} sectionKey="impression">
-            <SmartImpressionSection value={impressionText} onChange={setImpressionText} />
+            <SmartImpressionSection 
+              value={impressionText} 
+              onChange={setImpressionText}
+              defaultContent={getSectionDefaultContent("impression")}
+            />
           </SectionWrapper>
         );
       case "ventilation":
@@ -1565,53 +2100,144 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   };
 
-  // Render the live preview panel content with fixed dimensions
-  const renderLivePreview = () => (
-    <>
-      <div className="medical-preview-header">
-        <div className="flex items-center justify-between h-full">
-          <h3 className="medical-section-title flex items-center gap-2">
-            <FileText className="w-5 h-5" />
-            {language === 'fr' ? 'Aperçu de la note' : 'Note Preview'}
-          </h3>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={copyToClipboard}
-              className="medical-button-secondary flex items-center gap-2"
-            >
-              <Copy className="w-4 h-4" />
-              {language === 'fr' ? 'Copier' : 'Copy'}
-            </button>
-            {isManuallyEdited && (
-              <button
-                onClick={resetToGenerated}
-                className="medical-button-secondary flex items-center gap-2"
-              >
-                <RotateCcw className="w-4 h-4" />
-                {language === 'fr' ? 'Réinitialiser' : 'Reset'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-      <div className="medical-preview-content">
-        <div className="medical-preview-textarea">
-          <DotPhraseTextarea
-            value={note}
-            onChange={handleNoteChange}
-            placeholder={language === 'fr' ? 'Votre note clinique apparaîtra ici lorsque vous sélectionnez des systèmes...' : 'Your clinical note will appear here as you select systems...'}
-            className="w-full h-full resize-none text-sm leading-relaxed border-0 focus:ring-0"
-          />
-        </div>
-        <div className="medical-preview-footer">
-          <div className="flex items-center justify-between text-sm text-gray-500 h-full">
-            <span>Characters: {note.length}</span>
-            <span>Systems: {documentedSystems}/{totalSystems}</span>
-          </div>
-        </div>
-      </div>
-    </>
-  );
+  // Collect all note data for template preview
+  const getNoteData = () => {
+    const noteData: Record<string, string> = {};
+    
+    try {
+      // Note type section
+      if (noteType) {
+        noteData['note-type'] = `Note Type: ${noteType.charAt(0).toUpperCase() + noteType.slice(1)}`;
+      }
+      
+      // PMH section
+      if (pmhText && pmhText.trim()) {
+        noteData['pmh'] = pmhText;
+      }
+      
+      // Medications section
+      if (medications && Array.isArray(medications.homeMedications) && Array.isArray(medications.hospitalMedications)) {
+        const allMeds = [...medications.homeMedications, ...medications.hospitalMedications];
+        if (allMeds.length > 0) {
+          noteData['meds'] = formatMedicationsForNote(medications);
+        }
+      }
+      
+      // Allergies section  
+      if (allergies && allergies.hasAllergies && Array.isArray(allergies.allergiesList) && allergies.allergiesList.length > 0) {
+        noteData['allergies-social'] = `Allergies: ${allergies.allergiesList.join(', ')}`;
+      }
+      
+      // HPI section
+      if (chiefComplaint || hpiText) {
+        const hpiContent = [
+          chiefComplaint?.customComplaint?.trim() || '',
+          hpiText?.trim() || ''
+        ].filter(Boolean).join('\n');
+        if (hpiContent) {
+          noteData['hpi'] = hpiContent;
+        }
+      }
+      
+      // Physical exam
+      if (selectedPeSystems && selectedPeSystems.size > 0) {
+        const peEntries = Array.from(selectedPeSystems).map(system => {
+          const findings = physicalExamOptions[system as keyof typeof physicalExamOptions] || 'Normal';
+          return `${system}: ${findings}`;
+        });
+        noteData['physical-exam'] = peEntries.join("\n");
+      }
+      
+      // Labs
+      if (processedLabValues && Array.isArray(processedLabValues) && processedLabValues.length > 0) {
+        noteData['labs'] = formatLabValuesForNote(processedLabValues);
+      }
+      
+      // Imagery studies
+      if (imageryStudies && Array.isArray(imageryStudies) && imageryStudies.length > 0) {
+        const imageryText = imageryStudies.map(study => 
+          `${study.system} ${study.modality}: ${study.result}`
+        ).join('\n');
+        noteData['imagery'] = imageryText;
+      }
+      
+      // Impression
+      if (impressionText && impressionText.trim()) {
+        noteData['impression'] = impressionText;
+      }
+      
+      // ROS section
+      if (selectedSymptoms && Object.keys(selectedSymptoms).length > 0) {
+        const rosEntries = Object.entries(selectedSymptoms)
+          .filter(([, symptoms]) => symptoms && symptoms.size > 0)
+          .map(([system, symptoms]) => {
+            const symptomList = Array.from(symptoms);
+            return `${system}: ${symptomList.join(', ')}`;
+          });
+        if (rosEntries.length > 0) {
+          noteData['ros'] = rosEntries.join('\n');
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error generating note data:', error);
+    }
+    
+    return noteData;
+  };
+
+  // Render the live preview panel content with template awareness
+  const renderLivePreview = () => {
+    // Safely format note data with fallbacks
+    const safeNoteData = {
+      'note-type': noteType || '',
+      'pmh': pmhText || '',
+      'meds': medications ? formatMedicationsForNote(medications) : '',
+      'allergies-social': (() => {
+        try {
+          const allergiesText = allergies?.hasAllergies 
+            ? 'Allergies: ' + (allergies.allergiesList || []).join(', ') 
+            : 'No known allergies';
+          
+          const socialText = [
+            socialHistory?.smoking?.status 
+              ? `Smoking: ${socialHistory.smoking.details || 'Yes'}` 
+              : 'Non-smoker',
+            socialHistory?.alcohol?.status 
+              ? `Alcohol: ${socialHistory.alcohol.details || 'Yes'}` 
+              : 'No alcohol use',
+            socialHistory?.drugs?.status 
+              ? `Drugs: ${socialHistory.drugs.details || 'Yes'}` 
+              : 'No drug use'
+          ].join('\n');
+          
+          return `${allergiesText}\n\nSocial History:\n${socialText}`;
+        } catch (error) {
+          console.error('Error formatting allergies/social data:', error);
+          return 'No known allergies\n\nSocial History:\nNon-smoker\nNo alcohol use\nNo drug use';
+        }
+      })(),
+      'hpi': hpiText || '',
+      'physical-exam': selectedPeSystems && selectedPeSystems.size > 0 ? Array.from(selectedPeSystems).map(system => `${system}: ${physicalExamOptions[system as keyof typeof physicalExamOptions] || 'Normal'}`).join('\n') : '',
+      'labs': processedLabValues && processedLabValues.length > 0 ? formatLabValuesForNote(processedLabValues) : '',
+      'imagery': imageryStudies && imageryStudies.length > 0 ? imageryStudies.map(study => `${study.system} ${study.modality}: ${study.result}`).join('\n') : '',
+      'impression': impressionText || ''
+    };
+
+    return (
+      <TemplateAwareLivePreview
+        noteData={safeNoteData}
+        note={note || ''}
+        onNoteChange={handleNoteChange}
+        onCopyNote={copyToClipboard}
+        onResetNote={isManuallyEdited ? resetToGenerated : undefined}
+        documentedSystems={documentedSystems || 0}
+        totalSystems={totalSystems || 0}
+        generatedNote={note || ''}
+        className="h-full"
+      />
+    );
+  };
 
   return (
     <MainLayout
