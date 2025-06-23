@@ -503,7 +503,12 @@ function ReviewOfSystems() {
 
     // If template is active, use template-based generation
     if (templateContent && templateContent.sections && Array.isArray(templateContent.sections)) {
-      return generateTemplateBasedNote(templateContent);
+      try {
+        return generateTemplateBasedNote(templateContent);
+      } catch (error) {
+        console.error('Template-based generation failed, falling back to default:', error);
+        // Fall through to default generation
+      }
     }
 
     // Fallback to default note generation
@@ -512,63 +517,98 @@ function ReviewOfSystems() {
 
   // Template-based note generation
   const generateTemplateBasedNote = useCallback((templateContent: any) => {
-    const sections: string[] = [];
-    const enabledSections = templateContent.sections
-      .filter((section: any) => section.isEnabled !== false)
-      .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
-
-    enabledSections.forEach((templateSection: any) => {
-      const sectionContent = generateSectionContent(templateSection.sectionId, templateSection.customContent);
-      if (sectionContent && sectionContent.trim()) {
-        sections.push(sectionContent);
+    try {
+      const sections: string[] = [];
+      
+      // Validate template content structure
+      if (!templateContent || !Array.isArray(templateContent.sections)) {
+        console.error('Invalid template content structure');
+        throw new Error('Invalid template content structure');
       }
-    });
 
-    return sections.filter(section => section.trim()).join('\n\n');
+      const enabledSections = templateContent.sections
+        .filter((section: any) => section && section.sectionId && section.isEnabled !== false)
+        .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+
+      enabledSections.forEach((templateSection: any) => {
+        try {
+          const sectionContent = generateSectionContent(templateSection.sectionId, templateSection.customContent);
+          if (sectionContent && sectionContent.trim()) {
+            sections.push(sectionContent);
+          }
+        } catch (error) {
+          console.error(`Error generating section content for ${templateSection.sectionId}:`, error);
+          // Continue with other sections instead of failing completely
+        }
+      });
+
+      return sections.filter(section => section && section.trim()).join('\n\n');
+    } catch (error) {
+      console.error('Error in generateTemplateBasedNote:', error);
+      // Return a simple fallback without circular dependency
+      return language === 'fr' ? 
+        'Erreur lors de la génération de la note avec le modèle. Veuillez réessayer.' :
+        'Error generating note with template. Please try again.';
+    }
   }, [language, allergies, socialHistory, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, noteType, admissionType, progressType]);
 
   // Generate content for a specific section with template custom content
   const generateSectionContent = useCallback((sectionId: string, customContent?: string) => {
-    // Use custom content from template if available, otherwise generate from current data
-    const defaultContent = customContent || '';
-    
-    switch (sectionId) {
-      case 'note-type':
-        if (defaultContent) return defaultContent;
-        return `${language === 'fr' ? 'TYPE DE NOTE' : 'NOTE TYPE'}: ${noteType?.toUpperCase()}`;
+    try {
+      // Use custom content from template if available, otherwise generate from current data
+      const defaultContent = customContent || '';
       
-      case 'pmh':
-        return generatePMHText(defaultContent);
-      
-      case 'allergies-social':
-        return generateAllergiesSocialText(defaultContent);
-      
-      case 'meds':
-        return generateMedicationsText(defaultContent);
-      
-      case 'hpi':
-        return generateHPIText(defaultContent);
-      
-      case 'physical-exam':
-        return generatePhysicalExamText(defaultContent);
-      
-      case 'labs':
-        return generateLabValuesText(defaultContent);
-      
-      case 'imagery':
-        return generateImageryText(defaultContent);
-      
-      case 'impression':
-        return generateImpressionText(defaultContent);
-      
-      case 'ventilation':
-        return generateVentilationText(defaultContent);
-      
-      case 'plan':
-        return generatePlanText(defaultContent);
-      
-      default:
-        return defaultContent || `[${sectionId}]`;
+      switch (sectionId) {
+        case 'note-type':
+          if (defaultContent) return defaultContent;
+          return `${language === 'fr' ? 'TYPE DE NOTE' : 'NOTE TYPE'}: ${noteType?.toUpperCase()}`;
+        
+        case 'pmh':
+          if (defaultContent) return defaultContent;
+          return generatePMHText ? generatePMHText(defaultContent) : (language === 'fr' ? "ANTÉCÉDENTS MÉDICAUX :\n[Entrer les antécédents médicaux]" : "PAST MEDICAL HISTORY:\n[Enter past medical history]");
+        
+        case 'allergies-social':
+          if (defaultContent) return defaultContent;
+          return generateAllergiesSocialText ? generateAllergiesSocialText(defaultContent) : (language === 'fr' ? "ALLERGIES & HISTOIRE SOCIALE :\n[Entrer les allergies et l'histoire sociale]" : "ALLERGIES & SOCIAL HISTORY:\n[Enter allergies and social history]");
+        
+        case 'meds':
+          if (defaultContent) return defaultContent;
+          return generateMedicationsText ? generateMedicationsText(defaultContent) : (language === 'fr' ? "MÉDICAMENTS :\n[Entrer les médicaments]" : "MEDICATIONS:\n[Enter medications]");
+        
+        case 'hpi':
+          if (defaultContent) return defaultContent;
+          return generateHPIText ? generateHPIText(defaultContent) : (language === 'fr' ? "HISTOIRE DE LA MALADIE ACTUELLE :\n[Entrer l'HMA]" : "HISTORY OF PRESENT ILLNESS:\n[Enter HPI]");
+        
+        case 'physical-exam':
+          if (defaultContent) return defaultContent;
+          return generatePhysicalExamText ? generatePhysicalExamText(defaultContent) : (language === 'fr' ? "EXAMEN PHYSIQUE :\n[Entrer l'examen physique]" : "PHYSICAL EXAMINATION:\n[Enter physical examination]");
+        
+        case 'labs':
+          if (defaultContent) return defaultContent;
+          return generateLabValuesText ? generateLabValuesText(defaultContent) : (language === 'fr' ? "RÉSULTATS DE LABORATOIRE :\n[Entrer les résultats de laboratoire]" : "LABORATORY RESULTS:\n[Enter laboratory results]");
+        
+        case 'imagery':
+          if (defaultContent) return defaultContent;
+          return generateImageryText ? generateImageryText(defaultContent) : (language === 'fr' ? "IMAGERIE :\n[Entrer les résultats d'imagerie]" : "IMAGING:\n[Enter imaging results]");
+        
+        case 'impression':
+          if (defaultContent) return defaultContent;
+          return generateImpressionText ? generateImpressionText(defaultContent) : (language === 'fr' ? "IMPRESSION CLINIQUE :\n[Entrer les impressions cliniques]" : "CLINICAL IMPRESSION:\n[Enter clinical impressions]");
+        
+        case 'ventilation':
+          if (defaultContent) return defaultContent;
+          return generateVentilationText ? generateVentilationText(defaultContent) : (language === 'fr' ? "PARAMÈTRES DE VENTILATION :\n[Entrer les paramètres de ventilation]" : "VENTILATION PARAMETERS:\n[Enter ventilation parameters]");
+        
+        case 'plan':
+          if (defaultContent) return defaultContent;
+          return generatePlanText ? generatePlanText(defaultContent) : (language === 'fr' ? "PLAN :\n[Entrer le plan de traitement]" : "PLAN:\n[Enter treatment plan]");
+        
+        default:
+          return defaultContent || `[${sectionId}]`;
+      }
+    } catch (error) {
+      console.error(`Error generating content for section ${sectionId}:`, error);
+      return customContent || `[Error: ${sectionId}]`;
     }
   }, [language, pmhText, allergies, socialHistory, medications, selectedPeSystems, processedLabValues, hpiText, impressionText, intubationValues, noteType]);
 
@@ -1023,7 +1063,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
 
     return sections.filter(section => section.trim()).join('\n\n');
-  }, []);
+  }, [noteType, admissionType, progressType, language, allergies, socialHistory, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms]);
 
   // Additional helper functions for template sections
   const generateAllergiesSocialText = useCallback((customContent?: string) => {
