@@ -20,6 +20,9 @@ import {
 import { useLanguage } from "../contexts/LanguageContext";
 import { DotPhraseManager } from './DotPhraseManager';
 import { TemplateManager } from './TemplateManager';
+import { TemplateSelectorPage } from './TemplateSelectorPage';
+import { SECTION_LIBRARY, getSectionById } from '@/lib/sectionLibrary';
+import { type Template } from '@shared/schema';
 
 interface MainLayoutProps {
   selectedMenu: string;
@@ -41,22 +44,36 @@ export function MainLayout({
 }: MainLayoutProps & { children: React.ReactNode }) {
   const { language, setLanguage } = useLanguage();
 
+  // Generate default medical notes sections (independent of template)
+  const getDefaultMedicalNotesSections = () => {
+    return [
+      { key: "note-type", label: "Type", icon: <FileText className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" /> },
+      { key: "pmh", label: "PMH", icon: <Stethoscope className="w-6 h-6 text-emerald-600 bg-emerald-100 rounded-full p-1" /> },
+      { key: "meds", label: "Meds", icon: <Pill className="w-6 h-6 text-purple-600 bg-purple-100 rounded-full p-1" /> },
+      { key: "allergies-social", label: "Allergies & Social", icon: <Users className="w-6 h-6 text-pink-500 bg-pink-100 rounded-full p-1" /> },
+      { key: "hpi", label: "HPI", icon: <ClipboardList className="w-6 h-6 text-cyan-600 bg-cyan-100 rounded-full p-1" /> },
+      { key: "physical-exam", label: "Physical Exam", icon: <HeartPulse className="w-6 h-6 text-red-500 bg-red-100 rounded-full p-1" /> },
+      ...(isICU ? [{ key: "ventilation", label: "Vent", icon: <Wind className="w-6 h-6 text-sky-500 bg-sky-100 rounded-full p-1" /> }] : []),
+      { key: "labs", label: "Labs", icon: <TestTube className="w-6 h-6 text-yellow-600 bg-yellow-100 rounded-full p-1" /> },
+      { key: "imagery", label: "Imagery", icon: <Image className="w-6 h-6 text-indigo-500 bg-indigo-100 rounded-full p-1" /> },
+      { key: "impression", label: "IMP", icon: <Brain className="w-6 h-6 text-gray-700 bg-gray-100 rounded-full p-1" /> },
+    ];
+  };
+
   const MAIN_MENUS = [
     {
       key: "medical-notes",
       label: "Medical Notes",
       icon: <FileText className="w-5 h-5" />,
+      subOptions: getDefaultMedicalNotesSections(),
+    },
+    {
+      key: "templates",
+      label: "Templates",
+      icon: <FileText className="w-5 h-5" />,
       subOptions: [
-        { key: "note-type", label: "Type", icon: <FileText className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" /> },
-        { key: "pmh", label: "PMH", icon: <Stethoscope className="w-6 h-6 text-emerald-600 bg-emerald-100 rounded-full p-1" /> },
-        { key: "meds", label: "Meds", icon: <Pill className="w-6 h-6 text-purple-600 bg-purple-100 rounded-full p-1" /> },
-        { key: "allergies-social", label: "Allergies & Social", icon: <Users className="w-6 h-6 text-pink-500 bg-pink-100 rounded-full p-1" /> },
-        { key: "hpi", label: "HPI", icon: <ClipboardList className="w-6 h-6 text-cyan-600 bg-cyan-100 rounded-full p-1" /> },
-        { key: "physical-exam", label: "Physical Exam", icon: <HeartPulse className="w-6 h-6 text-red-500 bg-red-100 rounded-full p-1" /> },
-        ...(isICU ? [{ key: "ventilation", label: "Vent", icon: <Wind className="w-6 h-6 text-sky-500 bg-sky-100 rounded-full p-1" /> }] : []),
-        { key: "labs", label: "Labs", icon: <TestTube className="w-6 h-6 text-yellow-600 bg-yellow-100 rounded-full p-1" /> },
-        { key: "imagery", label: "Imagery", icon: <Image className="w-6 h-6 text-indigo-500 bg-indigo-100 rounded-full p-1" /> },
-        { key: "impression", label: "IMP", icon: <Brain className="w-6 h-6 text-gray-700 bg-gray-100 rounded-full p-1" /> },
+        { key: "template-selector", label: "Select Template", icon: <FileText className="w-6 h-6 text-purple-500 bg-purple-100 rounded-full p-1" /> },
+        { key: "template-manager", label: "Manage Templates", icon: <Sparkles className="w-6 h-6 text-indigo-500 bg-indigo-100 rounded-full p-1" /> },
       ],
     },
     {
@@ -65,7 +82,6 @@ export function MainLayout({
       icon: <Sparkles className="w-5 h-5" />,
       subOptions: [
         { key: "dot-phrases", label: "Dot Phrases", icon: <ClipboardList className="w-6 h-6 text-green-500 bg-green-100 rounded-full p-1" /> },
-        { key: "templates", label: "Templates", icon: <FileText className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" /> },
       ],
     },
     {
@@ -78,7 +94,8 @@ export function MainLayout({
 
   const currentMenu = MAIN_MENUS.find((m) => m.key === selectedMenu) || MAIN_MENUS[0];
   const [medicalNotesOpen, setMedicalNotesOpen] = useState(true);
-  const [smartOptionsOpen, setSmartOptionsOpen] = useState(true);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [smartOptionsOpen, setSmartOptionsOpen] = useState(false);
 
   return (
     <SidebarProvider>
@@ -101,6 +118,11 @@ export function MainLayout({
                       if (!medicalNotesOpen && menu.subOptions.length > 0) {
                         setSelectedSubOption(menu.subOptions[0].key);
                       }
+                    } else if (menu.key === "templates") {
+                      setTemplatesOpen((open) => !open);
+                      if (!templatesOpen && menu.subOptions.length > 0) {
+                        setSelectedSubOption(menu.subOptions[0].key);
+                      }
                     } else if (menu.key === "smart-options") {
                       setSmartOptionsOpen((open) => !open);
                     } else {
@@ -114,6 +136,9 @@ export function MainLayout({
                   <span>{menu.label}</span>
                   {menu.key === "medical-notes" && (
                     <ChevronDown className={`ml-auto w-4 h-4 transition-transform ${medicalNotesOpen ? "rotate-0" : "-rotate-90"}`} />
+                  )}
+                  {menu.key === "templates" && (
+                    <ChevronDown className={`ml-auto w-4 h-4 transition-transform ${templatesOpen ? "rotate-0" : "-rotate-90"}`} />
                   )}
                   {menu.key === "smart-options" && (
                     <ChevronDown className={`ml-auto w-4 h-4 transition-transform ${smartOptionsOpen ? "rotate-0" : "-rotate-90"}`} />
@@ -144,6 +169,22 @@ export function MainLayout({
                             prevBtn?.focus();
                           }
                         }}
+                      >
+                        {sub.icon}
+                        <span>{sub.label}</span>
+                      </button>
+                    ))}
+                  </nav>
+                )}
+                {/* Templates subnav */}
+                {menu.key === "templates" && templatesOpen && menu.subOptions.length > 0 && (
+                  <nav className="flex flex-col gap-1 mt-2 ml-2">
+                    {menu.subOptions.map((sub) => (
+                      <button
+                        key={sub.key}
+                        className={`medical-subnav-button ${selectedSubOption === sub.key ? 'medical-subnav-active' : ''}`}
+                        onClick={() => setSelectedSubOption(sub.key)}
+                        tabIndex={0}
                       >
                         {sub.icon}
                         <span>{sub.label}</span>
@@ -185,8 +226,10 @@ export function MainLayout({
         <main className="medical-main-content">
           {selectedMenu === 'smart-options' && selectedSubOption === 'dot-phrases' ? (
             <DotPhraseManager />
-          ) : selectedMenu === 'smart-options' && selectedSubOption === 'templates' ? (
+          ) : selectedMenu === 'templates' && selectedSubOption === 'template-manager' ? (
             <TemplateManager />
+          ) : selectedMenu === 'templates' && selectedSubOption === 'template-selector' ? (
+            <TemplateSelectorPage />
           ) : (
             children
           )}

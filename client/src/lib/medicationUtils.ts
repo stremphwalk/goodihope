@@ -419,8 +419,9 @@ export async function getCommonDosages(medicationName: string): Promise<string[]
 }
 
 // Function to format medications for note generation preserving current order
-export function formatMedicationsForNote(medications: SelectedMedication[], language: string): string {
-  if (medications.length === 0) {
+export function formatMedicationsForNote(medications: SelectedMedication[], language: string = 'en'): string {
+  // Ensure medications is an array
+  if (!Array.isArray(medications) || medications.length === 0) {
     return language === 'fr' ? 'Aucun médicament.' : 'No medications.';
   }
 

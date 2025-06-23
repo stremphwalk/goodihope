@@ -28,9 +28,14 @@ export const templates = pgTable("templates", {
   category: text("category").notNull(), // admission, discharge, progress, consultation, etc.
   specialty: text("specialty"), // cardiology, neurology, etc.
   content: jsonb("content").notNull(), // JSON structure of template sections
+  compatibleNoteTypes: jsonb("compatible_note_types"), // ["admission", "progress", "consultation"]
+  compatibleSubtypes: jsonb("compatible_subtypes"), // ["general", "icu"] 
+  sectionDefaults: jsonb("section_defaults"), // Default content for each section
   isPublic: boolean("is_public").default(false),
   version: integer("version").default(1),
   parentTemplateId: integer("parent_template_id"), // for versioning (nullable)
+  lastUsed: timestamp("last_used"),
+  isFavorite: boolean("is_favorite").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -93,6 +98,23 @@ export const medicationCategories = {
   other: []
 } as const;
 
+// Enhanced template type with note type compatibility
+export const templateInsertSchema = createInsertSchema(templates).pick({
+  userId: true,
+  name: true,
+  description: true,
+  category: true,
+  specialty: true,
+  content: true,
+  compatibleNoteTypes: true,
+  compatibleSubtypes: true,
+  sectionDefaults: true,
+  isPublic: true,
+  version: true,
+  parentTemplateId: true,
+  isFavorite: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertDotPhrase = z.infer<typeof insertDotPhraseSchema>;
@@ -100,4 +122,29 @@ export type DotPhrase = typeof dotPhrases.$inferSelect;
 export type InsertRosNote = z.infer<typeof insertRosNoteSchema>;
 export type RosNote = typeof rosNotes.$inferSelect;
 export type Template = typeof templates.$inferSelect;
+export type InsertTemplate = z.infer<typeof templateInsertSchema>;
 export type TemplateUsage = typeof templateUsage.$inferSelect;
+
+// Note type definitions for template compatibility
+export type NoteType = "admission" | "progress" | "consultation";
+export type NoteSubtype = "general" | "icu";
+
+// Enhanced template content structure
+export interface EnhancedTemplateContent {
+  sections: Array<{
+    id: string;
+    sectionId: string;
+    order: number;
+    isEnabled: boolean;
+    customContent?: string;
+    smartOptions?: string[];
+  }>;
+  metadata: {
+    name: string;
+    description?: string;
+    category: string;
+    specialty?: string;
+    compatibleNoteTypes?: NoteType[];
+    compatibleSubtypes?: NoteSubtype[];
+  };
+}

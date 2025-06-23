@@ -175,12 +175,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
 
     // DELETE /api/dot-phrases/:id - Delete a custom dot phrase
-    app.delete("/api/dot-phrases/:id", async (req, res) => {
+    app.delete("/api/dot-phrases/:id", checkJwt, async (req, res) => {
       try {
         const { id } = req.params;
         
-        // TODO: Get userId from authenticated session/token
-        const userId = 1; // This should come from the authenticated user
+        // Get userId from authenticated user
+        const userId = req.auth?.sub ? parseInt(req.auth.sub) : 1;
         
         const deletedDotPhrase = await db
           .delete(dotPhrases)
@@ -204,11 +204,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     app.get("/api/templates", checkJwt, async (req: AuthenticatedRequest, res) => {
       try {
         if (!req.auth?.sub) {
+          console.error('Template fetch failed: No user identifier in token');
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
         }
         
         const user = await getOrCreateUser(req.auth.sub);
         const { category, specialty, search } = req.query;
+        
+        console.log('Fetching templates for user:', { 
+          userId: user.id, 
+          filters: { category, specialty, search } 
+        });
         
         // Build conditions array
         const conditions = [eq(templates.userId, user.id)];
@@ -225,6 +231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (search) {
           // TODO: Implement search functionality
           // conditions.push(like(templates.name, `%${search}%`));
+          console.log('Search functionality not yet implemented, ignoring search term:', search);
         }
         
         const userTemplates = await db
@@ -233,56 +240,138 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(and(...conditions))
           .orderBy(templates.updatedAt);
         
-        res.json(userTemplates);
+        console.log('Templates fetched successfully:', { 
+          count: userTemplates.length,
+          userId: user.id 
+        });
+        
+        // Ensure content is properly structured
+        const processedTemplates = userTemplates.map(template => {
+          let parsedContent = template.content;
+          if (typeof template.content === 'string') {
+            try {
+              parsedContent = JSON.parse(template.content);
+            } catch (parseError) {
+              console.error('Failed to parse template content for template', template.id, parseError);
+              parsedContent = { sections: [], metadata: {} }; // Fallback to empty structure
+            }
+          }
+          return {
+            ...template,
+            content: parsedContent
+          };
+        });
+        
+        res.json(processedTemplates);
       } catch (error) {
         console.error('Error fetching templates:', error);
-        res.status(500).json({ error: 'Failed to fetch templates' });
+        if (error instanceof Error) {
+          console.error('Error stack:', error.stack);
+        }
+        res.status(500).json({ 
+          error: 'Failed to fetch templates',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        });
       }
     });
 
     // POST /api/templates - Create a new template
     app.post("/api/templates", checkJwt, async (req: AuthenticatedRequest, res) => {
       try {
-        const { name, description, category, specialty, content, isPublic } = req.body;
+        const { 
+          name, 
+          description, 
+          category, 
+          specialty, 
+          content, 
+          isPublic,
+          compatibleNoteTypes,
+          compatibleSubtypes,
+          sectionDefaults
+        } = req.body;
         
         if (!req.auth?.sub) {
+          console.error('Template creation failed: No user identifier in token');
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
         }
         
         const user = await getOrCreateUser(req.auth.sub);
         
-        if (!name || !category || !content) {
-          return res.status(400).json({ error: 'Name, category, and content are required' });
+        // Enhanced validation
+        if (!name || !name.trim()) {
+          console.error('Template creation failed: Missing or empty name');
+          return res.status(400).json({ error: 'Template name is required and cannot be empty' });
+        }
+        
+        if (!category || !category.trim()) {
+          console.error('Template creation failed: Missing or empty category');
+          return res.status(400).json({ error: 'Category is required and cannot be empty' });
+        }
+        
+        if (!content) {
+          console.error('Template creation failed: Missing content');
+          return res.status(400).json({ error: 'Template content is required' });
+        }
+        
+        // Validate content structure
+        if (typeof content !== 'object' || !content.sections || !Array.isArray(content.sections)) {
+          console.error('Template creation failed: Invalid content structure', { content });
+          return res.status(400).json({ error: 'Template content must have a valid sections array' });
+        }
+        
+        if (!content.metadata || typeof content.metadata !== 'object') {
+          console.error('Template creation failed: Invalid metadata structure', { metadata: content.metadata });
+          return res.status(400).json({ error: 'Template content must have valid metadata' });
         }
         
         // Check for duplicate names for this user
         const existing = await db
           .select()
           .from(templates)
-          .where(and(eq(templates.userId, user.id), eq(templates.name, name)));
+          .where(and(eq(templates.userId, user.id), eq(templates.name, name.trim())));
         
         if (existing.length > 0) {
+          console.error('Template creation failed: Duplicate name', { name: name.trim(), userId: user.id });
           return res.status(409).json({ error: 'A template with this name already exists' });
         }
+        
+        console.log('Creating template:', { 
+          name: name.trim(), 
+          category, 
+          userId: user.id,
+          sectionsCount: content.sections.length 
+        });
         
         const newTemplate = await db
           .insert(templates)
           .values({
             userId: user.id,
-            name,
-            description: description || null,
-            category,
-            specialty: specialty || null,
+            name: name.trim(),
+            description: description?.trim() || null,
+            category: category.trim(),
+            specialty: specialty?.trim() || null,
             content,
+            compatibleNoteTypes: compatibleNoteTypes || ['admission'],
+            compatibleSubtypes: compatibleSubtypes || ['general'],
+            sectionDefaults: sectionDefaults || {},
             isPublic: isPublic || false,
-            version: 1
+            version: 1,
+            lastUsed: new Date(),
+            isFavorite: false
           })
           .returning();
         
+        console.log('Template created successfully:', { id: newTemplate[0].id, name: newTemplate[0].name });
         res.status(201).json(newTemplate[0]);
       } catch (error) {
         console.error('Error creating template:', error);
-        res.status(500).json({ error: 'Failed to create template' });
+        if (error instanceof Error) {
+          console.error('Error stack:', error.stack);
+        }
+        res.status(500).json({ 
+          error: 'Failed to create template',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        });
       }
     });
 
@@ -298,6 +387,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const user = await getOrCreateUser(req.auth.sub);
         
+        // Validate template ID
+        const templateId = parseInt(id);
+        if (isNaN(templateId) || templateId <= 0) {
+          return res.status(400).json({ error: 'Invalid template ID' });
+        }
+        
         if (!name || !category || !content) {
           return res.status(400).json({ error: 'Name, category, and content are required' });
         }
@@ -306,7 +401,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const existing = await db
           .select()
           .from(templates)
-          .where(and(eq(templates.id, parseInt(id)), eq(templates.userId, user.id)));
+          .where(and(eq(templates.id, templateId), eq(templates.userId, user.id)));
         
         if (existing.length === 0) {
           return res.status(404).json({ error: 'Template not found' });
@@ -318,8 +413,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .from(templates)
           .where(and(
             eq(templates.userId, user.id), 
-            eq(templates.name, name),
-            ne(templates.id, parseInt(id))
+            eq(templates.name, name.trim()),
+            ne(templates.id, templateId)
           ));
         
         if (duplicate.length > 0) {
@@ -329,15 +424,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const updatedTemplate = await db
           .update(templates)
           .set({
-            name,
-            description: description || null,
-            category,
-            specialty: specialty || null,
+            name: name.trim(),
+            description: description?.trim() || null,
+            category: category.trim(),
+            specialty: specialty?.trim() || null,
             content,
             isPublic: isPublic || false,
             updatedAt: new Date()
           })
-          .where(and(eq(templates.id, parseInt(id)), eq(templates.userId, user.id)))
+          .where(and(eq(templates.id, templateId), eq(templates.userId, user.id)))
           .returning();
         
         if (updatedTemplate.length === 0) {
@@ -362,9 +457,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const user = await getOrCreateUser(req.auth.sub);
         
+        // Validate template ID
+        const templateId = parseInt(id);
+        if (isNaN(templateId) || templateId <= 0) {
+          return res.status(400).json({ error: 'Invalid template ID' });
+        }
+        
         const deletedTemplate = await db
           .delete(templates)
-          .where(and(eq(templates.id, parseInt(id)), eq(templates.userId, user.id)))
+          .where(and(eq(templates.id, templateId), eq(templates.userId, user.id)))
           .returning();
         
         if (deletedTemplate.length === 0) {
@@ -390,11 +491,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const user = await getOrCreateUser(req.auth.sub);
         
+        // Validate template ID
+        const templateId = parseInt(id);
+        if (isNaN(templateId) || templateId <= 0) {
+          return res.status(400).json({ error: 'Invalid template ID' });
+        }
+        
         // Check if template exists
         const template = await db
           .select()
           .from(templates)
-          .where(eq(templates.id, parseInt(id)))
+          .where(eq(templates.id, templateId))
           .limit(1);
         
         if (template.length === 0) {
@@ -405,7 +512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await db
           .insert(templateUsage)
           .values({
-            templateId: parseInt(id),
+            templateId: templateId,
             userId: user.id,
             patientContext: patientContext || null
           });

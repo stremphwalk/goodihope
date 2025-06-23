@@ -1,14 +1,22 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { SmartTextEntry } from './SmartTextEntry';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface SmartImpressionSectionProps {
   value: string;
   onChange: (value: string) => void;
+  defaultContent?: string; // Template default content
 }
 
-export function SmartImpressionSection({ value, onChange }: SmartImpressionSectionProps) {
+export function SmartImpressionSection({ value, onChange, defaultContent }: SmartImpressionSectionProps) {
   const { language } = useLanguage();
+
+  // Populate default content when component mounts and no value exists
+  useEffect(() => {
+    if (defaultContent && !value.trim()) {
+      onChange(defaultContent);
+    }
+  }, [defaultContent, value, onChange]);
 
   const placeholder = language === 'fr' 
     ? `Diabète de type 2 mal contrôlé

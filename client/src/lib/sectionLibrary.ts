@@ -184,6 +184,8 @@ export interface TemplateContent {
     description?: string;
     category: string;
     specialty?: string;
+    compatibleNoteTypes?: string[];
+    compatibleSubtypes?: string[];
   };
 }
 
@@ -213,6 +215,8 @@ export const createDefaultTemplateContent = (): TemplateContent => ({
     name: '',
     description: '',
     category: 'admission',
-    specialty: ''
+    specialty: '',
+    compatibleNoteTypes: ['admission'],
+    compatibleSubtypes: ['general']
   }
 }); 

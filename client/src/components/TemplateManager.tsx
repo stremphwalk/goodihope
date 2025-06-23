@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X, HelpCircle, FileText, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, Copy, HelpCircle, FileText, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -10,19 +9,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from 'react-oidc-context';
 import { TemplateBuilder } from './TemplateBuilder';
 import { TemplateContent, createDefaultTemplateContent } from '@/lib/sectionLibrary';
-
-export interface Template {
-  id: string;
-  name: string;
-  description?: string;
-  category: string;
-  specialty?: string;
-  content: TemplateContent;
-  isPublic: boolean;
-  version: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { type Template } from '@shared/schema';
 
 interface TemplateManagerProps {
   onTemplatesChange?: (templates: Template[]) => void;
@@ -48,11 +35,12 @@ const templatesAPI = {
       throw new Error('Failed to fetch templates');
     }
     const data = await response.json();
-    return data.map((template: any) => ({
+    return Array.isArray(data) ? data.map((template: any) => ({
       ...template,
-      createdAt: new Date(template.createdAt),
-      updatedAt: new Date(template.updatedAt)
-    }));
+      createdAt: template.createdAt ? new Date(template.createdAt) : new Date(),
+      updatedAt: template.updatedAt ? new Date(template.updatedAt) : new Date(),
+      lastUsed: template.lastUsed ? new Date(template.lastUsed) : null
+    })) : [];
   },
 
   async create(template: Omit<Template, 'id' | 'createdAt' | 'updatedAt'>, id_token: string): Promise<Template> {
@@ -68,12 +56,13 @@ const templatesAPI = {
     const data = await response.json();
     return {
       ...data,
-      createdAt: new Date(data.createdAt),
-      updatedAt: new Date(data.updatedAt)
+      createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
+      updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(),
+      lastUsed: data.lastUsed ? new Date(data.lastUsed) : null
     };
   },
 
-  async update(id: string, template: Partial<Template>, id_token: string): Promise<Template> {
+  async update(id: number, template: Partial<Template>, id_token: string): Promise<Template> {
     const response = await fetch(`/api/templates/${id}`, {
       method: 'PUT',
       headers: getApiHeaders(id_token),
@@ -86,12 +75,13 @@ const templatesAPI = {
     const data = await response.json();
     return {
       ...data,
-      createdAt: new Date(data.createdAt),
-      updatedAt: new Date(data.updatedAt)
+      createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
+      updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(),
+      lastUsed: data.lastUsed ? new Date(data.lastUsed) : null
     };
   },
 
-  async delete(id: string, id_token: string): Promise<void> {
+  async delete(id: number, id_token: string): Promise<void> {
     const response = await fetch(`/api/templates/${id}`, {
       method: 'DELETE',
       headers: getApiHeaders(id_token),
@@ -105,8 +95,6 @@ const templatesAPI = {
 
 export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [isCreating, setIsCreating] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>('all');
@@ -116,16 +104,6 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [builderContent, setBuilderContent] = useState<TemplateContent>(createDefaultTemplateContent());
 
-  // Form state for creating/editing
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    category: 'admission',
-    specialty: '',
-    content: createDefaultTemplateContent(),
-    isPublic: false,
-    version: 1
-  });
 
   const { t } = useLanguage();
   const auth = useAuth();
@@ -185,94 +163,6 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
     onTemplatesChange?.(templates);
   }, [templates, onTemplatesChange]);
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      description: '',
-      category: 'admission',
-      specialty: '',
-      content: createDefaultTemplateContent(),
-      isPublic: false,
-      version: 1
-    });
-  };
-
-  const validateForm = () => {
-    if (!formData.name.trim()) return 'Template name is required';
-    if (!formData.category) return 'Category is required';
-    return null;
-  };
-
-  const handleSave = async () => {
-    const validationError = validateForm();
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    if (!auth.user?.id_token) {
-      setError('Authentication required');
-      return;
-    }
-
-    try {
-      setError(null);
-      if (editingId) {
-        const updatedTemplate = await templatesAPI.update(editingId, formData, auth.user.id_token);
-        setTemplates(prev => prev.map(t => t.id === editingId ? updatedTemplate : t));
-        setEditingId(null);
-      } else {
-        const newTemplate = await templatesAPI.create(formData, auth.user.id_token);
-        setTemplates(prev => [...prev, newTemplate]);
-        setIsCreating(false);
-      }
-      resetForm();
-    } catch (err) {
-      console.error('Failed to save template:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save template');
-    }
-  };
-
-  const handleEdit = (template: Template) => {
-    setFormData({
-      name: template.name,
-      description: template.description || '',
-      category: template.category,
-      specialty: template.specialty || '',
-      content: template.content,
-      isPublic: template.isPublic,
-      version: template.version
-    });
-    setEditingId(template.id);
-    setIsCreating(false);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!auth.user?.id_token) {
-      setError('Authentication required');
-      return;
-    }
-
-    if (!confirm('Are you sure you want to delete this template?')) {
-      return;
-    }
-
-    try {
-      setError(null);
-      await templatesAPI.delete(id, auth.user.id_token);
-      setTemplates(prev => prev.filter(t => t.id !== id));
-    } catch (err) {
-      console.error('Failed to delete template:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete template');
-    }
-  };
-
-  const handleCancel = () => {
-    setIsCreating(false);
-    setEditingId(null);
-    resetForm();
-    setError(null);
-  };
 
   const filteredTemplates = templates.filter(template => {
     const matchesSearch = !searchTerm || 
@@ -304,15 +194,46 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
       return;
     }
 
+    // Validate required fields
+    if (!content.metadata.name?.trim()) {
+      setError('Template name is required');
+      return;
+    }
+
+    if (!content.metadata.category) {
+      setError('Template category is required');
+      return;
+    }
+
+    if (content.sections.length === 0) {
+      setError('Template must have at least one section');
+      return;
+    }
+
     try {
+      setError(null);
+      
+      // Extract section defaults from content - ensure we have the latest from the builder
+      const sectionDefaults: Record<string, string> = {};
+      content.sections.forEach(section => {
+        if (section.customContent) {
+          sectionDefaults[section.sectionId] = section.customContent;
+        }
+      });
+
       const newTemplateData = {
-        name: content.metadata.name,
-        description: content.metadata.description,
+        name: content.metadata.name.trim(),
+        description: content.metadata.description?.trim() || null,
         category: content.metadata.category,
-        specialty: content.metadata.specialty,
+        specialty: content.metadata.specialty || null,
         content: content,
-        isPublic: false,
-        version: 1
+        sectionDefaults: sectionDefaults,
+        compatibleNoteTypes: (content.metadata as any).compatibleNoteTypes || ['admission'],
+        compatibleSubtypes: (content.metadata as any).compatibleSubtypes || ['general'],
+        isFavorite: editingTemplate?.isFavorite || false,
+        lastUsed: editingTemplate ? editingTemplate.lastUsed : null,
+        isPublic: editingTemplate?.isPublic || false,
+        version: editingTemplate ? editingTemplate.version + 1 : 1
       };
 
       if (editingTemplate) {
@@ -330,6 +251,7 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
       const updatedTemplates = await templatesAPI.getAll(auth.user.id_token, filters);
       setTemplates(updatedTemplates);
       setShowBuilder(false);
+      setEditingTemplate(null);
     } catch (error) {
       console.error('Error saving template:', error);
       setError(error instanceof Error ? error.message : 'Failed to save template');
@@ -337,13 +259,19 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
   };
 
   // Delete template
-  const deleteTemplate = async (id: string) => {
+  const deleteTemplate = async (id: number) => {
     if (!auth.user?.id_token) {
       setError('Authentication required');
       return;
     }
 
-    if (!confirm('Are you sure you want to delete this template?')) {
+    const template = templates.find(t => t.id === id);
+    if (!template) {
+      setError('Template not found');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete "${template.name}"? This action cannot be undone.`)) {
       return;
     }
 
@@ -351,6 +279,12 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
       setError(null);
       await templatesAPI.delete(id, auth.user.id_token);
       setTemplates(prev => prev.filter(t => t.id !== id));
+      
+      // Clear editing state if this template was being edited
+      if (editingTemplate && editingTemplate.id === id) {
+        setEditingTemplate(null);
+        setShowBuilder(false);
+      }
     } catch (err) {
       console.error('Failed to delete template:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete template');
@@ -359,17 +293,35 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
 
   // Duplicate template
   const duplicateTemplate = async (template: Template) => {
-    const duplicatedContent = {
-      ...template.content,
-      metadata: {
-        ...template.content.metadata,
-        name: `${template.name} (Copy)`
-      }
-    };
-    
-    setEditingTemplate(null);
-    setBuilderContent(duplicatedContent);
-    setShowBuilder(true);
+    if (!template.content || !template.content.metadata) {
+      setError('Cannot duplicate template: invalid template structure');
+      return;
+    }
+
+    try {
+      const duplicatedContent = {
+        ...template.content,
+        metadata: {
+          ...template.content.metadata,
+          name: `${template.name} (Copy)`,
+          description: template.description ? `Copy of: ${template.description}` : undefined
+        },
+        sections: Array.isArray(template.content.sections) 
+          ? template.content.sections.map(section => ({
+              ...section,
+              id: `${section.sectionId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            }))
+          : []
+      };
+      
+      setEditingTemplate(null);
+      setBuilderContent(duplicatedContent);
+      setShowBuilder(true);
+      setError(null);
+    } catch (err) {
+      console.error('Failed to duplicate template:', err);
+      setError('Failed to duplicate template');
+    }
   };
 
   return (
@@ -440,15 +392,9 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
           ))}
         </select>
         <Button 
-          onClick={() => {
-            setIsCreating(false);
-            setEditingId(null);
-            setEditingTemplate(null);
-            setBuilderContent(createDefaultTemplateContent());
-            setShowBuilder(true);
-          }}
+          onClick={createTemplate}
           className="flex items-center gap-2"
-          disabled={isCreating || editingId !== null || loading}
+          disabled={loading || !auth.user?.id_token}
         >
           <Plus className="w-4 h-4" />
           Build Template
@@ -467,117 +413,6 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
         </Card>
       )}
 
-      {/* Create/Edit Form */}
-      {(isCreating || editingId) && (
-        <Card className="mb-6 border-2 border-blue-200">
-          <CardHeader>
-            <CardTitle>{editingId ? 'Edit Template' : 'Create New Template'}</CardTitle>
-            <CardDescription>
-              {editingId ? 'Update your existing template' : 'Build a new medical note template'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Template Name</label>
-                <Input
-                  placeholder="e.g., Cardiac Admission Note"
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Category</label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  value={formData.category}
-                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                >
-                  {categories.map(cat => (
-                    <option key={cat} value={cat}>
-                      {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Specialty</label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  value={formData.specialty}
-                  onChange={(e) => setFormData(prev => ({ ...prev, specialty: e.target.value }))}
-                >
-                  <option value="">Select Specialty</option>
-                  {specialties.map(spec => (
-                    <option key={spec} value={spec}>
-                      {spec.charAt(0).toUpperCase() + spec.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="isPublic"
-                  checked={formData.isPublic}
-                  onChange={(e) => setFormData(prev => ({ ...prev, isPublic: e.target.checked }))}
-                  className="rounded"
-                />
-                <label htmlFor="isPublic" className="text-sm font-medium">
-                  Make template public (share with team)
-                </label>
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-2">Description</label>
-              <Input
-                placeholder="Brief description of this template"
-                value={formData.description}
-                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-2">Template Content</label>
-              <div className="p-4 bg-gray-50 border rounded-md">
-                <p className="text-sm text-gray-600 mb-4">
-                  Template builder interface will be implemented here.
-                  This will include drag-and-drop sections and smart options.
-                </p>
-                <Textarea
-                  placeholder="Template content will be built here..."
-                  value={JSON.stringify(formData.content, null, 2)}
-                  onChange={(e) => {
-                    try {
-                      const parsed = JSON.parse(e.target.value);
-                      setFormData(prev => ({ ...prev, content: parsed }));
-                    } catch {
-                      // Invalid JSON, keep as string for now
-                    }
-                  }}
-                  rows={6}
-                  className="font-mono text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Button onClick={handleSave} className="flex items-center gap-2">
-                <Save className="w-4 h-4" />
-                {editingId ? 'Update' : 'Create'}
-              </Button>
-              <Button variant="outline" onClick={handleCancel} className="flex items-center gap-2">
-                <X className="w-4 h-4" />
-                Cancel
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Templates List */}
       {!loading && (
@@ -613,23 +448,36 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
                         <p className="text-sm text-gray-600 mb-2">{template.description}</p>
                       )}
                       <p className="text-xs text-gray-400">
-                        Version {template.version} • Updated {template.updatedAt.toLocaleDateString()}
+                        Version {template.version} • Updated {new Date(template.updatedAt).toLocaleDateString()}
                       </p>
                     </div>
                     <div className="flex gap-1 ml-4">
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleEdit(template)}
-                        disabled={isCreating || editingId !== null}
+                        onClick={() => editTemplate(template)}
+                        disabled={!auth.user?.id_token}
+                        title="Edit template"
                       >
                         <Edit2 className="w-4 h-4" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(template.id)}
+                        onClick={() => duplicateTemplate(template)}
+                        className="text-blue-600 hover:text-blue-700"
+                        disabled={!auth.user?.id_token}
+                        title="Duplicate template"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => deleteTemplate(template.id)}
                         className="text-red-600 hover:text-red-700"
+                        disabled={!auth.user?.id_token}
+                        title="Delete template"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -647,13 +495,8 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
         <TemplateBuilder
           content={builderContent}
           onChange={setBuilderContent}
-          onClose={() => {
-            setShowBuilder(false);
-            // Save template when closing if it has a name
-            if (builderContent.metadata.name.trim()) {
-              saveTemplate(builderContent);
-            }
-          }}
+          onClose={() => setShowBuilder(false)}
+          onSave={saveTemplate}
         />
       )}
     </div>

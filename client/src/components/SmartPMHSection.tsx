@@ -1,14 +1,22 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { SmartTextEntry } from './SmartTextEntry';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface SmartPMHSectionProps {
   value: string;
   onChange: (value: string) => void;
+  defaultContent?: string; // Template default content
 }
 
-export function SmartPMHSection({ value, onChange }: SmartPMHSectionProps) {
+export function SmartPMHSection({ value, onChange, defaultContent }: SmartPMHSectionProps) {
   const { language } = useLanguage();
+
+  // Populate default content when component mounts and no value exists
+  useEffect(() => {
+    if (defaultContent && !value.trim()) {
+      onChange(defaultContent);
+    }
+  }, [defaultContent, value, onChange]);
 
   const placeholder = language === 'fr' 
     ? `Diabète de type 2
