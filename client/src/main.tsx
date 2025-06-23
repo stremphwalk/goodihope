@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { AuthProvider } from "react-oidc-context";
+import { LanguageProvider } from "./contexts/LanguageContext";
 
 const cognitoAuthConfig = {
   authority: "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_8JHg800Rm",
@@ -16,7 +17,9 @@ const cognitoAuthConfig = {
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AuthProvider {...cognitoAuthConfig}>
-      <App />
+      <LanguageProvider>
+        <App />
+      </LanguageProvider>
     </AuthProvider>
   </React.StrictMode>
 );

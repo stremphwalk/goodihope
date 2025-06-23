@@ -14,9 +14,12 @@ import {
   Users,
   Image,
   Brain,
-  Wind
+  Wind,
+  Sparkles
 } from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
+import { DotPhraseManager } from './DotPhraseManager';
+import { TemplateManager } from './TemplateManager';
 
 interface MainLayoutProps {
   selectedMenu: string;
@@ -58,10 +61,11 @@ export function MainLayout({
     },
     {
       key: "smart-options",
-      label: "Smart Options",
-      icon: <ClipboardList className="w-5 h-5" />,
+      label: "Smart Functions",
+      icon: <Sparkles className="w-5 h-5" />,
       subOptions: [
-        { key: "dot-phrases-main", label: "Dot Phrases", icon: <ClipboardList className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" /> },
+        { key: "dot-phrases", label: "Dot Phrases", icon: <ClipboardList className="w-6 h-6 text-green-500 bg-green-100 rounded-full p-1" /> },
+        { key: "templates", label: "Templates", icon: <FileText className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" /> },
       ],
     },
     {
@@ -99,9 +103,6 @@ export function MainLayout({
                       }
                     } else if (menu.key === "smart-options") {
                       setSmartOptionsOpen((open) => !open);
-                      if (!smartOptionsOpen && menu.subOptions.length > 0) {
-                        setSelectedSubOption(menu.subOptions[0].key);
-                      }
                     } else {
                       if (menu.subOptions.length > 0) {
                         setSelectedSubOption(menu.subOptions[0].key);
@@ -182,7 +183,13 @@ export function MainLayout({
         </Sidebar>
         {/* Main content area */}
         <main className="medical-main-content">
-          {children}
+          {selectedMenu === 'smart-options' && selectedSubOption === 'dot-phrases' ? (
+            <DotPhraseManager />
+          ) : selectedMenu === 'smart-options' && selectedSubOption === 'templates' ? (
+            <TemplateManager />
+          ) : (
+            children
+          )}
         </main>
         {/* Fixed preview panel on far right */}
         <aside className="medical-preview-panel">

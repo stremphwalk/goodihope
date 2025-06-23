@@ -1,24 +1,15 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Lock } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from 'react-oidc-context';
 
 export function LoginPage() {
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const auth = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (login(password)) {
-      setError('');
-    } else {
-      setError('Incorrect password. Please try again.');
-      setPassword('');
-    }
+  const handleLogin = () => {
+    auth.signinRedirect();
   };
 
   return (
@@ -32,28 +23,18 @@ export function LoginPage() {
           </div>
           <CardTitle className="text-2xl font-bold">Arinote Access</CardTitle>
           <CardDescription>
-            This application is currently in development. Please enter the password to continue.
+            This application is currently in development. Please sign in to continue.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Input
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={error ? 'border-red-500' : ''}
-                autoFocus
-              />
-              {error && (
-                <p className="text-sm text-red-500">{error}</p>
-              )}
-            </div>
-            <Button type="submit" className="w-full">
-              Access Application
+          <div className="space-y-4">
+            {error && (
+              <p className="text-sm text-red-500">{error}</p>
+            )}
+            <Button onClick={handleLogin} className="w-full">
+              Sign In
             </Button>
-          </form>
+          </div>
         </CardContent>
       </Card>
     </div>

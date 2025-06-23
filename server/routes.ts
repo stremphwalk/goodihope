@@ -1,12 +1,422 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { searchMedications, getCommonDosages } from "./parseCSVMedications";
 import { extractLabValuesFromImage, extractMedicationsFromImage } from "./vision";
 import { sanitizeString, validateBase64Image, SECURITY_CONFIG } from "./security";
+import { db } from "./database";
+import { dotPhrases, users, templates, templateUsage } from "../shared/schema";
+import { eq, and, ne } from "drizzle-orm";
+import { checkJwt } from './auth';
+
+// Extend the Express Request type to include the auth payload
+interface AuthenticatedRequest extends Request {
+  auth?: {
+    sub: string; // The user's unique identifier from Cognito
+    [key: string]: any;
+  };
+}
+
+// Function to get or create a user in your local database
+const getOrCreateUser = async (cognitoSub: string) => {
+  let user = await db.select().from(users).where(eq(users.username, cognitoSub)).limit(1);
+
+  if (user.length === 0) {
+    // If user doesn't exist, create a new one
+    // Note: You might want to handle user creation more robustly
+    // depending on your application's logic.
+    const newUser = await db.insert(users).values({
+      username: cognitoSub,
+      password: 'cognito-user', // Password is required but not used for Cognito logins
+    }).returning();
+    return newUser[0];
+  }
+  return user[0];
+};
 
 export async function registerRoutes(app: Express): Promise<Server> {
   try {
+    // Custom Dot Phrases API endpoints
+    
+    // GET /api/dot-phrases - Get all custom dot phrases for the current user
+    app.get("/api/dot-phrases", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        
+        const userDotPhrases = await db
+          .select()
+          .from(dotPhrases)
+          .where(eq(dotPhrases.userId, user.id))
+          .orderBy(dotPhrases.updatedAt);
+        
+        res.json(userDotPhrases);
+      } catch (error) {
+        console.error('Error fetching dot phrases:', error);
+        res.status(500).json({ error: 'Failed to fetch dot phrases' });
+      }
+    });
+
+    // POST /api/dot-phrases - Create a new custom dot phrase
+    app.post("/api/dot-phrases", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        const { trigger, content, description, category } = req.body;
+        
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        
+        if (!trigger || !content) {
+          return res.status(400).json({ error: 'Trigger and content are required' });
+        }
+        
+        if (!trigger.startsWith('/')) {
+          return res.status(400).json({ error: 'Trigger must start with /' });
+        }
+        
+        // Check for duplicate triggers for this user
+        const existing = await db
+          .select()
+          .from(dotPhrases)
+          .where(and(eq(dotPhrases.userId, user.id), eq(dotPhrases.trigger, trigger)));
+        
+        if (existing.length > 0) {
+          return res.status(409).json({ error: 'A dot phrase with this trigger already exists' });
+        }
+        
+        const newDotPhrase = await db
+          .insert(dotPhrases)
+          .values({
+            userId: user.id,
+            trigger,
+            content,
+            description: description || null,
+            category: category || 'general'
+          })
+          .returning();
+        
+        res.status(201).json(newDotPhrase[0]);
+      } catch (error) {
+        console.error('Error creating dot phrase:', error);
+        res.status(500).json({ error: 'Failed to create dot phrase' });
+      }
+    });
+
+    // PUT /api/dot-phrases/:id - Update an existing custom dot phrase
+    app.put("/api/dot-phrases/:id", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        const { id } = req.params;
+        const { trigger, content, description, category } = req.body;
+        
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        
+        if (!trigger || !content) {
+          return res.status(400).json({ error: 'Trigger and content are required' });
+        }
+        
+        if (!trigger.startsWith('/')) {
+          return res.status(400).json({ error: 'Trigger must start with /' });
+        }
+        
+        // Check if the dot phrase exists and belongs to the user
+        const existing = await db
+          .select()
+          .from(dotPhrases)
+          .where(and(eq(dotPhrases.id, parseInt(id)), eq(dotPhrases.userId, user.id)));
+        
+        if (existing.length === 0) {
+          return res.status(404).json({ error: 'Dot phrase not found' });
+        }
+        
+        // Check for duplicate triggers (excluding current phrase)
+        const duplicate = await db
+          .select()
+          .from(dotPhrases)
+          .where(and(
+            eq(dotPhrases.userId, user.id), 
+            eq(dotPhrases.trigger, trigger),
+            ne(dotPhrases.id, parseInt(id))
+          ));
+        
+        if (duplicate.length > 0) {
+          return res.status(409).json({ error: 'A dot phrase with this trigger already exists' });
+        }
+        
+        const updatedDotPhrase = await db
+          .update(dotPhrases)
+          .set({
+            trigger,
+            content,
+            description: description || null,
+            category: category || 'general',
+            updatedAt: new Date()
+          })
+          .where(and(eq(dotPhrases.id, parseInt(id)), eq(dotPhrases.userId, user.id)))
+          .returning();
+        
+        if (updatedDotPhrase.length === 0) {
+          return res.status(404).json({ error: 'Dot phrase not found' });
+        }
+        
+        res.json(updatedDotPhrase[0]);
+      } catch (error) {
+        console.error('Error updating dot phrase:', error);
+        res.status(500).json({ error: 'Failed to update dot phrase' });
+      }
+    });
+
+    // DELETE /api/dot-phrases/:id - Delete a custom dot phrase
+    app.delete("/api/dot-phrases/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        
+        // TODO: Get userId from authenticated session/token
+        const userId = 1; // This should come from the authenticated user
+        
+        const deletedDotPhrase = await db
+          .delete(dotPhrases)
+          .where(and(eq(dotPhrases.id, parseInt(id)), eq(dotPhrases.userId, userId)))
+          .returning();
+        
+        if (deletedDotPhrase.length === 0) {
+          return res.status(404).json({ error: 'Dot phrase not found' });
+        }
+        
+        res.json({ message: 'Dot phrase deleted successfully' });
+      } catch (error) {
+        console.error('Error deleting dot phrase:', error);
+        res.status(500).json({ error: 'Failed to delete dot phrase' });
+      }
+    });
+
+    // Template API endpoints
+    
+    // GET /api/templates - Get all templates for the current user
+    app.get("/api/templates", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        const { category, specialty, search } = req.query;
+        
+        // Build conditions array
+        const conditions = [eq(templates.userId, user.id)];
+        
+        if (category && category !== 'all') {
+          conditions.push(eq(templates.category, category as string));
+        }
+        
+        if (specialty && specialty !== 'all') {
+          conditions.push(eq(templates.specialty, specialty as string));
+        }
+        
+        // Apply search filter (placeholder for now)
+        if (search) {
+          // TODO: Implement search functionality
+          // conditions.push(like(templates.name, `%${search}%`));
+        }
+        
+        const userTemplates = await db
+          .select()
+          .from(templates)
+          .where(and(...conditions))
+          .orderBy(templates.updatedAt);
+        
+        res.json(userTemplates);
+      } catch (error) {
+        console.error('Error fetching templates:', error);
+        res.status(500).json({ error: 'Failed to fetch templates' });
+      }
+    });
+
+    // POST /api/templates - Create a new template
+    app.post("/api/templates", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        const { name, description, category, specialty, content, isPublic } = req.body;
+        
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        
+        if (!name || !category || !content) {
+          return res.status(400).json({ error: 'Name, category, and content are required' });
+        }
+        
+        // Check for duplicate names for this user
+        const existing = await db
+          .select()
+          .from(templates)
+          .where(and(eq(templates.userId, user.id), eq(templates.name, name)));
+        
+        if (existing.length > 0) {
+          return res.status(409).json({ error: 'A template with this name already exists' });
+        }
+        
+        const newTemplate = await db
+          .insert(templates)
+          .values({
+            userId: user.id,
+            name,
+            description: description || null,
+            category,
+            specialty: specialty || null,
+            content,
+            isPublic: isPublic || false,
+            version: 1
+          })
+          .returning();
+        
+        res.status(201).json(newTemplate[0]);
+      } catch (error) {
+        console.error('Error creating template:', error);
+        res.status(500).json({ error: 'Failed to create template' });
+      }
+    });
+
+    // PUT /api/templates/:id - Update an existing template
+    app.put("/api/templates/:id", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        const { id } = req.params;
+        const { name, description, category, specialty, content, isPublic } = req.body;
+        
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        
+        if (!name || !category || !content) {
+          return res.status(400).json({ error: 'Name, category, and content are required' });
+        }
+        
+        // Check if the template exists and belongs to the user
+        const existing = await db
+          .select()
+          .from(templates)
+          .where(and(eq(templates.id, parseInt(id)), eq(templates.userId, user.id)));
+        
+        if (existing.length === 0) {
+          return res.status(404).json({ error: 'Template not found' });
+        }
+        
+        // Check for duplicate names (excluding current template)
+        const duplicate = await db
+          .select()
+          .from(templates)
+          .where(and(
+            eq(templates.userId, user.id), 
+            eq(templates.name, name),
+            ne(templates.id, parseInt(id))
+          ));
+        
+        if (duplicate.length > 0) {
+          return res.status(409).json({ error: 'A template with this name already exists' });
+        }
+        
+        const updatedTemplate = await db
+          .update(templates)
+          .set({
+            name,
+            description: description || null,
+            category,
+            specialty: specialty || null,
+            content,
+            isPublic: isPublic || false,
+            updatedAt: new Date()
+          })
+          .where(and(eq(templates.id, parseInt(id)), eq(templates.userId, user.id)))
+          .returning();
+        
+        if (updatedTemplate.length === 0) {
+          return res.status(404).json({ error: 'Template not found' });
+        }
+        
+        res.json(updatedTemplate[0]);
+      } catch (error) {
+        console.error('Error updating template:', error);
+        res.status(500).json({ error: 'Failed to update template' });
+      }
+    });
+
+    // DELETE /api/templates/:id - Delete a template
+    app.delete("/api/templates/:id", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        const { id } = req.params;
+        
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        
+        const deletedTemplate = await db
+          .delete(templates)
+          .where(and(eq(templates.id, parseInt(id)), eq(templates.userId, user.id)))
+          .returning();
+        
+        if (deletedTemplate.length === 0) {
+          return res.status(404).json({ error: 'Template not found' });
+        }
+        
+        res.json({ message: 'Template deleted successfully' });
+      } catch (error) {
+        console.error('Error deleting template:', error);
+        res.status(500).json({ error: 'Failed to delete template' });
+      }
+    });
+
+    // POST /api/templates/:id/use - Record template usage
+    app.post("/api/templates/:id/use", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        const { id } = req.params;
+        const { patientContext } = req.body;
+        
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        
+        // Check if template exists
+        const template = await db
+          .select()
+          .from(templates)
+          .where(eq(templates.id, parseInt(id)))
+          .limit(1);
+        
+        if (template.length === 0) {
+          return res.status(404).json({ error: 'Template not found' });
+        }
+        
+        // Record usage
+        await db
+          .insert(templateUsage)
+          .values({
+            templateId: parseInt(id),
+            userId: user.id,
+            patientContext: patientContext || null
+          });
+        
+        res.json({ message: 'Template usage recorded' });
+      } catch (error) {
+        console.error('Error recording template usage:', error);
+        res.status(500).json({ error: 'Failed to record template usage' });
+      }
+    });
+
     // Medication search endpoint using authentic oral medication data
     app.get("/api/medications/search", async (req, res) => {
       try {

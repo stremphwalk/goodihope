@@ -12,11 +12,35 @@ export const users = pgTable("users", {
 export const dotPhrases = pgTable("dot_phrases", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
-  name: text("name").notNull(),
+  trigger: text("trigger").notNull(),
   content: text("content").notNull(),
+  description: text("description"),
   category: text("category").default("general"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const templates = pgTable("templates", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull(), // admission, discharge, progress, consultation, etc.
+  specialty: text("specialty"), // cardiology, neurology, etc.
+  content: jsonb("content").notNull(), // JSON structure of template sections
+  isPublic: boolean("is_public").default(false),
+  version: integer("version").default(1),
+  parentTemplateId: integer("parent_template_id"), // for versioning (nullable)
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const templateUsage = pgTable("template_usage", {
+  id: serial("id").primaryKey(),
+  templateId: integer("template_id").references(() => templates.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  usedAt: timestamp("used_at").defaultNow(),
+  patientContext: jsonb("patient_context"), // patient data when template was used
 });
 
 export const rosNotes = pgTable("ros_notes", {
@@ -38,8 +62,9 @@ export const insertUserSchema = createInsertSchema(users).pick({
 
 export const insertDotPhraseSchema = createInsertSchema(dotPhrases).pick({
   userId: true,
-  name: true,
+  trigger: true,
   content: true,
+  description: true,
   category: true,
 });
 
@@ -74,3 +99,5 @@ export type InsertDotPhrase = z.infer<typeof insertDotPhraseSchema>;
 export type DotPhrase = typeof dotPhrases.$inferSelect;
 export type InsertRosNote = z.infer<typeof insertRosNoteSchema>;
 export type RosNote = typeof rosNotes.$inferSelect;
+export type Template = typeof templates.$inferSelect;
+export type TemplateUsage = typeof templateUsage.$inferSelect;

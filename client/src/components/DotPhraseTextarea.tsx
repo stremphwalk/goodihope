@@ -6,6 +6,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { CalculationModal } from './CalculationModal';
 import { CalculationResult } from './CalculationModal';
 import getCaretCoordinates from 'textarea-caret';
+import { useAuth } from 'react-oidc-context';
 
 interface DotPhraseTextareaProps {
   value: string;
@@ -74,37 +75,36 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const [dateObj, setDateObj] = useState<Date | null>(null);
   const justExpandedToSmartOption = useRef(false);
   const [calendarIsOpen, setCalendarIsOpen] = useState(false);
+  const auth = useAuth();
 
-  // Load custom dot phrases from localStorage
   useEffect(() => {
-    const loadCustomPhrases = () => {
-      const saved = localStorage.getItem('customDotPhrases');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          setCustomPhrases(parsed.map((p: any) => ({
-            ...p,
-            createdAt: new Date(p.createdAt),
-            updatedAt: new Date(p.updatedAt)
-          })));
-        } catch (error) {
-          console.error('Failed to load custom dot phrases:', error);
+    const fetchCustomPhrases = async () => {
+      if (!auth.isAuthenticated || !auth.user?.id_token) {
+        setCustomPhrases([]);
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/dot-phrases', {
+          headers: {
+            'Authorization': `Bearer ${auth.user.id_token}`
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setCustomPhrases(data);
+        } else {
+          console.error('Failed to fetch custom dot phrases');
+          setCustomPhrases([]);
         }
+      } catch (error) {
+        console.error('Error fetching custom dot phrases:', error);
+        setCustomPhrases([]);
       }
     };
 
-    loadCustomPhrases();
-    
-    // Listen for storage changes to update when phrases are modified in another tab/component
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'customDotPhrases') {
-        loadCustomPhrases();
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+    fetchCustomPhrases();
+  }, [auth.isAuthenticated, auth.user]);
 
   // Create combined dot phrases object
   const getCombinedDotPhrases = (): Record<string, string> => {

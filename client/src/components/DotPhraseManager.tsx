@@ -8,7 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { Tabs, Tab } from '@/components/ui/tabs';
+import { useAuth } from 'react-oidc-context';
+import { Tabs } from '@/components/ui/tabs';
 
 export interface CustomDotPhrase {
   id: string;
@@ -24,12 +25,84 @@ interface DotPhraseManagerProps {
   onDotPhrasesChange?: (phrases: CustomDotPhrase[]) => void;
 }
 
+// API functions for custom dot phrases
+const getApiHeaders = (id_token: string) => ({
+  'Content-Type': 'application/json',
+  'Authorization': `Bearer ${id_token}`,
+});
+
+const dotPhrasesAPI = {
+  async getAll(id_token: string): Promise<CustomDotPhrase[]> {
+    const response = await fetch('/api/dot-phrases', {
+      headers: getApiHeaders(id_token),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch dot phrases');
+    }
+    const data = await response.json();
+    return data.map((phrase: any) => ({
+      ...phrase,
+      createdAt: new Date(phrase.createdAt),
+      updatedAt: new Date(phrase.updatedAt)
+    }));
+  },
+
+  async create(phrase: Omit<CustomDotPhrase, 'id' | 'createdAt' | 'updatedAt'>, id_token: string): Promise<CustomDotPhrase> {
+    const response = await fetch('/api/dot-phrases', {
+      method: 'POST',
+      headers: getApiHeaders(id_token),
+      body: JSON.stringify(phrase),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create dot phrase');
+    }
+    const data = await response.json();
+    return {
+      ...data,
+      createdAt: new Date(data.createdAt),
+      updatedAt: new Date(data.updatedAt)
+    };
+  },
+
+  async update(id: string, phrase: Partial<CustomDotPhrase>, id_token: string): Promise<CustomDotPhrase> {
+    const response = await fetch(`/api/dot-phrases/${id}`, {
+      method: 'PUT',
+      headers: getApiHeaders(id_token),
+      body: JSON.stringify(phrase),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update dot phrase');
+    }
+    const data = await response.json();
+    return {
+      ...data,
+      createdAt: new Date(data.createdAt),
+      updatedAt: new Date(data.updatedAt)
+    };
+  },
+
+  async delete(id: string, id_token: string): Promise<void> {
+    const response = await fetch(`/api/dot-phrases/${id}`, {
+      method: 'DELETE',
+      headers: getApiHeaders(id_token),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to delete dot phrase');
+    }
+  },
+};
+
 export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) {
   const [customPhrases, setCustomPhrases] = useState<CustomDotPhrase[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Form state for creating/editing
   const [formData, setFormData] = useState({
@@ -40,6 +113,7 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
   });
 
   const { t } = useLanguage();
+  const auth = useAuth();
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showOptionDialog, setShowOptionDialog] = useState(false);
@@ -49,25 +123,43 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
   const [showOptionPanel, setShowOptionPanel] = useState(false);
   const [optionInputs, setOptionInputs] = useState<string[]>(['']);
   const [smartTab, setSmartTab] = useState<'dropdown'|'date'>('dropdown');
+  const optionInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Load saved phrases from localStorage on mount
+  // Load saved phrases from API on mount
   useEffect(() => {
-    const saved = localStorage.getItem('customDotPhrases');
-    if (saved) {
+    const loadDotPhrases = async () => {
+      if (!auth.user?.id_token) return;
       try {
-        const parsed = JSON.parse(saved);
-        setCustomPhrases(parsed.map((p: any) => ({
-          ...p,
-          createdAt: new Date(p.createdAt),
-          updatedAt: new Date(p.updatedAt)
-        })));
-      } catch (error) {
-        console.error('Failed to load custom dot phrases:', error);
+        setLoading(true);
+        setError(null);
+        const phrases = await dotPhrasesAPI.getAll(auth.user.id_token);
+        setCustomPhrases(phrases);
+      } catch (err) {
+        console.error('Failed to load custom dot phrases:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load dot phrases');
+        // Fallback to localStorage if API fails
+        const saved = localStorage.getItem('customDotPhrases');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            setCustomPhrases(parsed.map((p: any) => ({
+              ...p,
+              createdAt: new Date(p.createdAt),
+              updatedAt: new Date(p.updatedAt)
+            })));
+          } catch (localError) {
+            console.error('Failed to load from localStorage:', localError);
+          }
+        }
+      } finally {
+        setLoading(false);
       }
-    }
-  }, []);
+    };
 
-  // Save phrases to localStorage whenever they change
+    loadDotPhrases();
+  }, [auth.user?.id_token]);
+
+  // Save phrases to localStorage as backup whenever they change
   useEffect(() => {
     localStorage.setItem('customDotPhrases', JSON.stringify(customPhrases));
     onDotPhrasesChange?.(customPhrases);
@@ -116,36 +208,38 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
     return null;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!auth.user?.id_token) {
+      alert("You must be logged in to save dot phrases.");
+      return;
+    }
+
     const error = validateForm();
     if (error) {
       alert(error);
       return;
     }
 
-    const now = new Date();
-    
-    if (editingId) {
-      // Update existing phrase
-      setCustomPhrases(phrases => phrases.map(p => 
-        p.id === editingId 
-          ? { ...p, ...formData, updatedAt: now }
-          : p
-      ));
-      setEditingId(null);
-    } else {
-      // Create new phrase
-      const newPhrase: CustomDotPhrase = {
-        id: Date.now().toString(),
-        ...formData,
-        createdAt: now,
-        updatedAt: now
-      };
-      setCustomPhrases(phrases => [...phrases, newPhrase]);
-      setIsCreating(false);
+    try {
+      if (editingId) {
+        // Update existing phrase
+        const updatedPhrase = await dotPhrasesAPI.update(editingId, formData, auth.user.id_token);
+        setCustomPhrases(phrases => phrases.map(p => 
+          p.id === editingId ? updatedPhrase : p
+        ));
+        setEditingId(null);
+      } else {
+        // Create new phrase
+        const newPhrase = await dotPhrasesAPI.create(formData, auth.user.id_token);
+        setCustomPhrases(phrases => [...phrases, newPhrase]);
+        setIsCreating(false);
+      }
+      
+      resetForm();
+    } catch (err) {
+      console.error('Error saving dot phrase:', err);
+      alert(err instanceof Error ? err.message : 'Failed to save dot phrase');
     }
-    
-    resetForm();
   };
 
   const handleEdit = (phrase: CustomDotPhrase) => {
@@ -159,9 +253,19 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
     setIsCreating(false);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    if (!auth.user?.id_token) {
+      alert("You must be logged in to delete dot phrases.");
+      return;
+    }
     if (confirm('Are you sure you want to delete this dot phrase?')) {
-      setCustomPhrases(phrases => phrases.filter(p => p.id !== id));
+      try {
+        await dotPhrasesAPI.delete(id, auth.user.id_token);
+        setCustomPhrases(phrases => phrases.filter(p => p.id !== id));
+      } catch (err) {
+        console.error('Error deleting dot phrase:', err);
+        alert(err instanceof Error ? err.message : 'Failed to delete dot phrase');
+      }
     }
   };
 
@@ -201,148 +305,212 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
     return result;
   };
 
-  // Insert smart option at cursor
-  const handleInsertOption = () => {
-    if (!textareaRef.current) return;
-    const options = optionInputs.map(opt => opt.trim()).filter(Boolean);
-    if (options.length === 0) return;
-    const smartSyntax = `[[${options.join('|')}]]`;
-    const textarea = textareaRef.current;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const before = formData.content.slice(0, start);
-    const after = formData.content.slice(end);
-    const newContent = before + smartSyntax + after;
-    setFormData(prev => ({ ...prev, content: newContent }));
-    setShowOptionPanel(false);
-    setOptionInputs(['']);
-    setTimeout(() => {
-      textarea.focus();
-      textarea.selectionStart = textarea.selectionEnd = before.length + smartSyntax.length;
-    }, 0);
+  // UI for smart option panel
+  const SmartOptionPanel = () => {
+    // We keep local state for the tab, but manage options via parent state
+    const [smartTab, setSmartTab] = useState<'dropdown'|'date'>('dropdown');
+    
+    const handleConfirm = () => {
+      if (!textareaRef.current) return;
+      
+      const textarea = textareaRef.current;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const before = formData.content.slice(0, start);
+      const after = formData.content.slice(end);
+      
+      let insertVal = '';
+      if (smartTab === 'dropdown') {
+        const options = optionInputRefs.current
+          .map(input => input?.value.trim())
+          .filter((value): value is string => Boolean(value));
+
+        if (options.length === 0) return;
+        insertVal = `[[${options.join('|')}]]`;
+      } else if (smartTab === 'date') {
+        insertVal = '[[DATE]]';
+      }
+      
+      const newContent = before + insertVal + after;
+      setFormData(prev => ({ ...prev, content: newContent }));
+      setShowOptionPanel(false);
+      setOptionInputs(['']); // Reset for next time
+      
+      // Focus back to textarea after insertion
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = before.length + insertVal.length;
+        }
+      }, 0);
+    };
+
+    const addOption = () => {
+      setOptionInputs(prev => [...prev, '']);
+    };
+
+    const removeOption = (index: number) => {
+      if (optionInputs.length > 1) {
+        setOptionInputs(prev => prev.filter((_, i) => i !== index));
+        // Also remove the ref
+        optionInputRefs.current.splice(index, 1);
+      }
+    };
+
+    const handleCancel = () => {
+      setShowOptionPanel(false);
+      setOptionInputs(['']); // Reset for next time
+    };
+
+    return (
+      <div style={{ 
+        background: '#fff', 
+        border: '1px solid #ccc', 
+        borderRadius: 8, 
+        padding: 16, 
+        position: 'absolute', 
+        zIndex: 100, 
+        boxShadow: '0 2px 8px rgba(0,0,0,0.12)', 
+        left: 0, 
+        top: -180, 
+        minWidth: 320, 
+        maxWidth: 400 
+      }}>
+        <div className="mb-2 font-medium">{t('dotManager.insertSmartOptionTitle')}</div>
+        <div className="mb-4 flex gap-2">
+          <button 
+            className={`px-3 py-1 rounded ${smartTab==='dropdown'?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-600'}`} 
+            onClick={()=>setSmartTab('dropdown')}
+          >
+            {t('dotManager.tabDropdown')}
+          </button>
+          <button 
+            className={`px-3 py-1 rounded ${smartTab==='date'?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-600'}`} 
+            onClick={()=>setSmartTab('date')}
+          >
+            {t('dotManager.tabDate')}
+          </button>
+        </div>
+        
+        {smartTab === 'dropdown' && (
+          <>
+            <div className="text-sm text-gray-600 mb-2">{t('dotManager.insertSmartOptionDesc')}</div>
+            {optionInputs.map((val, idx) => (
+              <div key={idx} className="flex gap-2 mb-2">
+                <input
+                  ref={el => optionInputRefs.current[idx] = el}
+                  type="text"
+                  className="border px-2 py-1 rounded flex-1"
+                  placeholder={`Option ${idx + 1}`}
+                  defaultValue={val}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (idx === optionInputs.length - 1) {
+                        addOption();
+                      } else {
+                        optionInputRefs.current[idx + 1]?.focus();
+                      }
+                    } else if (e.key === 'Backspace' && (e.target as HTMLInputElement).value === '' && optionInputs.length > 1) {
+                      e.preventDefault();
+                      removeOption(idx);
+                      if (idx > 0) {
+                        optionInputRefs.current[idx - 1]?.focus();
+                      }
+                    }
+                  }}
+                />
+                {optionInputs.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeOption(idx)}
+                    className="px-2 py-1 text-red-500 hover:text-red-700"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+            <Button 
+              type="button" 
+              size="sm" 
+              variant="outline" 
+              onClick={addOption}
+              className="mb-3"
+            >
+              + {t('dotManager.addAnotherOption')}
+            </Button>
+          </>
+        )}
+        
+        {smartTab === 'date' && (
+          <div className="text-sm p-4 text-center bg-gray-50 rounded">
+            {t('dotManager.dateSmartOptionDesc')}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <Button type="button" size="sm" variant="ghost" onClick={handleCancel}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="button" size="sm" onClick={handleConfirm}>
+            {t('common.confirm')}
+          </Button>
+        </div>
+      </div>
+    );
   };
 
-  // UI for smart option panel
-  const SmartOptionPanel = () => (
-    <div style={{ background: '#fff', border: '1px solid #ccc', borderRadius: 8, padding: 16, position: 'absolute', zIndex: 100, boxShadow: '0 2px 8px rgba(0,0,0,0.12)', left: 0, top: -180, minWidth: 320, maxWidth: 400 }}>
-      <div className="mb-2 font-medium">{t('dotManager.insertSmartOptionTitle')}</div>
-      <div className="mb-4 flex gap-2">
-        <button className={`px-3 py-1 rounded ${smartTab==='dropdown'?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-600'}`} onClick={()=>setSmartTab('dropdown')}>{t('dotManager.tabDropdown')}</button>
-        <button className={`px-3 py-1 rounded ${smartTab==='date'?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-600'}`} onClick={()=>setSmartTab('date')}>{t('dotManager.tabDate')}</button>
-      </div>
-      {smartTab === 'dropdown' && (
-        <>
-          <div className="text-sm text-gray-600 mb-2">{t('dotManager.insertSmartOptionDesc')}</div>
-          {optionInputs.map((val, idx) => (
-            <input
-              key={idx}
-              type="text"
-              className="border px-2 py-1 rounded w-full mb-2"
-              placeholder={`Option ${idx + 1}`}
-              value={val}
-              onChange={e => setOptionInputs(inputs => inputs.map((v, i) => i === idx ? e.target.value : v))}
-            />
-          ))}
-          <Button type="button" size="sm" variant="outline" onClick={() => setOptionInputs(inputs => [...inputs, ''])}>
-            + {t('dotManager.addAnotherOption')}
-          </Button>
-        </>
-      )}
-      {smartTab === 'date' && (
-        <>
-          <div className="text-sm text-gray-600 mb-2">{t('dotManager.datePickerDesc')}</div>
-          <div className="mb-2 text-xs text-gray-500">{t('dotManager.datePickerExample')}</div>
-        </>
-      )}
-      <div className="mt-3 text-xs text-gray-400">{t('dotManager.moreSmartOptionsSoon')}</div>
-      <div className="flex gap-2 mt-4">
-        <Button type="button" onClick={() => {
-          if (!textareaRef.current) return;
-          const textarea = textareaRef.current;
-          const start = textarea.selectionStart;
-          const end = textarea.selectionEnd;
-          const before = formData.content.slice(0, start);
-          const after = formData.content.slice(end);
-          let insertVal = '';
-          if (smartTab === 'dropdown') {
-            const options = optionInputs.map(opt => opt.trim()).filter(Boolean);
-            if (options.length === 0) return;
-            insertVal = `[[${options.join('|')}]]`;
-          } else if (smartTab === 'date') {
-            insertVal = '[[DATE]]';
-          }
-          const newContent = before + insertVal + after;
-          setFormData(prev => ({ ...prev, content: newContent }));
-          setShowOptionPanel(false);
-          setOptionInputs(['']);
-          setTimeout(() => {
-            textarea.focus();
-            textarea.selectionStart = textarea.selectionEnd = before.length + insertVal.length;
-          }, 0);
-        }}>{t('dotManager.insert')}</Button>
-        <Button type="button" variant="outline" onClick={() => { setShowOptionPanel(false); setOptionInputs(['']); }}>{t('dotManager.cancel')}</Button>
-      </div>
-    </div>
-  );
-
-  // Enhanced preview: preserve line breaks and show options as chips
   const enhancedPreview = (content: string) => {
-    // Replace smart options and date pickers with chips
-    const regex = /\[\[([^\]]+?)\]\]/g;
-    let lastIdx = 0;
+    const parts = content.split(/(\[\[.*?\]\])/g);
     const elements: React.ReactNode[] = [];
-    let match;
-    while ((match = regex.exec(content))) {
-      if (match.index > lastIdx) {
-        const text = content.slice(lastIdx, match.index);
-        text.split('\n').forEach((line, i, arr) => {
+    let lastIdx = 0;
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].startsWith('[[') && parts[i].endsWith(']]')) {
+        const match = parts[i].slice(2, -2).split('|');
+        if (match.length > 1) {
+          elements.push(
+            <span key={i} style={{ display: 'inline-block', margin: '0 4px' }}>
+              <span style={{
+                background: '#e0e7ff',
+                color: '#3730a3',
+                borderRadius: 8,
+                padding: '2px 8px',
+                fontSize: '0.95em',
+                border: '1px solid #a5b4fc',
+                display: 'inline-block',
+                marginRight: 2
+              }}>
+                {match.join(' / ')}
+              </span>
+            </span>
+          );
+        } else if (match[0] === 'DATE') {
+          elements.push(
+            <span key={i} style={{ display: 'inline-block', margin: '0 4px' }}>
+              <span style={{
+                background: '#fef9c3',
+                color: '#92400e',
+                borderRadius: 8,
+                padding: '2px 8px',
+                fontSize: '0.95em',
+                border: '1px solid #fde68a',
+                display: 'inline-block',
+                marginRight: 2
+              }}>
+                Date
+              </span>
+            </span>
+          );
+        }
+      } else {
+        const text = parts[i];
+        text.split('\n').forEach((line, j, arr) => {
           elements.push(line);
-          if (i < arr.length - 1) elements.push(<br key={lastIdx + i} />);
+          if (j < arr.length - 1) elements.push(<br key={lastIdx + j} />);
         });
       }
-      if (match[1] === 'DATE') {
-        elements.push(
-          <span key={match.index} style={{ display: 'inline-block', margin: '0 4px' }}>
-            <span style={{
-              background: '#fef9c3',
-              color: '#92400e',
-              borderRadius: 8,
-              padding: '2px 8px',
-              fontSize: '0.95em',
-              border: '1px solid #fde68a',
-              display: 'inline-block',
-              marginRight: 2
-            }}>
-              Date
-            </span>
-          </span>
-        );
-      } else {
-        const options = match[1].split('|');
-        elements.push(
-          <span key={match.index} style={{ display: 'inline-block', margin: '0 4px' }}>
-            <span style={{
-              background: '#e0e7ff',
-              color: '#3730a3',
-              borderRadius: 8,
-              padding: '2px 8px',
-              fontSize: '0.95em',
-              border: '1px solid #a5b4fc',
-              display: 'inline-block',
-              marginRight: 2
-            }}>
-              {options.join(' / ')}
-            </span>
-          </span>
-        );
-      }
-      lastIdx = match.index + match[0].length;
-    }
-    if (lastIdx < content.length) {
-      content.slice(lastIdx).split('\n').forEach((line, i, arr) => {
-        elements.push(line);
-        if (i < arr.length - 1) elements.push(<br key={lastIdx + i} />);
-      });
+      lastIdx += parts[i].length;
     }
     return elements;
   };
@@ -353,6 +521,15 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
         <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('dotManager.title')}</h1>
         <p className="text-gray-600">{t('dotManager.subtitle')}</p>
       </div>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert className="mb-6 bg-red-50 border-red-200">
+          <AlertDescription className="text-red-800">
+            {error}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Help Section */}
       <Card className="mb-6 bg-blue-50 border-blue-200">
@@ -395,12 +572,24 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
         <Button 
           onClick={() => setIsCreating(true)}
           className="flex items-center gap-2"
-          disabled={isCreating || editingId !== null}
+          disabled={isCreating || editingId !== null || loading}
         >
           <Plus className="w-4 h-4" />
           {t('dotManager.newPhrase')}
         </Button>
       </div>
+
+      {/* Loading State */}
+      {loading && (
+        <Card>
+          <CardContent className="text-center py-8">
+            <div className="flex items-center justify-center gap-2">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              <p className="text-gray-500">Loading dot phrases...</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Create/Edit Form */}
       {(isCreating || editingId) && (
@@ -497,59 +686,61 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
       )}
 
       {/* Phrases List */}
-      <div className="space-y-4">
-        {filteredPhrases.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-8">
-              <p className="text-gray-500">
-                {searchTerm || selectedCategory !== 'all' 
-                  ? t('dotManager.noMatch')
-                  : t('dotManager.noCustom')}
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          filteredPhrases.map(phrase => (
-            <Card key={phrase.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <code className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm font-mono">
-                        {phrase.trigger}
-                      </code>
-                      <Badge variant="secondary">{phrase.category}</Badge>
-                    </div>
-                    <h3 className="font-medium text-gray-900 mb-1">{phrase.description}</h3>
-                    <p className="text-sm text-gray-600 mb-2">{previewContent(phrase.content)}</p>
-                    <p className="text-xs text-gray-400">
-                      Updated {phrase.updatedAt.toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex gap-1 ml-4">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEdit(phrase)}
-                      disabled={isCreating || editingId !== null}
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(phrase.id)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
+      {!loading && (
+        <div className="space-y-4">
+          {filteredPhrases.length === 0 ? (
+            <Card>
+              <CardContent className="text-center py-8">
+                <p className="text-gray-500">
+                  {searchTerm || selectedCategory !== 'all' 
+                    ? t('dotManager.noMatch')
+                    : t('dotManager.noCustom')}
+                </p>
               </CardContent>
             </Card>
-          ))
-        )}
-      </div>
+          ) : (
+            filteredPhrases.map(phrase => (
+              <Card key={phrase.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <code className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm font-mono">
+                          {phrase.trigger}
+                        </code>
+                        <Badge variant="secondary">{phrase.category}</Badge>
+                      </div>
+                      <h3 className="font-medium text-gray-900 mb-1">{phrase.description}</h3>
+                      <p className="text-sm text-gray-600 mb-2">{previewContent(phrase.content)}</p>
+                      <p className="text-xs text-gray-400">
+                        Updated {phrase.updatedAt.toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex gap-1 ml-4">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEdit(phrase)}
+                        disabled={isCreating || editingId !== null}
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(phrase.id)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
