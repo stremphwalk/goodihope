@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X, HelpCircle, FileText, Search } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Edit2, Trash2, Save, X, HelpCircle, FileText, Search, MoreVertical, Copy, Eye, Share, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from 'react-oidc-context';
 import { TemplateBuilder } from './TemplateBuilder';
-import { TemplateContent, createDefaultTemplateContent } from '@/lib/sectionLibrary';
+import { TemplateContent, createDefaultTemplateContent, getSectionById } from '@/lib/sectionLibrary';
 
 export interface Template {
   id: string;
@@ -115,6 +115,14 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [builderContent, setBuilderContent] = useState<TemplateContent>(createDefaultTemplateContent());
+  
+  // Sub menu state
+  const [openSubMenuId, setOpenSubMenuId] = useState<string | null>(null);
+  const subMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Preview state
+  const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Form state for creating/editing
   const [formData, setFormData] = useState({
@@ -129,6 +137,18 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
 
   const { t } = useLanguage();
   const auth = useAuth();
+
+  // Close sub menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (subMenuRef.current && !subMenuRef.current.contains(event.target as Node)) {
+        setOpenSubMenuId(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const categories = [
     'admission',
@@ -370,6 +390,119 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
     setEditingTemplate(null);
     setBuilderContent(duplicatedContent);
     setShowBuilder(true);
+    setOpenSubMenuId(null);
+  };
+
+  // Preview template
+  const handlePreviewTemplate = (template: Template) => {
+    setPreviewTemplate(template);
+    setShowPreview(true);
+    setOpenSubMenuId(null);
+  };
+
+  // Share template
+  const shareTemplate = (template: Template) => {
+    navigator.clipboard.writeText(`Template: ${template.name}\nCategory: ${template.category}\nSections: ${template.content.sections.length}`);
+    setOpenSubMenuId(null);
+  };
+
+  // Template Preview Component
+  const TemplatePreview = ({ template, onClose }: { template: Template; onClose: () => void }) => {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
+          <div className="flex items-center justify-between p-6 border-b">
+            <div>
+              <h2 className="text-2xl font-bold">{template.name}</h2>
+              <p className="text-gray-600">{template.description}</p>
+            </div>
+            <Button onClick={onClose} variant="ghost" size="sm">
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+          <div className="flex-1 p-6 overflow-y-auto">
+            <div className="space-y-4">
+              <div className="flex gap-2 mb-4">
+                <Badge variant="secondary">{template.category}</Badge>
+                {template.specialty && <Badge variant="outline">{template.specialty}</Badge>}
+                <Badge variant="outline">v{template.version}</Badge>
+              </div>
+              <div className="space-y-3">
+                {template.content.sections.filter(s => s.isEnabled).map(section => {
+                  const sectionDef = getSectionById(section.sectionId);
+                  if (!sectionDef) return null;
+                  return (
+                    <Card key={section.id} className="border-l-4 border-l-blue-500">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <sectionDef.icon className="w-5 h-5 text-blue-600" />
+                          <h3 className="font-medium">{sectionDef.name}</h3>
+                        </div>
+                        <p className="text-sm text-gray-600">{sectionDef.description}</p>
+                        {section.customContent && (
+                          <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
+                            {section.customContent}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Sub menu component
+  const TemplateSubMenu = ({ template, isOpen }: { template: Template; isOpen: boolean }) => {
+    if (!isOpen) return null;
+
+    return (
+      <div 
+        ref={subMenuRef}
+        className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[160px]"
+      >
+        <button
+          onClick={() => editTemplate(template)}
+          className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+        >
+          <Edit2 className="w-4 h-4" />
+          Edit Template
+        </button>
+        <button
+          onClick={() => duplicateTemplate(template)}
+          className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+        >
+          <Copy className="w-4 h-4" />
+          Duplicate
+        </button>
+        <button
+          onClick={() => handlePreviewTemplate(template)}
+          className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+        >
+          <Eye className="w-4 h-4" />
+          Preview
+        </button>
+        <button
+          onClick={() => shareTemplate(template)}
+          className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+        >
+          <Share className="w-4 h-4" />
+          Copy Info
+        </button>
+        <div className="border-t border-gray-100 my-1" />
+        <button
+          onClick={() => deleteTemplate(template.id)}
+          className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-red-600"
+        >
+          <Trash2 className="w-4 h-4" />
+          Delete
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -616,23 +749,19 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
                         Version {template.version} • Updated {template.updatedAt.toLocaleDateString()}
                       </p>
                     </div>
-                    <div className="flex gap-1 ml-4">
+                    <div className="relative ml-4">
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleEdit(template)}
-                        disabled={isCreating || editingId !== null}
+                        onClick={() => setOpenSubMenuId(openSubMenuId === template.id ? null : template.id)}
+                        className="h-8 w-8 p-0"
                       >
-                        <Edit2 className="w-4 h-4" />
+                        <MoreVertical className="w-4 h-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(template.id)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <TemplateSubMenu 
+                        template={template} 
+                        isOpen={openSubMenuId === template.id} 
+                      />
                     </div>
                   </div>
                 </CardContent>
@@ -653,6 +782,17 @@ export function TemplateManager({ onTemplatesChange }: TemplateManagerProps) {
             if (builderContent.metadata.name.trim()) {
               saveTemplate(builderContent);
             }
+          }}
+        />
+      )}
+
+      {/* Template Preview Modal */}
+      {showPreview && previewTemplate && (
+        <TemplatePreview
+          template={previewTemplate}
+          onClose={() => {
+            setShowPreview(false);
+            setPreviewTemplate(null);
           }}
         />
       )}
