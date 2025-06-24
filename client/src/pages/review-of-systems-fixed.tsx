@@ -555,62 +555,322 @@ function ReviewOfSystems() {
   // Generate content for a specific section with template custom content
   const generateSectionContent = useCallback((sectionId: string, customContent?: string) => {
     try {
-      // Use custom content from template if available, otherwise generate from current data
-      const defaultContent = customContent || '';
+      // Helper function to get section header
+      const getSectionHeader = (sectionId: string): string => {
+        const headers: Record<string, { en: string; fr: string }> = {
+          'note-type': { en: 'NOTE TYPE', fr: 'TYPE DE NOTE' },
+          'pmh': { en: 'PAST MEDICAL HISTORY', fr: 'ANTÉCÉDENTS MÉDICAUX' },
+          'allergies-social': { en: 'ALLERGIES & SOCIAL HISTORY', fr: 'ALLERGIES & HISTOIRE SOCIALE' },
+          'meds': { en: 'MEDICATIONS', fr: 'MÉDICAMENTS' },
+          'hpi': { en: 'HISTORY OF PRESENT ILLNESS', fr: 'HISTOIRE DE LA MALADIE ACTUELLE' },
+          'physical-exam': { en: 'PHYSICAL EXAMINATION', fr: 'EXAMEN PHYSIQUE' },
+          'labs': { en: 'LABORATORY RESULTS', fr: 'RÉSULTATS DE LABORATOIRE' },
+          'imagery': { en: 'IMAGING', fr: 'IMAGERIE' },
+          'impression': { en: 'CLINICAL IMPRESSION', fr: 'IMPRESSION CLINIQUE' },
+          'ventilation': { en: 'VENTILATION PARAMETERS', fr: 'PARAMÈTRES DE VENTILATION' },
+          'plan': { en: 'PLAN', fr: 'PLAN' }
+        };
+        
+        const header = headers[sectionId];
+        if (!header) return sectionId.toUpperCase();
+        return language === 'fr' ? header.fr : header.en;
+      };
       
+      // If custom content is provided, use it with proper header
+      if (customContent && customContent.trim()) {
+        const header = getSectionHeader(sectionId);
+        return `${header}:\n${customContent}`;
+      }
+      
+      // Generate content based on section type with proper headers
       switch (sectionId) {
-        case 'note-type':
-          if (defaultContent) return defaultContent;
-          return `${language === 'fr' ? 'TYPE DE NOTE' : 'NOTE TYPE'}: ${noteType?.toUpperCase()}`;
+        case 'note-type': {
+          const header = getSectionHeader(sectionId);
+          const content = noteType ? noteType.toUpperCase() : '[Enter note type]';
+          return `${header}:\n${content}`;
+        }
         
-        case 'pmh':
-          if (defaultContent) return defaultContent;
-          return generatePMHText ? generatePMHText(defaultContent) : (language === 'fr' ? "ANTÉCÉDENTS MÉDICAUX :\n[Entrer les antécédents médicaux]" : "PAST MEDICAL HISTORY:\n[Enter past medical history]");
+        case 'pmh': {
+          const header = getSectionHeader(sectionId);
+          if (!pmhText.trim()) {
+            const placeholder = language === 'fr' ? '[Entrer les antécédents médicaux]' : '[Enter past medical history]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          // Format the smart text entry input
+          const lines = pmhText.split('\n');
+          const formatted: string[] = [];
+          let conditionCount = 0;
+
+          for (let line of lines) {
+            line = line.trim();
+            if (!line) continue;
+
+            if (line.startsWith('#')) {
+              conditionCount++;
+              const condition = line.replace('#', '').trim();
+              formatted.push(`${conditionCount}. ${condition}`);
+            } else if (line.startsWith('-')) {
+              const detail = line.replace('-', '').trim();
+              formatted.push(`     - ${detail}`);
+            } else {
+              conditionCount++;
+              formatted.push(`${conditionCount}. ${line}`);
+            }
+          }
+          
+          return `${header}:\n${formatted.join('\n')}`;
+        }
         
-        case 'allergies-social':
-          if (defaultContent) return defaultContent;
-          return generateAllergiesSocialText ? generateAllergiesSocialText(defaultContent) : (language === 'fr' ? "ALLERGIES & HISTOIRE SOCIALE :\n[Entrer les allergies et l'histoire sociale]" : "ALLERGIES & SOCIAL HISTORY:\n[Enter allergies and social history]");
+        case 'allergies-social': {
+          const header = getSectionHeader(sectionId);
+          
+          // Generate allergies text
+          let allergiesText = '';
+          if (language === 'fr') {
+            if (allergies.hasAllergies && allergies.allergiesList.length > 0) {
+              allergiesText = `ALLERGIES :\n${allergies.allergiesList.join(', ')}`;
+            } else {
+              allergiesText = `ALLERGIES :\nAucune allergie connue`;
+            }
+          } else {
+            if (allergies.hasAllergies && allergies.allergiesList.length > 0) {
+              allergiesText = `ALLERGIES:\n${allergies.allergiesList.join(', ')}`;
+            } else {
+              allergiesText = `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
+            }
+          }
+
+          // Generate social history text
+          let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
+          const socialItems = [];
+          
+          // Always include smoking status
+          if (socialHistory.smoking.status) {
+            socialItems.push(language === 'fr' 
+              ? `Tabagisme: ${socialHistory.smoking.details}`
+              : `Smoking: ${socialHistory.smoking.details}`);
+          } else {
+            socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+          }
+          
+          // Always include alcohol status
+          if (socialHistory.alcohol.status) {
+            socialItems.push(language === 'fr' 
+              ? `Alcool: ${socialHistory.alcohol.details}`
+              : `Alcohol: ${socialHistory.alcohol.details}`);
+          } else {
+            socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+          }
+          
+          // Always include drugs status
+          if (socialHistory.drugs.status) {
+            socialItems.push(language === 'fr' 
+              ? `Drogues: ${socialHistory.drugs.details}`
+              : `Drugs: ${socialHistory.drugs.details}`);
+          } else {
+            socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+          }
+          
+          socialText += socialItems.join('\n');
+          return `${allergiesText}\n\n${socialText.trim()}`;
+        }
         
-        case 'meds':
-          if (defaultContent) return defaultContent;
-          return generateMedicationsText ? generateMedicationsText(defaultContent) : (language === 'fr' ? "MÉDICAMENTS :\n[Entrer les médicaments]" : "MEDICATIONS:\n[Enter medications]");
+        case 'meds': {
+          const header = getSectionHeader(sectionId);
+          let medicationsText = "";
+          
+          if (language === 'fr') {
+            if (medications.homeMedications.length > 0) {
+              const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'fr');
+              medicationsText += `MÉDICAMENTS À DOMICILE :\n${organizedHomeMeds}\n\n`;
+            } else {
+              medicationsText += `MÉDICAMENTS À DOMICILE :\n[Aucun médicament à domicile]\n\n`;
+            }
+            
+            if (medications.hospitalMedications.length > 0) {
+              const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'fr');
+              medicationsText += `MÉDICAMENTS HOSPITALIERS :\n${organizedHospitalMeds}`;
+            } else {
+              medicationsText += `MÉDICAMENTS HOSPITALIERS :\n[Aucun médicament hospitalier]`;
+            }
+          } else {
+            if (medications.homeMedications.length > 0) {
+              const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'en');
+              medicationsText += `HOME MEDICATIONS:\n${organizedHomeMeds}\n\n`;
+            } else {
+              medicationsText += `HOME MEDICATIONS:\n[No home medications]\n\n`;
+            }
+            
+            if (medications.hospitalMedications.length > 0) {
+              const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'en');
+              medicationsText += `HOSPITAL MEDICATIONS:\n${organizedHospitalMeds}`;
+            } else {
+              medicationsText += `HOSPITAL MEDICATIONS:\n[No hospital medications]`;
+            }
+          }
+          
+          return medicationsText;
+        }
         
-        case 'hpi':
-          if (defaultContent) return defaultContent;
-          return generateHPIText ? generateHPIText(defaultContent) : (language === 'fr' ? "HISTOIRE DE LA MALADIE ACTUELLE :\n[Entrer l'HMA]" : "HISTORY OF PRESENT ILLNESS:\n[Enter HPI]");
+        case 'hpi': {
+          const header = getSectionHeader(sectionId);
+          const content = hpiText || (language === 'fr' ? "[Entrer l'HMA]" : "[Enter HPI]");
+          
+          // Generate ROS text
+          let rosText = '';
+          if (Object.keys(selectedSymptoms).length > 0) {
+            const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<string>]) => {
+              const symptomList = Array.from(symptoms);
+              if (symptomList.length === 0) return '';
+              const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string}[]} >)[system];
+              const getLabel = (key: string) => {
+                const found = systemObj?.symptoms.find((s: {key: string}) => s.key === key);
+                if (!found) return key.replace(/_/g, ' ');
+                return language === 'fr' ? found.fr : found.en;
+              };
+              let sentence = '';
+              if (language === 'fr') {
+                sentence = symptomList.map(symptom => `pas de ${getLabel(symptom)}`).join(', ');
+              } else {
+                sentence = symptomList.map(symptom => `no ${getLabel(symptom).charAt(0).toLowerCase() + getLabel(symptom).slice(1)}`).join(', ');
+              }
+              sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+              if (!sentence.endsWith('.')) sentence += '.';
+              return sentence;
+            }).filter(Boolean);
+
+            if (language === 'fr') {
+              rosText = rosSentences.join(' ');
+              const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+              if (uncoveredSystems.length > 0) {
+                rosText += ' Tous les autres systèmes révisés et négatifs.';
+              }
+            } else {
+              rosText = rosSentences.join(' ');
+              const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+              if (uncoveredSystems.length > 0) {
+                rosText += ' All other systems reviewed and negative.';
+              }
+            }
+          }
+          
+          // Add ROS if available
+          const fullContent = rosText ? 
+            (content.trim().endsWith('.') ? `${content} ${rosText}` : `${content}. ${rosText}`) : 
+            content;
+          
+          return `${header}:\n${fullContent}`;
+        }
         
-        case 'physical-exam':
-          if (defaultContent) return defaultContent;
-          return generatePhysicalExamText ? generatePhysicalExamText(defaultContent) : (language === 'fr' ? "EXAMEN PHYSIQUE :\n[Entrer l'examen physique]" : "PHYSICAL EXAMINATION:\n[Enter physical examination]");
+        case 'physical-exam': {
+          const header = getSectionHeader(sectionId);
+          if (selectedPeSystems.size === 0) {
+            const placeholder = language === 'fr' ? '[Entrer l\'examen physique]' : '[Enter physical examination]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          const peEntries = Array.from(selectedPeSystems).map(system => {
+            const findings = physicalExamOptions[system as keyof typeof physicalExamOptions];
+            return language === 'fr' ? findings : `${system}: ${findings}`;
+          });
+          
+          return `${header}:\n${peEntries.join("\n")}`;
+        }
         
-        case 'labs':
-          if (defaultContent) return defaultContent;
-          return generateLabValuesText ? generateLabValuesText(defaultContent) : (language === 'fr' ? "RÉSULTATS DE LABORATOIRE :\n[Entrer les résultats de laboratoire]" : "LABORATORY RESULTS:\n[Enter laboratory results]");
+        case 'labs': {
+          const header = getSectionHeader(sectionId);
+          if (processedLabValues.length === 0) {
+            const placeholder = language === 'fr' ? '[Entrer les résultats de laboratoire]' : '[Enter laboratory results]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          const labText = formatLabValuesForNote(processedLabValues);
+          return `${header}:\n${labText}`;
+        }
         
-        case 'imagery':
-          if (defaultContent) return defaultContent;
-          return generateImageryText ? generateImageryText(defaultContent) : (language === 'fr' ? "IMAGERIE :\n[Entrer les résultats d'imagerie]" : "IMAGING:\n[Enter imaging results]");
+        case 'imagery': {
+          const header = getSectionHeader(sectionId);
+          if (imageryStudies.length === 0) {
+            const placeholder = language === 'fr' ? '[Entrer les résultats d\'imagerie]' : '[Enter imaging results]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          const studies = imageryStudies.map(study => 
+            `${study.system} ${study.modality}: ${study.result}`
+          ).join('\n');
+          
+          return `${header}:\n${studies}`;
+        }
         
-        case 'impression':
-          if (defaultContent) return defaultContent;
-          return generateImpressionText ? generateImpressionText(defaultContent) : (language === 'fr' ? "IMPRESSION CLINIQUE :\n[Entrer les impressions cliniques]" : "CLINICAL IMPRESSION:\n[Enter clinical impressions]");
+        case 'impression': {
+          const header = getSectionHeader(sectionId);
+          if (!impressionText.trim()) {
+            const placeholder = language === 'fr' ? '[Entrer les impressions cliniques]' : '[Enter clinical impressions]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          // Format the smart text entry input
+          const lines = impressionText.split('\n');
+          const formatted: string[] = [];
+          let conditionCount = 0;
+
+          for (let line of lines) {
+            line = line.trim();
+            if (!line) continue;
+
+            if (line.startsWith('#')) {
+              conditionCount++;
+              const condition = line.replace('#', '').trim();
+              formatted.push(`${conditionCount}. ${condition}`);
+            } else if (line.startsWith('-')) {
+              const detail = line.replace('-', '').trim();
+              formatted.push(`     - ${detail}`);
+            } else {
+              conditionCount++;
+              formatted.push(`${conditionCount}. ${line}`);
+            }
+          }
+          
+          return `${header}:\n${formatted.join('\n')}`;
+        }
         
-        case 'ventilation':
-          if (defaultContent) return defaultContent;
-          return generateVentilationText ? generateVentilationText(defaultContent) : (language === 'fr' ? "PARAMÈTRES DE VENTILATION :\n[Entrer les paramètres de ventilation]" : "VENTILATION PARAMETERS:\n[Enter ventilation parameters]");
+        case 'ventilation': {
+          const header = getSectionHeader(sectionId);
+          
+          // Generate intubation parameters text
+          if (Object.keys(intubationValues).length === 0) {
+            const placeholder = language === 'fr' ? '[Entrer les paramètres de ventilation]' : '[Enter ventilation parameters]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          let intubationText = "";
+          Object.entries(intubationValues).forEach(([param, data]) => {
+            if (data.current) {
+              intubationText += `${param}: ${data.current}\n`;
+            }
+          });
+          
+          return `${header}:\n${intubationText.trim()}`;
+        }
         
-        case 'plan':
-          if (defaultContent) return defaultContent;
-          return generatePlanText ? generatePlanText(defaultContent) : (language === 'fr' ? "PLAN :\n[Entrer le plan de traitement]" : "PLAN:\n[Enter treatment plan]");
+        case 'plan': {
+          const header = getSectionHeader(sectionId);
+          const placeholder = language === 'fr' ? '[Entrer le plan de traitement]' : '[Enter treatment plan]';
+          return `${header}:\n${placeholder}`;
+        }
         
-        default:
-          return defaultContent || `[${sectionId}]`;
+        default: {
+          const header = getSectionHeader(sectionId);
+          return `${header}:\n[${sectionId}]`;
+        }
       }
     } catch (error) {
       console.error(`Error generating content for section ${sectionId}:`, error);
-      return customContent || `[Error: ${sectionId}]`;
+      const header = sectionId.toUpperCase();
+      return `${header}:\n[Error: ${sectionId}]`;
     }
-  }, [language, pmhText, allergies, socialHistory, medications, selectedPeSystems, processedLabValues, hpiText, impressionText, intubationValues, noteType]);
+  }, [language, pmhText, allergies, socialHistory, medications, selectedPeSystems, processedLabValues, hpiText, impressionText, intubationValues, noteType, selectedSymptoms, imageryStudies]);
 
   // Default note generation (existing logic)
   const generateDefaultNote = useCallback(() => {
