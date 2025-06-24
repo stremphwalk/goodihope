@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -462,6 +462,7 @@ function ReviewOfSystems() {
   const [noteType, setNoteType] = useState<"admission" | "progress" | "consultation" | null>(null);
   const [admissionType, setAdmissionType] = useState<"general" | "icu">("general");
   const [progressType, setProgressType] = useState<"general" | "icu">("general");
+  const [sectionTemplates, setSectionTemplates] = useState<Record<string, string>>({});
   
   // Custom text preservation - track if user has manually edited the note
   const [hasUserEditedNote, setHasUserEditedNote] = useState(false);
@@ -2273,6 +2274,7 @@ function ReviewOfSystems() {
     setNoteType(null);
     setAdmissionType("general");
     setProgressType("general");
+    clearSectionTemplates();
     toast({
       title: "Form Reset",
       description: "All selections have been cleared",
@@ -2282,7 +2284,7 @@ function ReviewOfSystems() {
   // Helper function to generate allergies and social history sections
   const generateAllergiesAndSocialHistory = (allergiesData: AllergiesData, socialHistoryData: SocialHistoryData, isfrench: boolean = false) => {
     // Generate allergies section
-    let allergiesSection = isfrench ? "ALLERGIES :\n" : "ALLERGIES:\n";
+    let allergiesSection = "ALLERGIES:\n";
     if (allergiesData.hasAllergies) {
       if (allergiesData.allergiesList.length > 0 && allergiesData.allergiesList.some(a => a.trim())) {
         allergiesSection += allergiesData.allergiesList.filter(a => a.trim()).join('\n');
@@ -2294,7 +2296,7 @@ function ReviewOfSystems() {
     }
     
     // Generate social history section
-    let socialSection = isfrench ? "\n\nHABITUDES DE VIE :\n" : "\n\nSOCIAL HISTORY:\n";
+    let socialSection = isfrench ? "\n\nHABITUDES DE VIE:\n" : "\n\nSOCIAL HISTORY:\n";
     const socialItems = [];
     
     if (socialHistoryData.smoking.status) {
@@ -2449,6 +2451,7 @@ function ReviewOfSystems() {
     generateAllergiesTemplate(allergiesData);
     generateSocialHistoryTemplate(socialHistoryData);
     generateMedicationsTemplate(medicationsData);
+    generateChiefComplaintTemplate(chiefComplaintData);
 
     // Generate and set the final note
     const finalNote = generateFinalNote();
@@ -2505,9 +2508,119 @@ function ReviewOfSystems() {
 
   // Generate Laboratory section template
   const generateLaboratoryTemplate = () => {
-    // Create laboratory template here
     let labTemplate = "";
-    // Implementation will be added
+    
+    // Check if we have any lab data (standard categories, OCR extracted values, or custom labs)
+    const hasStandardLabs = selectedLabCategories.size > 0;
+    const hasOCRLabs = Object.keys(labValues).length > 0 && Object.values(labValues).some(categoryData => 
+      Object.values(categoryData).some(labData => labData.current && labData.current.trim() !== "")
+    );
+    const hasCustomLabs = Object.keys(customLabs).length > 0 && Object.values(customLabs).some(lab => lab.current.trim() !== "");
+    
+    if (hasStandardLabs || hasOCRLabs || hasCustomLabs) {
+      const labSections: string[] = [];
+      
+      // Track processed lab tests to avoid duplicates
+      const processedTests = new Set<string>();
+      const allLabResults: string[] = [];
+      
+      // Process all labValues (includes both standard and OCR-extracted values)
+      Object.entries(labValues).forEach(([category, categoryValues]) => {
+        if (categoryValues && typeof categoryValues === 'object') {
+          Object.entries(categoryValues).forEach(([testKey, testData]) => {
+            if (testData && testData.current && testData.current.trim() !== "") {
+              // Check if it's a "normal" entry
+              if (testKey.endsWith('_normal')) {
+                allLabResults.push(testData.current);
+              } else {
+                // Create a unique identifier for this test to prevent duplicates
+                const testIdentifier = `${category}:${testKey}`;
+                
+                // Skip if already processed (prevents OCR + manual selection duplicates)
+                if (processedTests.has(testIdentifier)) {
+                  return;
+                }
+                processedTests.add(testIdentifier);
+                
+                // Try to get test name from predefined categories first
+                const categoryData = labCategories[category as keyof typeof labCategories];
+                let testName = testKey;
+                
+                if (categoryData && categoryData.tests && categoryData.tests[testKey as keyof typeof categoryData.tests]) {
+                  const testInfo = categoryData.tests[testKey as keyof typeof categoryData.tests];
+                  testName = getLabTestName(testInfo.name);
+                } else {
+                  // Use the helper function for OCR-extracted values
+                  testName = resolveTestName(testKey, categoryData, null);
+                }
+                
+                let labEntry = `${testName}: ${testData.current}`;
+                
+                // Add trending data if available
+                const pastValues = testData.past ? testData.past.filter(val => val && val.trim() !== "") : [];
+                if (pastValues.length > 0) {
+                  labEntry += ` [${pastValues.join(", ")}]`;
+                }
+                
+                allLabResults.push(labEntry);
+              }
+            }
+          });
+        }
+      });
+      
+      // Add custom lab results (avoiding duplicates with main lab values)
+      Object.entries(customLabs).forEach(([labName, labData]) => {
+        if (labData.current && labData.current.trim() !== "") {
+          // Check if this custom lab duplicates an existing processed test
+          const customTestIdentifier = `custom:${labName}`;
+          if (processedTests.has(customTestIdentifier)) {
+            return;
+          }
+          processedTests.add(customTestIdentifier);
+          
+          // Apply French abbreviations in note generation
+          const getAbbreviatedName = (name: string) => {
+            if (language === 'fr') {
+              const abbreviations: Record<string, string> = {
+                'Globules blanches': 'Gb',
+                'Globules blancs': 'Gb',
+                'Hémoglobine': 'Hb',
+                'Plaquettes': 'Plq',
+                'Sodium': 'Na',
+                'Potassium': 'K',
+                'Créatinine': 'Créat',
+                'Phosphatase alkaline': 'PAL',
+                'Phosphoatase alkaline': 'PAL'
+              };
+              return abbreviations[name] || name;
+            }
+            return name;
+          };
+
+          const displayName = getAbbreviatedName(labName);
+          let customLabEntry = `${displayName}: ${labData.current}`;
+          
+          // Add trending data if available
+          const pastValues = labData.past ? labData.past.filter(val => val && val.trim() !== "") : [];
+          if (pastValues.length > 0) {
+            customLabEntry += ` [${pastValues.join(", ")}]`;
+          }
+          
+          allLabResults.push(customLabEntry);
+        }
+      });
+      
+      // Add all processed lab results to sections
+      if (allLabResults.length > 0) {
+        labSections.push(allLabResults.join(", "));
+      }
+      
+      if (labSections.length > 0) {
+        labTemplate = labSections.join("\n");
+      }
+    }
+    
     updateSectionTemplate('laboratory', labTemplate);
   };
 
@@ -2536,6 +2649,120 @@ function ReviewOfSystems() {
     updateSectionTemplate('medications', medicationsTemplate);
   };
 
+  const generateChiefComplaintTemplate = (chiefComplaintData: ChiefComplaintData) => {
+    const ccText = generateChiefComplaintText(chiefComplaintData, language === 'fr');
+    if (ccText && ccText.trim()) {
+      updateSectionTemplate('hpi', ccText);
+    }
+  };
+
+  // Update individual section template
+  const updateSectionTemplate = (sectionKey: string, template: string) => {
+    // Safety check for parameters
+    if (typeof sectionKey !== 'string' || sectionKey.trim() === '') {
+      console.warn('Invalid sectionKey provided to updateSectionTemplate:', sectionKey);
+      return;
+    }
+    
+    // Ensure template is a string (can be empty)
+    const safeTemplate = typeof template === 'string' ? template : '';
+    
+    setSectionTemplates(prev => {
+      // Safety check for previous state
+      const safePrev = prev && typeof prev === 'object' ? prev : {};
+      return {
+        ...safePrev,
+        [sectionKey]: safeTemplate
+      };
+    });
+  };
+
+  // Clear all section templates (useful for reset functionality)
+  const clearSectionTemplates = () => {
+    setSectionTemplates({});
+  };
+
+  // Generate the final note by combining all section templates with headers
+  const generateFinalNote = () => {
+    let finalNote = "";
+    
+    // Define the order and headers for each section based on note type
+    const sectionOrder = noteType === "admission" 
+      ? [
+          { key: 'reasonForAdmission', header: language === 'fr' ? 'MOTIF D\'ADMISSION' : 'REASON FOR ADMISSION' },
+          { key: 'pmh', header: language === 'fr' ? 'ANTÉCÉDENTS MÉDICAUX' : 'PAST MEDICAL HISTORY' },
+          { key: 'allergies', header: language === 'fr' ? 'ALLERGIES' : 'ALLERGIES' },
+          { key: 'socialHistory', header: language === 'fr' ? 'HABITUDES DE VIE' : 'SOCIAL HISTORY' },
+          { key: 'medications', header: language === 'fr' ? 'MÉDICAMENTS' : 'MEDICATIONS' },
+          { key: 'hpi', header: language === 'fr' ? 'HISTOIRE DE LA MALADIE ACTUELLE' : 'HISTORY OF PRESENTING ILLNESS' },
+          { key: 'ros', header: language === 'fr' ? 'REVUE DES SYSTÈMES' : 'REVIEW OF SYSTEMS' },
+          { key: 'physicalExam', header: language === 'fr' ? 'EXAMEN PHYSIQUE' : 'PHYSICAL EXAMINATION' },
+          { key: 'laboratory', header: language === 'fr' ? 'RÉSULTATS DE LABORATOIRE' : 'LABORATORY RESULTS' },
+          { key: 'imaging', header: language === 'fr' ? 'IMAGERIE' : 'IMAGING' },
+          { key: 'impression', header: language === 'fr' ? 'IMPRESSION CLINIQUE' : 'CLINICAL IMPRESSION' },
+          { key: 'plan', header: language === 'fr' ? 'PLAN' : 'PLAN' }
+        ]
+      : noteType === "progress"
+      ? [
+          { key: 'progressNote', header: language === 'fr' ? 'NOTE D\'ÉVOLUTION' : 'PROGRESS NOTE' },
+          { key: 'ros', header: language === 'fr' ? 'REVUE DES SYSTÈMES' : 'REVIEW OF SYSTEMS' },
+          { key: 'physicalExam', header: language === 'fr' ? 'EXAMEN PHYSIQUE' : 'PHYSICAL EXAMINATION' },
+          { key: 'laboratory', header: language === 'fr' ? 'RÉSULTATS DE LABORATOIRE' : 'LABORATORY RESULTS' },
+          { key: 'imaging', header: language === 'fr' ? 'IMAGERIE' : 'IMAGING' },
+          { key: 'impression', header: language === 'fr' ? 'IMPRESSION CLINIQUE' : 'CLINICAL IMPRESSION' },
+          { key: 'plan', header: language === 'fr' ? 'PLAN' : 'PLAN' }
+        ]
+      : [
+          { key: 'consultation', header: language === 'fr' ? 'CONSULTATION' : 'CONSULTATION' },
+          { key: 'hpi', header: language === 'fr' ? 'HISTOIRE DE LA MALADIE ACTUELLE' : 'HISTORY OF PRESENTING ILLNESS' },
+          { key: 'ros', header: language === 'fr' ? 'REVUE DES SYSTÈMES' : 'REVIEW OF SYSTEMS' },
+          { key: 'physicalExam', header: language === 'fr' ? 'EXAMEN PHYSIQUE' : 'PHYSICAL EXAMINATION' },
+          { key: 'laboratory', header: language === 'fr' ? 'RÉSULTATS DE LABORATOIRE' : 'LABORATORY RESULTS' },
+          { key: 'imaging', header: language === 'fr' ? 'IMAGERIE' : 'IMAGING' },
+          { key: 'impression', header: language === 'fr' ? 'IMPRESSION CLINIQUE' : 'CLINICAL IMPRESSION' },
+          { key: 'plan', header: language === 'fr' ? 'PLAN' : 'PLAN' }
+        ];
+
+    // Add sections with headers and content
+    for (const section of sectionOrder) {
+      // Safety check for section object
+      if (!section || !section.key || !section.header) {
+        console.warn('Invalid section object:', section);
+        continue;
+      }
+      
+      const template = sectionTemplates[section.key];
+      
+      if (template && typeof template === 'string' && template.trim()) {
+        // Add section with header - ensure no duplicate headers
+        const trimmedTemplate = template.trim();
+        const headerPattern = new RegExp(`^${section.header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:?\\s*`, 'i');
+        
+        let sectionContent;
+        if (headerPattern.test(trimmedTemplate)) {
+          // Template already includes header
+          sectionContent = trimmedTemplate;
+        } else {
+          // Add header to template
+          sectionContent = `${section.header}:\n${trimmedTemplate}`;
+        }
+        
+        finalNote += (finalNote ? "\n\n" : "") + sectionContent;
+      } else if (section.key === 'reasonForAdmission' || section.key === 'hpi' || section.key === 'impression' || section.key === 'plan') {
+        // Always include these critical sections even if empty
+        const placeholder = language === 'fr' 
+          ? `[Entrer ${section.header.toLowerCase()}]`
+          : `[Enter ${section.header.toLowerCase()}]`;
+        const sectionContent = `${section.header}:\n${placeholder}`;
+        finalNote += (finalNote ? "\n\n" : "") + sectionContent;
+      }
+    }
+
+    return finalNote || (language === 'fr' 
+      ? 'Sélectionnez des sections à inclure dans la note.' 
+      : 'Select sections to include in the note.');
+  };
+
   // Generate note based on selected template or basic structure
   React.useEffect(() => {
     // If no note type is selected, show instruction
@@ -2553,18 +2780,64 @@ function ReviewOfSystems() {
       return;
     }
 
-    // Fallback to basic note structure if no template is selected
-    generateBasicNote();
-  }, [noteType, language, allergies, socialHistory, medications, selectedTemplate]);
+    // Generate note using the new section-based system
+    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
+  }, [noteType, language, allergies, socialHistory, medications, selectedTemplate, selectedRosSystems, selectedPeSystems, rosSystemModes, chiefComplaint]);
+
+  // Regenerate final note when section templates change
+  React.useEffect(() => {
+    if (noteType && !selectedTemplate) {
+      const finalNote = generateFinalNote();
+      setNote(finalNote);
+    }
+  }, [sectionTemplates, noteType, selectedTemplate, language]);
+
+  // Update section templates when lab-related data changes
+  React.useEffect(() => {
+    if (noteType && !selectedTemplate) {
+      generateLaboratoryTemplate();
+    }
+  }, [selectedLabCategories, labValues, customLabs, normalCategories, noteType, selectedTemplate, language]);
+
+  // Update section templates when imaging data changes
+  React.useEffect(() => {
+    if (noteType && !selectedTemplate) {
+      generateImagingTemplate();
+    }
+  }, [selectedImagingRegions, selectedImagingModalities, imagingResults, noteType, selectedTemplate, language]);
+
+  // Initialize section templates on component mount and when noteType changes
+  React.useEffect(() => {
+    if (noteType && !selectedTemplate) {
+      // Clear existing templates to avoid stale data
+      clearSectionTemplates();
+      
+      // Regenerate all templates after a brief delay to ensure state is updated
+      const timeoutId = setTimeout(() => {
+        updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
+      }, 10);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [noteType]);
 
   // Generate note from selected template
   const generateNoteFromTemplate = (templateContent: TemplateContent) => {
     let templateNote = "";
     
+    // Safety check for template content
+    if (!templateContent || !templateContent.sections || !Array.isArray(templateContent.sections)) {
+      console.error('Invalid template content structure');
+      setNote(language === 'fr' 
+        ? 'Erreur: Structure de modèle invalide' 
+        : 'Error: Invalid template structure');
+      return;
+    }
+    
     // Get enabled sections sorted by order
     const enabledSections = templateContent.sections
-      .filter(section => section.isEnabled)
-      .sort((a, b) => a.order - b.order);
+      .filter(section => section && section.isEnabled !== false && section.sectionId)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
 
     for (const section of enabledSections) {
       const sectionDef = getSectionById(section.sectionId);
@@ -2576,17 +2849,17 @@ function ReviewOfSystems() {
       switch (section.sectionId) {
         case 'hpi':
           sectionContent = language === 'fr' 
-            ? "HISTOIRE DE LA MALADIE ACTUELLE :\n[Entrer l'HMA]"
+            ? "HISTOIRE DE LA MALADIE ACTUELLE:\n[Entrer l'HMA]"
             : "HISTORY OF PRESENTING ILLNESS:\n[Enter HPI]";
           break;
         case 'impression':
           sectionContent = language === 'fr'
-            ? "IMPRESSION CLINIQUE :\n[Entrer les impressions cliniques]"
+            ? "IMPRESSION CLINIQUE:\n[Entrer les impressions cliniques]"
             : "CLINICAL IMPRESSION:\n[Enter clinical impressions]";
           break;
         case 'pmh':
           sectionContent = language === 'fr'
-            ? "ANTÉCÉDENTS MÉDICAUX :\n[Entrer les antécédents médicaux]"
+            ? "ANTÉCÉDENTS MÉDICAUX:\n[Entrer les antécédents médicaux]"
             : "PAST MEDICAL HISTORY:\n[Enter past medical history]";
           break;
         case 'meds':
@@ -2597,7 +2870,7 @@ function ReviewOfSystems() {
             ? formatMedicationsForNote(medications.hospitalMedications, language) 
             : (language === 'fr' ? '[Entrer les médicaments hospitaliers]' : '[Enter hospital medications]');
           sectionContent = language === 'fr' 
-            ? `MÉDICAMENTS À DOMICILE :\n${homeText}\n\nMÉDICAMENTS HOSPITALIERS :\n${hospitalText}`
+            ? `MÉDICAMENTS À DOMICILE:\n${homeText}\n\nMÉDICAMENTS HOSPITALIERS:\n${hospitalText}`
             : `HOME MEDICATIONS:\n${homeText}\n\nHOSPITAL MEDICATIONS:\n${hospitalText}`;
           break;
         case 'allergies-social':
@@ -2605,18 +2878,56 @@ function ReviewOfSystems() {
           break;
         case 'plan':
           sectionContent = language === 'fr'
-            ? "PLAN :\n[Entrer le plan de traitement]"
+            ? "PLAN:\n[Entrer le plan de traitement]"
             : "PLAN:\n[Enter treatment plan]";
           break;
         case 'note-type':
-          // Skip note type section as it's handled by the UI
-          continue;
+          // Generate note type header if custom content exists or create default header
+          if (section.customContent && section.customContent.trim()) {
+            sectionContent = section.customContent.trim();
+          } else {
+            // Handle null/undefined noteType safely
+            if (!noteType) {
+              sectionContent = language === 'fr' 
+                ? 'TYPE DE NOTE: [Non défini]'
+                : 'NOTE TYPE: [Not defined]';
+            } else {
+              const noteTypeText = noteType === 'admission' 
+                ? (language === 'fr' ? 'ADMISSION' : 'ADMISSION')
+                : noteType === 'progress'
+                ? (language === 'fr' ? 'ÉVOLUTION' : 'PROGRESS')
+                : noteType === 'consultation'
+                ? (language === 'fr' ? 'CONSULTATION' : 'CONSULTATION')
+                : noteType.toUpperCase();
+              
+              sectionContent = language === 'fr' 
+                ? `TYPE DE NOTE: ${noteTypeText}`
+                : `NOTE TYPE: ${noteTypeText}`;
+            }
+          }
+          break;
         default:
           // For other sections, use custom content or placeholder
-          sectionContent = section.customContent || 
-            (language === 'fr' 
-              ? `${sectionDef.name.toUpperCase()} :\n[Entrer ${sectionDef.name.toLowerCase()}]`
-              : `${sectionDef.name.toUpperCase()}:\n[Enter ${sectionDef.name.toLowerCase()}]`);
+          if (section.customContent && section.customContent.trim()) {
+            // If there's custom content, ensure it has a proper header
+            const trimmedContent = section.customContent.trim();
+            const header = `${sectionDef.name.toUpperCase()}:`;
+            
+            // Check if custom content already starts with the header (case insensitive)
+            const customContentUpper = trimmedContent.toUpperCase().trim();
+            const headerUpper = header.toUpperCase().trim();
+            
+            if (customContentUpper.startsWith(headerUpper)) {
+              sectionContent = trimmedContent;
+            } else {
+              sectionContent = `${header}\n${trimmedContent}`;
+            }
+          } else {
+            // Use default placeholder with header
+            sectionContent = language === 'fr' 
+              ? `${sectionDef.name.toUpperCase()}:\n[Entrer ${sectionDef.name.toLowerCase()}]`
+              : `${sectionDef.name.toUpperCase()}:\n[Enter ${sectionDef.name.toLowerCase()}]`;
+          }
       }
 
       if (sectionContent) {

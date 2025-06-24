@@ -18,6 +18,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
+import { useTemplate } from "../contexts/TemplateContext";
 import { DotPhraseManager } from './DotPhraseManager';
 import { TemplateManager } from './TemplateManager';
 import { TemplateSelectorPage } from './TemplateSelectorPage';
@@ -43,6 +44,59 @@ export function MainLayout({
   isICU = false,
 }: MainLayoutProps & { children: React.ReactNode }) {
   const { language, setLanguage } = useLanguage();
+  const { selectedTemplate, isTemplateActive, getTemplateContent } = useTemplate();
+
+  // Generate template-aware medical notes sections
+  const getMedicalNotesSections = () => {
+    // If template is active, use template sections
+    if (isTemplateActive) {
+      try {
+        const templateContent = getTemplateContent();
+        if (templateContent && templateContent.sections && Array.isArray(templateContent.sections)) {
+          const enabledSections = templateContent.sections
+            .filter(section => section && section.isEnabled !== false && section.sectionId)
+            .sort((a, b) => (a.order || 0) - (b.order || 0));
+          
+          if (enabledSections.length === 0) {
+            console.warn('Template has no enabled sections, falling back to default');
+            return getDefaultMedicalNotesSections();
+          }
+          
+          const mappedSections = enabledSections.map(section => {
+            const sectionDef = getSectionById(section.sectionId);
+            if (!sectionDef) {
+              console.warn(`Section definition not found for: ${section.sectionId}`);
+              return null;
+            }
+            
+            const IconComponent = sectionDef.icon;
+            if (!IconComponent) {
+              console.warn(`Icon not found for section: ${section.sectionId}`);
+              return {
+                key: section.sectionId,
+                label: sectionDef.name,
+                icon: <FileText className="w-6 h-6 text-purple-500 bg-purple-100 rounded-full p-1" />
+              };
+            }
+            
+            return {
+              key: section.sectionId,
+              label: sectionDef.name,
+              icon: <IconComponent className="w-6 h-6 text-purple-500 bg-purple-100 rounded-full p-1" />
+            };
+          }).filter(Boolean);
+          
+          return mappedSections.length > 0 ? mappedSections : getDefaultMedicalNotesSections();
+        }
+      } catch (error) {
+        console.error('Error processing template sections:', error);
+        return getDefaultMedicalNotesSections();
+      }
+    }
+    
+    // Default sections when no template is active
+    return getDefaultMedicalNotesSections();
+  };
 
   // Generate default medical notes sections (independent of template)
   const getDefaultMedicalNotesSections = () => {
@@ -60,12 +114,13 @@ export function MainLayout({
     ];
   };
 
-  const MAIN_MENUS = [
+  // Generate main menus dynamically to ensure template reactivity
+  const getMainMenus = () => [
     {
       key: "medical-notes",
       label: "Medical Notes",
       icon: <FileText className="w-5 h-5" />,
-      subOptions: getDefaultMedicalNotesSections(),
+      subOptions: getMedicalNotesSections(),
     },
     {
       key: "templates",
@@ -92,6 +147,7 @@ export function MainLayout({
     },
   ];
 
+  const MAIN_MENUS = getMainMenus();
   const currentMenu = MAIN_MENUS.find((m) => m.key === selectedMenu) || MAIN_MENUS[0];
   const [medicalNotesOpen, setMedicalNotesOpen] = useState(true);
   const [templatesOpen, setTemplatesOpen] = useState(false);

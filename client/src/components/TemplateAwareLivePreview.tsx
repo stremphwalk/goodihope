@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FileText, Clock, User, AlertCircle, Sparkles, Copy, RotateCcw } from 'lucide-react';
+import { FileText, Clock, User, AlertCircle, Sparkles, Copy, RotateCcw, Eye, Edit3 } from 'lucide-react';
 import { useTemplate } from '@/contexts/TemplateContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getSectionById } from '@/lib/sectionLibrary';
@@ -31,6 +31,7 @@ export function TemplateAwareLivePreview({
   totalSystems = 0,
   generatedNote = ''
 }: TemplateAwareLivePreviewProps) {
+  const [isFormattedView, setIsFormattedView] = useState(true);
   const templateContext = useTemplate();
   const languageContext = useLanguage();
   
@@ -71,53 +72,65 @@ export function TemplateAwareLivePreview({
   };
 
   const renderTemplatePreview = () => {
-    const templateContent = getTemplateContent();
-    if (!templateContent) return null;
+    try {
+      const templateContent = getTemplateContent();
+      if (!templateContent) return null;
 
-    const { sections, metadata } = templateContent;
-    if (!sections || !Array.isArray(sections)) return null;
-    
-    const sortedSections = [...sections].sort((a, b) => (a.order || 0) - (b.order || 0));
-    const enabledSections = sortedSections.filter(section => section.isEnabled !== false);
+      const { sections, metadata } = templateContent;
+      if (!sections || !Array.isArray(sections)) return null;
+      
+      const sortedSections = [...sections].sort((a, b) => (a.order || 0) - (b.order || 0));
+      const enabledSections = sortedSections.filter(section => 
+        section && section.isEnabled !== false && section.sectionId
+      );
 
     return (
       <div className="space-y-2">
-        {/* Template Header - Compact */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-purple-800 whitespace-nowrap">
-              {metadata?.name || 'Template'}
-            </span>
-            {metadata?.category && (
-              <Badge variant="secondary" className="bg-purple-100 text-purple-800 text-xs whitespace-nowrap">
-                {metadata.category}
-              </Badge>
-            )}
-            {metadata?.specialty && (
-              <Badge variant="secondary" className="bg-purple-100 text-purple-800 text-xs whitespace-nowrap">
-                {metadata.specialty}
-              </Badge>
-            )}
+        {/* Template Header - More Compact */}
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <span className="font-medium text-purple-800 text-sm whitespace-nowrap">
+            {(metadata?.name && metadata.name.trim()) || 'Template'}
+          </span>
+          {metadata?.category && metadata.category.trim() && (
             <Badge variant="secondary" className="bg-purple-100 text-purple-800 text-xs whitespace-nowrap">
-              {enabledSections.length} {enabledSections.length === 1 ? 'section' : 'sections'}
+              {metadata.category.length > 15 ? `${metadata.category.substring(0, 12)}...` : metadata.category}
             </Badge>
-          </div>
+          )}
+          {metadata?.specialty && metadata.specialty.trim() && (
+            <Badge variant="secondary" className="bg-purple-100 text-purple-800 text-xs whitespace-nowrap">
+              {metadata.specialty.length > 15 ? `${metadata.specialty.substring(0, 12)}...` : metadata.specialty}
+            </Badge>
+          )}
+          <Badge variant="secondary" className="bg-purple-100 text-purple-800 text-xs whitespace-nowrap">
+            {enabledSections.length} {enabledSections.length === 1 ? 'section' : 'sections'}
+          </Badge>
         </div>
 
-        {/* Template Sections - Compact */}
-        <div className="flex flex-wrap gap-2">
+        {/* Template Sections - More Compact */}
+        <div className="flex flex-wrap gap-1">
           {enabledSections.length === 0 ? (
             <div className="text-xs text-gray-500 italic">
               {language === 'fr' ? 'Aucune section activée' : 'No sections enabled'}
             </div>
           ) : (
             enabledSections.map((section, index) => {
+              // Safety check for section structure
+              if (!section || !section.sectionId) {
+                return (
+                  <div key={index} className="flex items-center gap-1 px-1 py-0.5 bg-red-100 rounded text-xs border border-red-200">
+                    <span className="text-red-600">
+                      {language === 'fr' ? 'Section invalide' : 'Invalid section'}
+                    </span>
+                  </div>
+                );
+              }
+              
               const sectionDef = getSectionById(section.sectionId);
               if (!sectionDef) {
                 return (
-                  <div key={section.id || index} className="flex items-center gap-1 px-2 py-1 bg-red-100 rounded border border-red-200">
-                    <span className="text-xs text-red-600">
-                      {language === 'fr' ? 'Section introuvable' : 'Section not found'}: {section.sectionId}
+                  <div key={section.id || index} className="flex items-center gap-1 px-1 py-0.5 bg-red-100 rounded text-xs border border-red-200">
+                    <span className="text-red-600">
+                      {language === 'fr' ? 'Introuvable' : 'Not found'}: {section.sectionId}
                     </span>
                   </div>
                 );
@@ -129,23 +142,106 @@ export function TemplateAwareLivePreview({
               const hasContent = Boolean(userContent || defaultContent);
 
               return (
-                <div key={section.id || `${section.sectionId}-${index}`} className="flex items-center gap-1 px-2 py-1 bg-white rounded border border-purple-200">
-                  <span className="flex items-center justify-center w-4 h-4 bg-purple-500 text-white text-xs font-bold rounded-full">
+                <div key={section.id || `${section.sectionId}-${index}`} className="flex items-center gap-1 px-1.5 py-0.5 bg-white rounded text-xs border border-purple-200">
+                  <span className="flex items-center justify-center w-3 h-3 bg-purple-500 text-white text-xs font-bold rounded-full leading-none">
                     {index + 1}
                   </span>
-                  {Icon && <Icon className="w-3 h-3 text-purple-600" />}
-                  <span className="text-xs font-medium text-gray-900">{sectionDef.name}</span>
+                  {Icon && <Icon className="w-2.5 h-2.5 text-purple-600" />}
+                  <span className="font-medium text-gray-900 text-xs">{sectionDef.name}</span>
                   {hasContent && (
-                    <div className="w-2 h-2 bg-green-500 rounded-full" title={language === 'fr' ? 'Contenu disponible' : 'Content available'} />
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full" title={language === 'fr' ? 'Contenu disponible' : 'Content available'} />
                   )}
                   {sectionDef.isRequired && (
-                    <div className="w-2 h-2 bg-red-500 rounded-full" title={language === 'fr' ? 'Requis' : 'Required'} />
+                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full" title={language === 'fr' ? 'Requis' : 'Required'} />
                   )}
                 </div>
               );
             })
           )}
         </div>
+      </div>
+    );
+    } catch (error) {
+      console.error('Error rendering template preview:', error);
+      return (
+        <div className="p-2 bg-red-50 border border-red-200 rounded text-xs">
+          <span className="text-red-600">
+            {language === 'fr' 
+              ? 'Erreur lors du rendu du modèle' 
+              : 'Error rendering template preview'
+            }
+          </span>
+        </div>
+      );
+    }
+  };
+
+  const renderFormattedNote = () => {
+    if (!note || !note.trim()) {
+      return (
+        <div className="p-8 text-center text-gray-500">
+          <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+          <h3 className="text-lg font-medium mb-2">
+            {language === 'fr' ? 'Note vide' : 'Empty Note'}
+          </h3>
+          <p className="text-sm">
+            {language === 'fr' ? 'Votre note apparaîtra ici' : 'Your note will appear here'}
+          </p>
+        </div>
+      );
+    }
+
+    // Parse the note content to identify section headers
+    const lines = note.split('\n');
+    const sections: Array<{type: 'header' | 'content', text: string, level?: number}> = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      
+      // Enhanced header detection logic
+      const isHeader = (
+        // Standard format: ends with : and is in uppercase
+        (trimmed.endsWith(':') && trimmed === trimmed.toUpperCase() && trimmed.length > 3) ||
+        // Common medical note headers (case insensitive match for known headers)
+        /^(REASON FOR ADMISSION|MOTIF D['']ADMISSION|PAST MEDICAL HISTORY|ANTÉCÉDENTS MÉDICAUX|ALLERGIES|SOCIAL HISTORY|HABITUDES DE VIE|MEDICATIONS|MÉDICAMENTS|HISTORY OF PRESENTING ILLNESS|HISTOIRE DE LA MALADIE ACTUELLE|REVIEW OF SYSTEMS|REVUE DES SYSTÈMES|PHYSICAL EXAMINATION|EXAMEN PHYSIQUE|LABORATORY RESULTS|RÉSULTATS DE LABORATOIRE|IMAGING|IMAGERIE|CLINICAL IMPRESSION|IMPRESSION CLINIQUE|PLAN|NOTE TYPE|TYPE DE NOTE|CONSULTATION|ÉVOLUTION|PROGRESS NOTE|NOTE D['']ÉVOLUTION|MÉDICAMENTS À DOMICILE|HOME MEDICATIONS|MÉDICAMENTS HOSPITALIERS|HOSPITAL MEDICATIONS)\s*:?\s*$/i.test(trimmed) ||
+        // Headers that contain common medical abbreviations in all caps
+        /^(PMH|HPI|ROS|PE|LAB|LABS)\s*:?\s*$/i.test(trimmed)
+      );
+      
+      if (isHeader) {
+        // Ensure header ends with colon for consistent formatting
+        const headerText = trimmed.endsWith(':') ? trimmed : trimmed + ':';
+        sections.push({type: 'header', text: headerText});
+      } else if (trimmed.length > 0) {
+        sections.push({type: 'content', text: line});
+      } else {
+        // Empty line
+        sections.push({type: 'content', text: ''});
+      }
+    }
+
+    return (
+      <div className="space-y-4 p-4">
+        {sections.map((section, index) => {
+          if (section.type === 'header') {
+            return (
+              <div key={index} className="border-l-4 border-purple-500 pl-4 py-2">
+                <h4 className="font-bold text-lg text-purple-800 bg-purple-50 px-3 py-2 rounded">
+                  {section.text}
+                </h4>
+              </div>
+            );
+          } else {
+            return (
+              <div key={index} className="ml-8">
+                <div className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
+                  {section.text}
+                </div>
+              </div>
+            );
+          }
+        })}
       </div>
     );
   };
@@ -239,6 +335,26 @@ export function TemplateAwareLivePreview({
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {isTemplateActive && (
+              <Button
+                onClick={() => setIsFormattedView(!isFormattedView)}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                {isFormattedView ? (
+                  <>
+                    <Edit3 className="w-4 h-4" />
+                    {language === 'fr' ? 'Éditer' : 'Edit'}
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-4 h-4" />
+                    {language === 'fr' ? 'Aperçu' : 'Preview'}
+                  </>
+                )}
+              </Button>
+            )}
             {onCopyNote && (
               <Button
                 onClick={() => {
@@ -286,10 +402,10 @@ export function TemplateAwareLivePreview({
         </div>
       </div>
 
-      {/* Template Structure Preview (if active) */}
+      {/* Template Structure Preview (if active) - Compact */}
       {isTemplateActive && (
-        <div className="border-b bg-purple-50 p-3">
-          <div className="text-xs font-medium text-purple-800 mb-2">
+        <div className="border-b bg-purple-50 p-2">
+          <div className="text-xs font-medium text-purple-800 mb-1">
             {language === 'fr' ? 'Structure du modèle:' : 'Template Structure:'}
           </div>
           {renderTemplatePreview()}
@@ -297,29 +413,43 @@ export function TemplateAwareLivePreview({
       )}
 
       {/* Main Note Editor */}
-      <div className="flex-1 overflow-hidden">
-        <DotPhraseTextarea
-          value={note || ''}
-          onChange={(value) => {
-            try {
-              if (onNoteChange) {
-                onNoteChange(value);
+      <div className="flex-1 overflow-auto">
+        {isTemplateActive && isFormattedView ? (
+          // When template is active and in formatted view, show formatted note with section headers
+          <div className="h-full">
+            {renderFormattedNote()}
+          </div>
+        ) : (
+          // When no template is active or in edit mode, show editable textarea
+          <DotPhraseTextarea
+            value={note || ''}
+            onChange={(value) => {
+              try {
+                if (onNoteChange) {
+                  onNoteChange(value);
+                }
+              } catch (error) {
+                console.error('Error handling note change:', error);
               }
-            } catch (error) {
-              console.error('Error handling note change:', error);
-            }
-          }}
-          placeholder={language === 'fr' ? 'Votre note clinique apparaîtra ici...' : 'Your clinical note will appear here...'}
-          className="w-full h-full resize-none border-0 rounded-none focus:ring-0 focus:border-0 p-4 text-sm font-mono leading-relaxed"
-        />
+            }}
+            placeholder={language === 'fr' ? 'Votre note clinique apparaîtra ici...' : 'Your clinical note will appear here...'}
+            className="w-full h-full resize-none border-0 rounded-none focus:ring-0 focus:border-0 p-4 text-sm font-mono leading-relaxed"
+          />
+        )}
       </div>
 
       {/* Help Text */}
       <div className="border-t p-3 bg-gray-50 text-xs text-gray-600">
         {isTemplateActive ? (
-          language === 'fr' 
-            ? 'Cette note utilise un modèle personnalisé. Allez dans Templates > Sélectionner un modèle pour changer ou désactiver.'
-            : 'This note uses a custom template. Go to Templates > Select Template to change or clear.'
+          isFormattedView ? (
+            language === 'fr' 
+              ? 'Vue formatée avec en-têtes de sections. Cliquez sur "Éditer" pour modifier le contenu.'
+              : 'Formatted view with section headers. Click "Edit" to modify content.'
+          ) : (
+            language === 'fr' 
+              ? 'Mode édition. Cliquez sur "Aperçu" pour voir les en-têtes de sections formatées.'
+              : 'Edit mode. Click "Preview" to see formatted section headers.'
+          )
         ) : (
           language === 'fr'
             ? 'Cette note utilise la structure par défaut. Sélectionnez un modèle dans Templates > Sélectionner un modèle pour personnaliser.'
