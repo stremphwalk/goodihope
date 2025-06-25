@@ -59,19 +59,22 @@ export function SmartTextEntry({ title, placeholder, value, onChange, templates 
         const subDetail = line.replace('--', '').trim();
         formatted.push(`       - ${subDetail}`);
       } else {
-        // Auto-format as condition if no prefix
-        conditionCount++;
-        formatted.push(`${conditionCount}. ${line}`);
+        // Only auto-format as numbered condition if line doesn't already start with a number
+        if (!/^\d+\./.test(line)) {
+          conditionCount++;
+          formatted.push(`${conditionCount}. ${line}`);
+        } else {
+          // Line already has a number, just add it as-is
+          formatted.push(line);
+        }
       }
     }
 
     return formatted.join('\n');
   }, []);
 
-
-
   const handleBlur = () => {
-    onChange(localValue);
+    onChange(localValue); // Only propagate raw value
   };
 
   // Only propagate changes immediately for template defaults when not focused

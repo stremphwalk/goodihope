@@ -6,6 +6,7 @@ import { useTemplate } from '@/contexts/TemplateContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getSectionById } from '@/lib/sectionLibrary';
 import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
+import { formatSmartText } from '@/utils/textFormatting';
 
 interface TemplateAwareLivePreviewProps {
   noteData?: Record<string, any>;
@@ -207,7 +208,9 @@ export function TemplateAwareLivePreview({
             if (!sectionDef) return null;
 
             const Icon = sectionDef.icon;
-            const content = noteData[sectionKey] || '';
+            const content = (sectionKey === 'pmh' || sectionKey === 'impression')
+              ? formatSmartText(noteData[sectionKey] || '')
+              : noteData[sectionKey] || '';
 
             return (
               <div key={sectionKey} className="border-l-4 border-blue-500 pl-4">

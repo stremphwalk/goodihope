@@ -179,6 +179,8 @@ const physicalExamOptions = {
   "Skin": "Warm, dry, intact, no rashes or lesions"
 };
 
+import { formatSmartText } from '@/utils/textFormatting';
+
 function ReviewOfSystems() {
   // Note state with diff-patch-merge tracking
   const [note, setNote] = useState("");
@@ -594,78 +596,77 @@ function ReviewOfSystems() {
   }, [language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, noteType, admissionType, progressType]);
 
   // Generate content for a specific section with template custom content
-  const generateSectionContent = useCallback((sectionId: string, customContent?: string) => {
+  // Helper function to get section header (moved outside for reuse)
+  const getSectionHeader = useCallback((sectionId: string): string => {
+    const headers: Record<string, { en: string; fr: string }> = {
+      'note-type': { en: 'NOTE TYPE', fr: 'TYPE DE NOTE' },
+      'pmh': { en: 'PAST MEDICAL HISTORY', fr: 'ANTÉCÉDENTS MÉDICAUX' },
+      'allergies-social': { en: 'ALLERGIES & SOCIAL HISTORY', fr: 'ALLERGIES & HISTOIRE SOCIALE' },
+      'meds': { en: 'MEDICATIONS', fr: 'MÉDICAMENTS' },
+      'hpi': { en: 'HISTORY OF PRESENT ILLNESS', fr: 'HISTOIRE DE LA MALADIE ACTUELLE' },
+      'physical-exam': { en: 'PHYSICAL EXAMINATION', fr: 'EXAMEN PHYSIQUE' },
+      'labs': { en: 'LABORATORY RESULTS', fr: 'RÉSULTATS DE LABORATOIRE' },
+      'imagery': { en: 'IMAGING', fr: 'IMAGERIE' },
+      'impression': { en: 'CLINICAL IMPRESSION', fr: 'IMPRESSION CLINIQUE' },
+      'ventilation': { en: 'VENTILATION PARAMETERS', fr: 'PARAMÈTRES DE VENTILATION' },
+      'plan': { en: 'PLAN', fr: 'PLAN' }
+    };
+    
+    const header = headers[sectionId];
+    if (!header) return sectionId.toUpperCase();
+    return language === 'fr' ? header.fr : header.en;
+  }, [language]);
+
+  // Generate plain section content without formatting
+  const generatePlainSectionContent = useCallback((sectionId: string, customContent?: string): string => {
     try {
-      // Helper function to get section header
-      const getSectionHeader = (sectionId: string): string => {
-        const headers: Record<string, { en: string; fr: string }> = {
-          'note-type': { en: 'NOTE TYPE', fr: 'TYPE DE NOTE' },
-          'pmh': { en: 'PAST MEDICAL HISTORY', fr: 'ANTÉCÉDENTS MÉDICAUX' },
-          'allergies-social': { en: 'ALLERGIES & SOCIAL HISTORY', fr: 'ALLERGIES & HISTOIRE SOCIALE' },
-          'meds': { en: 'MEDICATIONS', fr: 'MÉDICAMENTS' },
-          'hpi': { en: 'HISTORY OF PRESENT ILLNESS', fr: 'HISTOIRE DE LA MALADIE ACTUELLE' },
-          'physical-exam': { en: 'PHYSICAL EXAMINATION', fr: 'EXAMEN PHYSIQUE' },
-          'labs': { en: 'LABORATORY RESULTS', fr: 'RÉSULTATS DE LABORATOIRE' },
-          'imagery': { en: 'IMAGING', fr: 'IMAGERIE' },
-          'impression': { en: 'CLINICAL IMPRESSION', fr: 'IMPRESSION CLINIQUE' },
-          'ventilation': { en: 'VENTILATION PARAMETERS', fr: 'PARAMÈTRES DE VENTILATION' },
-          'plan': { en: 'PLAN', fr: 'PLAN' }
-        };
-        
-        const header = headers[sectionId];
-        if (!header) return sectionId.toUpperCase();
-        return language === 'fr' ? header.fr : header.en;
-      };
-      
-      // If custom content is provided, use it with proper header
+      // If custom content is provided, use it without header
       if (customContent && customContent.trim()) {
-        const header = getSectionHeader(sectionId);
-        return `${header}:\n${customContent}`;
+        return customContent;
       }
       
-      // Generate content based on section type with proper headers
+      // Generate content based on section type WITHOUT headers and WITHOUT smart text formatting
       switch (sectionId) {
         case 'note-type': {
-          const header = getSectionHeader(sectionId);
-          const content = noteType ? noteType.toUpperCase() : '[Enter note type]';
-          return `${header}:\n${content}`;
+          return noteType ? noteType.toUpperCase() : '[Enter note type]';
         }
         
         case 'pmh': {
-          const header = getSectionHeader(sectionId);
-          if (!pmhText.trim()) {
-            const placeholder = language === 'fr' ? '[Entrer les antécédents médicaux]' : '[Enter past medical history]';
-            return `${header}:\n${placeholder}`;
+          let contentToFormat = pmhText;
+          if (!pmhText.trim() && customContent && customContent.trim()) {
+            contentToFormat = customContent;
+          } else if (pmhText.trim() && customContent && customContent.trim()) {
+            // Combine if needed, as before
+            // ...
+          }
+          if (!contentToFormat.trim()) {
+            return language === 'fr' ? '[Entrer les antécédents médicaux]' : '[Enter past medical history]';
+          }
+          // Return plain content without formatting
+          return contentToFormat;
+        }
+        
+        case 'ventilation': {
+          // Generate intubation parameters text
+          if (Object.keys(intubationValues).length === 0) {
+            return language === 'fr' ? '[Entrer les paramètres de ventilation]' : '[Enter ventilation parameters]';
           }
           
-          // Format the smart text entry input
-          const lines = pmhText.split('\n');
-          const formatted: string[] = [];
-          let conditionCount = 0;
-
-          for (let line of lines) {
-            line = line.trim();
-            if (!line) continue;
-
-            if (line.startsWith('#')) {
-              conditionCount++;
-              const condition = line.replace('#', '').trim();
-              formatted.push(`${conditionCount}. ${condition}`);
-            } else if (line.startsWith('-')) {
-              const detail = line.replace('-', '').trim();
-              formatted.push(`     - ${detail}`);
-            } else {
-              conditionCount++;
-              formatted.push(`${conditionCount}. ${line}`);
+          let intubationText = "";
+          Object.entries(intubationValues).forEach(([param, data]) => {
+            if (data.current) {
+              intubationText += `${param}: ${data.current}\n`;
             }
-          }
+          });
           
-          return `${header}:\n${formatted.join('\n')}`;
+          return intubationText.trim();
+        }
+        
+        case 'plan': {
+          return language === 'fr' ? '[Entrer le plan de traitement]' : '[Enter treatment plan]';
         }
         
         case 'allergies-social': {
-          const header = getSectionHeader(sectionId);
-          
           // Generate allergies text
           let allergiesText = '';
           const currentAllergies = allergiesRef.current;
@@ -729,7 +730,6 @@ function ReviewOfSystems() {
         }
         
         case 'meds': {
-          const header = getSectionHeader(sectionId);
           let medicationsText = "";
           
           if (language === 'fr') {
@@ -766,7 +766,6 @@ function ReviewOfSystems() {
         }
         
         case 'hpi': {
-          const header = getSectionHeader(sectionId);
           const content = hpiText || (language === 'fr' ? "[Entrer l'HMA]" : "[Enter HPI]");
           
           // Generate ROS text
@@ -812,14 +811,12 @@ function ReviewOfSystems() {
             (content.trim().endsWith('.') ? `${content} ${rosText}` : `${content}. ${rosText}`) : 
             content;
           
-          return `${header}:\n${fullContent}`;
+          return fullContent;
         }
         
         case 'physical-exam': {
-          const header = getSectionHeader(sectionId);
           if (selectedPeSystems.size === 0) {
-            const placeholder = language === 'fr' ? '[Entrer l\'examen physique]' : '[Enter physical examination]';
-            return `${header}:\n${placeholder}`;
+            return language === 'fr' ? '[Entrer l\'examen physique]' : '[Enter physical examination]';
           }
           
           const peEntries = Array.from(selectedPeSystems).map(system => {
@@ -827,120 +824,76 @@ function ReviewOfSystems() {
             return language === 'fr' ? findings : `${system}: ${findings}`;
           });
           
-          return `${header}:\n${peEntries.join("\n")}`;
+          return peEntries.join("\n");
         }
         
         case 'labs': {
-          const header = getSectionHeader(sectionId);
           if (processedLabValues.length === 0) {
-            const placeholder = language === 'fr' ? '[Entrer les résultats de laboratoire]' : '[Enter laboratory results]';
-            return `${header}:\n${placeholder}`;
+            return language === 'fr' ? '[Entrer les résultats de laboratoire]' : '[Enter laboratory results]';
           }
           
           const labText = formatLabValuesForNote(processedLabValues);
-          return `${header}:\n${labText}`;
+          return labText;
         }
         
         case 'imagery': {
-          const header = getSectionHeader(sectionId);
           if (imageryStudies.length === 0) {
-            const placeholder = language === 'fr' ? '[Entrer les résultats d\'imagerie]' : '[Enter imaging results]';
-            return `${header}:\n${placeholder}`;
+            return language === 'fr' ? '[Entrer les résultats d\'imagerie]' : '[Enter imaging results]';
           }
           
           const studies = imageryStudies.map(study => 
             `${study.system} ${study.modality}: ${study.result}`
           ).join('\n');
           
-          return `${header}:\n${studies}`;
+          return studies;
         }
         
         case 'impression': {
-          const header = getSectionHeader(sectionId);
-          
-          // Combine custom content (template default) with user input
           let contentToFormat = impressionText;
-          
-          // If no user input but we have template custom content, use that
           if (!impressionText.trim() && customContent && customContent.trim()) {
             contentToFormat = customContent;
+          } else if (impressionText.trim() && customContent && customContent.trim()) {
+            // Prefer user data over custom template content
+            contentToFormat = impressionText;
           }
-          
           if (!contentToFormat.trim()) {
-            const placeholder = language === 'fr' ? '[Entrer les impressions cliniques]' : '[Enter clinical impressions]';
-            return `${header}:\n${placeholder}`;
+            return language === 'fr' ? '[Entrer les impressions cliniques]' : '[Enter clinical impressions]';
           }
-          
-          // Format the smart text entry input with auto-numbering and indenting
-          const lines = contentToFormat.split('\n');
-          const formatted: string[] = [];
-          let conditionCount = 0;
-
-          for (let line of lines) {
-            line = line.trim();
-            if (!line) continue;
-
-            // Skip instruction lines from template defaults
-            const lowerLine = line.toLowerCase();
-            if (lowerLine.startsWith('instructions:') || 
-                lowerLine.startsWith('instruction:') ||
-                lowerLine.includes('new line = auto-numbered') ||
-                lowerLine.includes('tab = add sub-point')) {
-              continue;
-            }
-
-            if (line.startsWith('#')) {
-              conditionCount++;
-              const condition = line.replace('#', '').trim();
-              formatted.push(`${conditionCount}. ${condition}`);
-            } else if (line.startsWith('-')) {
-              const detail = line.replace('-', '').trim();
-              formatted.push(`     - ${detail}`);
-            } else {
-              conditionCount++;
-              formatted.push(`${conditionCount}. ${line}`);
-            }
-          }
-          
-          return `${header}:\n${formatted.join('\n')}`;
-        }
-        
-        case 'ventilation': {
-          const header = getSectionHeader(sectionId);
-          
-          // Generate intubation parameters text
-          if (Object.keys(intubationValues).length === 0) {
-            const placeholder = language === 'fr' ? '[Entrer les paramètres de ventilation]' : '[Enter ventilation parameters]';
-            return `${header}:\n${placeholder}`;
-          }
-          
-          let intubationText = "";
-          Object.entries(intubationValues).forEach(([param, data]) => {
-            if (data.current) {
-              intubationText += `${param}: ${data.current}\n`;
-            }
-          });
-          
-          return `${header}:\n${intubationText.trim()}`;
-        }
-        
-        case 'plan': {
-          const header = getSectionHeader(sectionId);
-          const placeholder = language === 'fr' ? '[Entrer le plan de traitement]' : '[Enter treatment plan]';
-          return `${header}:\n${placeholder}`;
+          // Return plain content without formatting (formatting will be applied later)
+          return contentToFormat;
         }
         
         default: {
-          const header = getSectionHeader(sectionId);
-          return `${header}:\n[${sectionId}]`;
+          return `[${sectionId}]`;
         }
       }
     } catch (error) {
       console.error(`Error generating content for section ${sectionId}:`, error);
-      const header = sectionId.toUpperCase();
-      return `${header}:\n[Error: ${sectionId}]`;
+      return `[Error: ${sectionId}]`;
     }
   }, [language, pmhText, medications, selectedPeSystems, processedLabValues, hpiText, impressionText, intubationValues, noteType, selectedSymptoms, imageryStudies]);
+
+  // Two-pass section content generation with headers and formatting
+  const generateSectionContent = useCallback((sectionId: string, customContent?: string) => {
+    try {
+      // Pass 1: Generate plain content
+      const plainContent = generatePlainSectionContent(sectionId, customContent);
+      
+      // Pass 2: Add header and apply formatting
+      const header = getSectionHeader(sectionId);
+      
+      // Apply smart text formatting only to sections that need it
+      const needsFormatting = ['pmh', 'impression'].includes(sectionId);
+      const formattedContent = needsFormatting ? formatSmartText(plainContent) : plainContent;
+      
+      
+      return `${header}:\n${formattedContent}`;
+    } catch (error) {
+      console.error(`Error generating content for section ${sectionId}:`, error);
+      const header = getSectionHeader(sectionId);
+      return `${header}:\n[Error: ${sectionId}]`;
+    }
+  }, [generatePlainSectionContent, getSectionHeader]);
 
   // Default note generation (existing logic)
   const generateDefaultNote = useCallback(() => {
@@ -2548,7 +2501,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       if (medications && Array.isArray(medications.homeMedications) && Array.isArray(medications.hospitalMedications)) {
         const allMeds = [...medications.homeMedications, ...medications.hospitalMedications];
         if (allMeds.length > 0) {
-          noteData['meds'] = formatMedicationsForNote(medications);
+          noteData['meds'] = formatMedicationsForNote(allMeds);
         }
       }
       
@@ -2622,16 +2575,14 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     const safeNoteData = {
       'note-type': noteType || '',
       'pmh': pmhText || '',
-      'meds': medications ? formatMedicationsForNote(medications) : '',
+      'meds': medications ? formatMedicationsForNote([...medications.homeMedications, ...medications.hospitalMedications]) : '',
       'allergies-social': (() => {
         try {
           const currentAllergies = allergiesRef.current;
           const currentSocialHistory = socialHistoryRef.current;
-          
           const allergiesText = currentAllergies?.hasAllergies 
             ? 'Allergies: ' + (currentAllergies.allergiesList || []).join(', ') 
             : 'No known allergies';
-          
           const socialText = [
             currentSocialHistory?.smoking?.status 
               ? `Smoking: ${currentSocialHistory.smoking.details || 'Yes'}` 
@@ -2643,7 +2594,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
               ? `Drugs: ${currentSocialHistory.drugs.details || 'Yes'}` 
               : 'No drug use'
           ].join('\n');
-          
           return `${allergiesText}\n\nSocial History:\n${socialText}`;
         } catch (error) {
           console.error('Error formatting allergies/social data:', error);
