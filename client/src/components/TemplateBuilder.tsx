@@ -14,6 +14,7 @@ import {
 } from '@/lib/sectionLibrary';
 import { type NoteType, type NoteSubtype } from '@shared/schema';
 import { NotePreview } from './NotePreview';
+import { SmartTextEntry } from './SmartTextEntry';
 
 interface TemplateBuilderProps {
   content: TemplateContent;
@@ -187,10 +188,25 @@ export function TemplateBuilder({ content, onChange, onClose, onSave }: Template
 
   // Update section default content
   const updateSectionDefault = (sectionId: string, content: string) => {
-    setSectionDefaults(prev => ({
-      ...prev,
-      [sectionId]: content
-    }));
+    // Validate inputs
+    if (!sectionId || typeof sectionId !== 'string') {
+      console.error('Invalid sectionId provided to updateSectionDefault:', sectionId);
+      return;
+    }
+    
+    if (typeof content !== 'string') {
+      console.error('Invalid content type provided to updateSectionDefault:', typeof content);
+      return;
+    }
+
+    try {
+      setSectionDefaults(prev => ({
+        ...prev,
+        [sectionId]: content
+      }));
+    } catch (error) {
+      console.error('Error updating section default content:', error);
+    }
   };
 
   // Update template metadata including section defaults
@@ -564,8 +580,17 @@ export function TemplateBuilder({ content, onChange, onClose, onSave }: Template
                       className="space-y-3"
                     >
                       {content.sections.map((section, index) => {
+                        // Validate section structure
+                        if (!section || !section.sectionId || typeof section.sectionId !== 'string') {
+                          console.warn('Invalid section structure at index:', index, section);
+                          return null;
+                        }
+
                         const sectionDef = getSectionDefinition(section.sectionId);
-                        if (!sectionDef) return null;
+                        if (!sectionDef) {
+                          console.warn('Section definition not found for sectionId:', section.sectionId);
+                          return null;
+                        }
 
                         return (
                           <Draggable
@@ -618,13 +643,37 @@ export function TemplateBuilder({ content, onChange, onClose, onSave }: Template
                                           <label className="block text-xs font-medium text-gray-700 mb-1">
                                             Default Content for {sectionDef.name}
                                           </label>
-                                          <textarea
-                                            value={sectionDefaults[section.sectionId] || ''}
-                                            onChange={(e) => updateSectionDefault(section.sectionId, e.target.value)}
-                                            placeholder={`Enter default content for ${sectionDef.name}...`}
-                                            className="w-full h-20 px-2 py-1 text-xs border border-gray-300 rounded resize-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                            maxLength={1000}
-                                          />
+                                          {(section.sectionId === 'pmh' || section.sectionId === 'impression') ? (
+                                            <div className="border border-gray-300 rounded p-2">
+                                              <SmartTextEntry
+                                                title=""
+                                                value={sectionDefaults[section.sectionId] || ''}
+                                                onChange={(value) => {
+                                                  try {
+                                                    updateSectionDefault(section.sectionId, value);
+                                                  } catch (error) {
+                                                    console.error('Error updating section content:', error);
+                                                  }
+                                                }}
+                                                placeholder={
+                                                  typeof sectionDef.defaultContent === 'string' 
+                                                    ? sectionDef.defaultContent 
+                                                    : `Enter default content for ${sectionDef.name || 'this section'}...`
+                                                }
+                                              />
+                                              <p className="text-xs text-blue-600 mt-2 font-medium">
+                                                ✨ Smart Formatting Active: Each new line = numbered condition, Tab = add sub-point
+                                              </p>
+                                            </div>
+                                          ) : (
+                                            <textarea
+                                              value={sectionDefaults[section.sectionId] || ''}
+                                              onChange={(e) => updateSectionDefault(section.sectionId, e.target.value)}
+                                              placeholder={sectionDef.defaultContent || `Enter default content for ${sectionDef.name}...`}
+                                              className="w-full h-20 px-2 py-1 text-xs border border-gray-300 rounded resize-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                              maxLength={1000}
+                                            />
+                                          )}
                                           <p className="text-xs text-gray-500 mt-1">
                                             This content will pre-populate when users select this template
                                           </p>

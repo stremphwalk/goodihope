@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FileText, Clock, User, AlertCircle, Sparkles, Copy, RotateCcw, Eye, Edit3 } from 'lucide-react';
+import { FileText, Clock, Sparkles, Copy, RotateCcw } from 'lucide-react';
 import { useTemplate } from '@/contexts/TemplateContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getSectionById } from '@/lib/sectionLibrary';
@@ -31,7 +30,6 @@ export function TemplateAwareLivePreview({
   totalSystems = 0,
   generatedNote = ''
 }: TemplateAwareLivePreviewProps) {
-  const [isFormattedView, setIsFormattedView] = useState(true);
   const templateContext = useTemplate();
   const languageContext = useLanguage();
   
@@ -176,75 +174,6 @@ export function TemplateAwareLivePreview({
     }
   };
 
-  const renderFormattedNote = () => {
-    if (!note || !note.trim()) {
-      return (
-        <div className="p-8 text-center text-gray-500">
-          <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-          <h3 className="text-lg font-medium mb-2">
-            {language === 'fr' ? 'Note vide' : 'Empty Note'}
-          </h3>
-          <p className="text-sm">
-            {language === 'fr' ? 'Votre note apparaîtra ici' : 'Your note will appear here'}
-          </p>
-        </div>
-      );
-    }
-
-    // Parse the note content to identify section headers
-    const lines = note.split('\n');
-    const sections: Array<{type: 'header' | 'content', text: string, level?: number}> = [];
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-      
-      // Enhanced header detection logic
-      const isHeader = (
-        // Standard format: ends with : and is in uppercase
-        (trimmed.endsWith(':') && trimmed === trimmed.toUpperCase() && trimmed.length > 3) ||
-        // Common medical note headers (case insensitive match for known headers)
-        /^(REASON FOR ADMISSION|MOTIF D['']ADMISSION|PAST MEDICAL HISTORY|ANTÉCÉDENTS MÉDICAUX|ALLERGIES|SOCIAL HISTORY|HABITUDES DE VIE|MEDICATIONS|MÉDICAMENTS|HISTORY OF PRESENTING ILLNESS|HISTOIRE DE LA MALADIE ACTUELLE|REVIEW OF SYSTEMS|REVUE DES SYSTÈMES|PHYSICAL EXAMINATION|EXAMEN PHYSIQUE|LABORATORY RESULTS|RÉSULTATS DE LABORATOIRE|IMAGING|IMAGERIE|CLINICAL IMPRESSION|IMPRESSION CLINIQUE|PLAN|NOTE TYPE|TYPE DE NOTE|CONSULTATION|ÉVOLUTION|PROGRESS NOTE|NOTE D['']ÉVOLUTION|MÉDICAMENTS À DOMICILE|HOME MEDICATIONS|MÉDICAMENTS HOSPITALIERS|HOSPITAL MEDICATIONS)\s*:?\s*$/i.test(trimmed) ||
-        // Headers that contain common medical abbreviations in all caps
-        /^(PMH|HPI|ROS|PE|LAB|LABS)\s*:?\s*$/i.test(trimmed)
-      );
-      
-      if (isHeader) {
-        // Ensure header ends with colon for consistent formatting
-        const headerText = trimmed.endsWith(':') ? trimmed : trimmed + ':';
-        sections.push({type: 'header', text: headerText});
-      } else if (trimmed.length > 0) {
-        sections.push({type: 'content', text: line});
-      } else {
-        // Empty line
-        sections.push({type: 'content', text: ''});
-      }
-    }
-
-    return (
-      <div className="space-y-4 p-4">
-        {sections.map((section, index) => {
-          if (section.type === 'header') {
-            return (
-              <div key={index} className="border-l-4 border-purple-500 pl-4 py-2">
-                <h4 className="font-bold text-lg text-purple-800 bg-purple-50 px-3 py-2 rounded">
-                  {section.text}
-                </h4>
-              </div>
-            );
-          } else {
-            return (
-              <div key={index} className="ml-8">
-                <div className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
-                  {section.text}
-                </div>
-              </div>
-            );
-          }
-        })}
-      </div>
-    );
-  };
 
   const renderDefaultPreview = () => {
     const defaultSections = [
@@ -335,26 +264,6 @@ export function TemplateAwareLivePreview({
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {isTemplateActive && (
-              <Button
-                onClick={() => setIsFormattedView(!isFormattedView)}
-                variant="outline"
-                size="sm"
-                className="flex items-center gap-2"
-              >
-                {isFormattedView ? (
-                  <>
-                    <Edit3 className="w-4 h-4" />
-                    {language === 'fr' ? 'Éditer' : 'Edit'}
-                  </>
-                ) : (
-                  <>
-                    <Eye className="w-4 h-4" />
-                    {language === 'fr' ? 'Aperçu' : 'Preview'}
-                  </>
-                )}
-              </Button>
-            )}
             {onCopyNote && (
               <Button
                 onClick={() => {
@@ -414,42 +323,29 @@ export function TemplateAwareLivePreview({
 
       {/* Main Note Editor */}
       <div className="flex-1 overflow-auto">
-        {isTemplateActive && isFormattedView ? (
-          // When template is active and in formatted view, show formatted note with section headers
-          <div className="h-full">
-            {renderFormattedNote()}
-          </div>
-        ) : (
-          // When no template is active or in edit mode, show editable textarea
-          <DotPhraseTextarea
-            value={note || ''}
-            onChange={(value) => {
-              try {
-                if (onNoteChange) {
-                  onNoteChange(value);
-                }
-              } catch (error) {
-                console.error('Error handling note change:', error);
+        {/* Always show editable textarea - single mode for all cases */}
+        <DotPhraseTextarea
+          value={note || ''}
+          onChange={(value) => {
+            try {
+              if (onNoteChange) {
+                onNoteChange(value);
               }
-            }}
-            placeholder={language === 'fr' ? 'Votre note clinique apparaîtra ici...' : 'Your clinical note will appear here...'}
-            className="w-full h-full resize-none border-0 rounded-none focus:ring-0 focus:border-0 p-4 text-sm font-mono leading-relaxed"
-          />
-        )}
+            } catch (error) {
+              console.error('Error handling note change:', error);
+            }
+          }}
+          placeholder={language === 'fr' ? 'Votre note clinique apparaîtra ici...' : 'Your clinical note will appear here...'}
+          className="w-full h-full resize-none border-0 rounded-none focus:ring-0 focus:border-0 p-4 text-sm font-mono leading-relaxed"
+        />
       </div>
 
       {/* Help Text */}
       <div className="border-t p-3 bg-gray-50 text-xs text-gray-600">
         {isTemplateActive ? (
-          isFormattedView ? (
-            language === 'fr' 
-              ? 'Vue formatée avec en-têtes de sections. Cliquez sur "Éditer" pour modifier le contenu.'
-              : 'Formatted view with section headers. Click "Edit" to modify content.'
-          ) : (
-            language === 'fr' 
-              ? 'Mode édition. Cliquez sur "Aperçu" pour voir les en-têtes de sections formatées.'
-              : 'Edit mode. Click "Preview" to see formatted section headers.'
-          )
+          language === 'fr' 
+            ? 'Note éditable avec modèle actif. La structure du modèle est affichée ci-dessus pour référence.'
+            : 'Editable note with active template. Template structure is shown above for reference.'
         ) : (
           language === 'fr'
             ? 'Cette note utilise la structure par défaut. Sélectionnez un modèle dans Templates > Sélectionner un modèle pour personnaliser.'

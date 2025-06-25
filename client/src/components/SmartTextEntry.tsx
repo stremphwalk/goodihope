@@ -25,12 +25,17 @@ export function SmartTextEntry({ title, placeholder, value, onChange, templates 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [localValue, setLocalValue] = useState(value);
 
-  // Only sync external value when not focused
+  // Sync external value changes, but preserve local changes when focused
   useEffect(() => {
+    // Always sync if the component is not focused to ensure template defaults are applied
     if (document.activeElement !== textareaRef.current) {
       setLocalValue(value);
     }
-  }, [value]);
+    // If focused and local value is empty, still allow external value updates (for template defaults)
+    else if (document.activeElement === textareaRef.current && (!localValue || localValue.trim() === '')) {
+      setLocalValue(value);
+    }
+  }, [value, localValue]);
 
   const formatText = useCallback((text: string): string => {
     if (!text) return '';
@@ -69,17 +74,45 @@ export function SmartTextEntry({ title, placeholder, value, onChange, templates 
     onChange(localValue);
   };
 
+  // Only propagate changes immediately for template defaults when not focused
+  useEffect(() => {
+    // Only call onChange immediately if:
+    // 1. Component is not focused (to avoid focus loss)
+    // 2. Local value is empty/whitespace (for template defaults)
+    // 3. External value has meaningful content (template is providing default)
+    if (document.activeElement !== textareaRef.current && 
+        (!localValue || localValue.trim() === '') && 
+        value && value.trim() !== '') {
+      onChange(value);
+    }
+  }, [value, localValue, onChange]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const { selectionStart } = textarea;
-    const currentValue = localValue;
-    const lines = currentValue.split('\n');
-    const currentLineIndex = currentValue.substring(0, selectionStart).split('\n').length - 1;
-    const currentLine = lines[currentLineIndex];
-    const lineStart = currentValue.lastIndexOf('\n', selectionStart - 1) + 1;
-    const cursorPositionInLine = selectionStart - lineStart;
+    try {
+      const { selectionStart } = textarea;
+      const currentValue = localValue || '';
+      
+      // Validate selection position
+      if (selectionStart < 0 || selectionStart > currentValue.length) {
+        console.warn('Invalid selection position:', selectionStart);
+        return;
+      }
+
+      const lines = currentValue.split('\n');
+      const currentLineIndex = currentValue.substring(0, selectionStart).split('\n').length - 1;
+      
+      // Validate line index
+      if (currentLineIndex < 0 || currentLineIndex >= lines.length) {
+        console.warn('Invalid line index:', currentLineIndex);
+        return;
+      }
+      
+      const currentLine = lines[currentLineIndex] || '';
+      const lineStart = currentValue.lastIndexOf('\n', selectionStart - 1) + 1;
+      const cursorPositionInLine = selectionStart - lineStart;
 
     // Tab: Transform current line to sub-point or add new sub-point
     if (e.key === 'Tab' && !e.shiftKey) {
@@ -128,18 +161,29 @@ export function SmartTextEntry({ title, placeholder, value, onChange, templates 
         }, 0);
       }
     }
+    } catch (error) {
+      console.error('Error in handleKeyDown:', error);
+    }
   }, [localValue]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newValue = e.target.value;
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+    try {
+      const newValue = e.target.value;
+      const textarea = textareaRef.current;
+      if (!textarea) return;
 
-    // Check if user typed a dash at end of line
-    const { selectionStart } = textarea;
-    const lines = newValue.split('\n');
-    const currentLineIndex = newValue.substring(0, selectionStart).split('\n').length - 1;
-    const currentLine = lines[currentLineIndex];
+      // Check if user typed a dash at end of line
+      const { selectionStart } = textarea;
+      const lines = newValue.split('\n');
+      const currentLineIndex = newValue.substring(0, selectionStart).split('\n').length - 1;
+      
+      // Validate bounds
+      if (currentLineIndex < 0 || currentLineIndex >= lines.length) {
+        setLocalValue(newValue);
+        return;
+      }
+      
+      const currentLine = lines[currentLineIndex] || '';
     
     // If line ends with dash, convert to sub-point on next line
     if (currentLine.endsWith('-') && !currentLine.startsWith('-')) {
@@ -159,6 +203,11 @@ export function SmartTextEntry({ title, placeholder, value, onChange, templates 
     }
     
     setLocalValue(newValue);
+    } catch (error) {
+      console.error('Error in handleChange:', error);
+      // Fallback to just setting the value without special processing
+      setLocalValue(e.target.value);
+    }
   };
 
   const insertTemplate = useCallback((template: string) => {

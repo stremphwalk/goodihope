@@ -1,9 +1,17 @@
+import { MainLayout } from "../components/MainLayout";
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { rosSymptomOptions } from "@/constants/rosSymptomOptions";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { 
   Stethoscope, 
   Thermometer, 
@@ -19,8 +27,6 @@ import {
   Bone,
   Shield,
   Activity,
-  ChevronDown,
-  ChevronUp,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -34,19 +40,37 @@ import {
   Languages,
   X,
   Camera,
-  Plus
+  Plus,
+  Globe,
+  RefreshCw,
+  AlertCircle,
+  Edit3,
+  Wind,
+  Image,
+  Minimize,
+  Expand,
+  Apple
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { MedicationSection } from "@/components/MedicationSection";
+import { useAuth } from "react-oidc-context";
+import { useTemplate } from "@/contexts/TemplateContext";
+import { SmartPMHSection } from "@/components/SmartPMHSection";
+import { SmartImpressionSection } from "@/components/SmartImpressionSection";
+import { MedicationSection } from "@/components/MedicationSectionNew";
 import { ChiefComplaintSection, type ChiefComplaintData } from "@/components/ChiefComplaintSection";
 import { type MedicationData, formatMedicationsForNote } from "@/lib/medicationUtils";
 import { LabImageUpload } from "@/components/LabImageUpload";
-import { TemplateSelector } from "@/components/TemplateSelector";
-import { type Template } from "@shared/schema";
-import { type TemplateContent, getSectionById } from "@/lib/sectionLibrary";
+import { LabValuesDisplay } from "@/components/LabValuesDisplay";
+import { processLabValues, formatLabValuesForNote, type LabValue, type ProcessedLabValue } from "@/lib/labUtils";
+import * as DiffMatchPatch from 'diff-match-patch';
+import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
+import HpiSection from '@/components/HpiSection';
+import { TemplateAwareLivePreview } from '@/components/TemplateAwareLivePreview';
+import { type Template, type NoteType, type NoteSubtype } from '@shared/schema';
+import { type TemplateContent } from '@/lib/sectionLibrary';
+
+// Import is correct; RosSymptomAccordion is used inside HpiSection
 
 // Allergies and Social History data structures
 interface AllergiesData {
@@ -57,15 +81,15 @@ interface AllergiesData {
 interface SocialHistoryData {
   smoking: {
     status: boolean;
-    details: string; // cigarettes per day or pack years
+    details: string;
   };
   alcohol: {
     status: boolean;
-    details: string; // number of consumptions
+    details: string;
   };
   drugs: {
     status: boolean;
-    details: string; // drugs used
+    details: string;
   };
 }
 
@@ -93,4229 +117,2589 @@ const labCategories = {
       "Creatinine": { name: "Creatinine", range: "62-115 (M), 53-97 (F)", unit: "μmol/L" },
       "Glucose": { name: "Glucose", range: "3.9-5.6", unit: "mmol/L" }
     }
-  },
-  "LFTs": {
-    icon: Activity,
-    color: "bg-green-600",
-    tests: {
-      "ALT": { name: "ALT", range: "7-56", unit: "U/L" },
-      "AST": { name: "AST", range: "10-40", unit: "U/L" },
-      "ALP": { name: "Alkaline Phosphatase", range: "44-147", unit: "U/L" },
-      "Total_Bilirubin": { name: "Total Bilirubin", range: "5-21", unit: "μmol/L" },
-      "Albumin": { name: "Albumin", range: "35-50", unit: "g/L" }
-    }
-  },
-  "Coagulation": {
-    icon: Heart,
-    color: "bg-purple-600",
-    tests: {
-      "PT": { name: "Prothrombin Time", range: "11-13", unit: "seconds" },
-      "INR": { name: "INR", range: "0.8-1.1", unit: "" },
-      "PTT": { name: "Partial Thromboplastin Time", range: "25-35", unit: "seconds" }
-    }
-  },
-  "Cardiac": {
-    icon: HeartPulse,
-    color: "bg-red-500",
-    tests: {
-      "Troponin": { name: "Troponin I", range: "<40", unit: "ng/L" },
-      "CK_MB": { name: "CK-MB", range: "0-6.3", unit: "μg/L" },
-      "BNP": { name: "BNP", range: "<100", unit: "ng/L" }
-    }
-  },
-  "Inflammatory": {
-    icon: Shield,
-    color: "bg-orange-600",
-    tests: {
-      "ESR": { name: "ESR", range: "0-22 (M), 0-29 (F)", unit: "mm/hr" },
-      "CRP": { name: "C-Reactive Protein", range: "<3.0", unit: "mg/L" },
-      "Procalcitonin": { name: "Procalcitonin", range: "<0.25", unit: "μg/L" }
-    }
-  },
-  "Blood Gases": {
-    icon: Zap,
-    color: "bg-sky-600",
-    tests: {
-      "pH": { name: "pH", range: "7.35-7.45", unit: "" },
-      "pCO2": { name: "pCO2", range: "35-45", unit: "mmHg" },
-      "pO2": { name: "pO2", range: "80-100", unit: "mmHg" },
-      "HCO3": { name: "HCO3", range: "22-26", unit: "mmol/L" },
-      "Base_Excess": { name: "Base Excess", range: "-2 to +2", unit: "mmol/L" },
-      "O2_Sat": { name: "O2 Saturation", range: "95-100", unit: "%" },
-      "Lactate": { name: "Lactate", range: "0.5-2.2", unit: "mmol/L" }
-    }
   }
-};
-
-
-
-const imagingRegions = {
-  "CNS": {
-    name: "CNS",
-    modalities: ["CT", "MRI", "Angiography"],
-    color: "bg-pink-600",
-    icon: Brain,
-    systemMapping: "NEUROLOGICAL"
-  },
-  "HEENT": {
-    name: "HEENT",
-    modalities: ["CT", "MRI", "X-Ray"],
-    color: "bg-green-600",
-    icon: Eye,
-    systemMapping: "NEUROLOGICAL"
-  },
-  "Thyroid": {
-    name: "Thyroid",
-    modalities: ["Ultrasound", "CT", "Nuclear Medicine"],
-    color: "bg-emerald-600",
-    icon: Activity,
-    systemMapping: "HEMODYNAMIC"
-  },
-  "Thorax": {
-    name: "Thorax",
-    modalities: ["X-Ray", "CT", "Angiography", "Ultrasound"],
-    color: "bg-cyan-600",
-    icon: HeartPulse,
-    systemMapping: "RESPIRATORY"
-  },
-  "Abdomen": {
-    name: "Abdomen",
-    modalities: ["X-Ray", "CT", "Ultrasound", "MRI"],
-    color: "bg-orange-600",
-    icon: Pill,
-    systemMapping: "GASTROINTESTINAL"
-  },
-  "GU": {
-    name: "Genitourinary",
-    modalities: ["Ultrasound", "CT", "MRI", "X-Ray"],
-    color: "bg-purple-600",
-    icon: Shield,
-    systemMapping: "NEPHRO-METABOLIC"
-  },
-  "Lower_Limbs": {
-    name: "Lower Limbs",
-    modalities: ["X-Ray", "CT", "MRI", "Ultrasound"],
-    color: "bg-indigo-600",
-    icon: Bone,
-    systemMapping: "HEMATO-INFECTIOUS"
-  }
-};
-
-const imagingFindings = {
-  "CT_CNS": {
-    concise: "CT head: no significant findings",
-    detailed: "CT head: No signs of acute hemorrhage, mass effect, or midline shift. No evidence of acute infarction.",
-    concise_fr: "TDM cérébrale: aucune anomalie significative",
-    detailed_fr: "TDM cérébrale: Aucun signe d'hémorragie aiguë, d'effet de masse ou de déviation de la ligne médiane. Aucune évidence d'infarctus aigu."
-  },
-  "MRI_CNS": {
-    concise: "MRI brain: no significant findings",
-    detailed: "MRI brain: No signs of acute infarction, hemorrhage, or space-occupying lesion. Normal ventricular size and configuration.",
-    concise_fr: "IRM cérébrale: aucune anomalie significative",
-    detailed_fr: "IRM cérébrale: Aucun signe d'infarctus aigu, d'hémorragie ou de lésion occupant l'espace. Taille et configuration ventriculaires normales."
-  },
-  "Angiography_CNS": {
-    concise: "Cerebral angiography: no significant findings",
-    detailed: "Cerebral angiography: Patent major cerebral vessels. No evidence of stenosis, occlusion, or vascular malformation."
-  },
-  "CT_HEENT": {
-    concise: "CT head and neck: no significant findings",
-    detailed: "CT head and neck: No signs of fracture, foreign body, or soft tissue swelling. Normal anatomical structures."
-  },
-  "MRI_HEENT": {
-    concise: "MRI head and neck: no significant findings",
-    detailed: "MRI head and neck: No signs of mass lesion, inflammation, or structural abnormality."
-  },
-  "X-Ray_HEENT": {
-    concise: "X-ray head and neck: no significant findings",
-    detailed: "X-ray head and neck: No signs of fracture or foreign body. Normal bony alignment."
-  },
-  "Ultrasound_Thyroid": {
-    concise: "Thyroid ultrasound: no significant findings",
-    detailed: "Thyroid ultrasound: Normal size and echogenicity. No nodules or cystic lesions identified.",
-    concise_fr: "Échographie thyroïdienne: aucune anomalie significative",
-    detailed_fr: "Échographie thyroïdienne: Taille et échogénicité normales. Aucun nodule ou lésion kystique identifié."
-  },
-  "CT_Thyroid": {
-    concise: "CT thyroid: no significant findings",
-    detailed: "CT thyroid: Normal size and enhancement pattern. No mass lesion or lymphadenopathy.",
-    concise_fr: "TDM thyroïde: aucune anomalie significative",
-    detailed_fr: "TDM thyroïde: Taille normale et patron de rehaussement normal. Aucune lésion de masse ou lymphadénopathie."
-  },
-  "Nuclear Medicine_Thyroid": {
-    concise: "Thyroid scan: no significant findings",
-    detailed: "Thyroid scan: Normal uptake and distribution. No cold or hot nodules identified.",
-    concise_fr: "Scintigraphie thyroïdienne: aucune anomalie significative",
-    detailed_fr: "Scintigraphie thyroïdienne: Captation et distribution normales. Aucun nodule froid ou chaud identifié."
-  },
-  "X-Ray_Thorax": {
-    concise: "Chest X-ray: no significant findings",
-    detailed: "Chest X-ray: No signs of pneumonia, volume overload, or effusion. Normal cardiac silhouette and lung fields.",
-    concise_fr: "Radiographie pulmonaire: aucune anomalie significative",
-    detailed_fr: "Radiographie pulmonaire: Aucun signe de pneumonie, de surcharge volumique ou d'épanchement. Silhouette cardiaque et champs pulmonaires normaux."
-  },
-  "CT_Thorax": {
-    concise: "CT chest: no significant findings",
-    detailed: "CT chest: No signs of pulmonary embolism, pneumonia, or mass lesion. Normal mediastinal structures.",
-    concise_fr: "TDM thoracique: aucune anomalie significative",
-    detailed_fr: "TDM thoracique: Aucun signe d'embolie pulmonaire, de pneumonie ou de lésion de masse. Structures médiastinales normales."
-  },
-  "Angiography_Thorax": {
-    concise: "CT angiography chest: no significant findings",
-    detailed: "CT angiography chest: No signs of pulmonary embolism or aortic pathology. Patent pulmonary arteries.",
-    concise_fr: "Angiographie CT thoracique: aucune anomalie significative",
-    detailed_fr: "Angiographie CT thoracique: Aucun signe d'embolie pulmonaire ou de pathologie aortique. Artères pulmonaires perméables."
-  },
-  "Ultrasound_Thorax": {
-    concise: "Chest ultrasound: no significant findings",
-    detailed: "Chest ultrasound: No signs of pleural effusion or pneumothorax. Normal diaphragmatic movement.",
-    concise_fr: "Échographie thoracique: aucune anomalie significative",
-    detailed_fr: "Échographie thoracique: Aucun signe d'épanchement pleural ou de pneumothorax. Mouvement diaphragmatique normal."
-  },
-  "X-Ray_Abdomen": {
-    concise: "Abdominal X-ray: no significant findings",
-    detailed: "Abdominal X-ray: No signs of bowel obstruction, free air, or foreign body. Normal bowel gas pattern.",
-    concise_fr: "Radiographie abdominale: aucune anomalie significative",
-    detailed_fr: "Radiographie abdominale: Aucun signe d'obstruction intestinale, d'air libre ou de corps étranger. Gaz intestinal normal."
-  },
-  "CT_Abdomen": {
-    concise: "CT abdomen: no significant findings",
-    detailed: "CT abdomen: No signs of obstruction, perforation, or mass lesion. Normal organ enhancement.",
-    concise_fr: "TDM abdominale: aucune anomalie significative",
-    detailed_fr: "TDM abdominale: Aucun signe d'obstruction, de perforation ou de lésion de masse. Rehaussement organique normal."
-  },
-  "Ultrasound_Abdomen": {
-    concise: "Abdominal ultrasound: no significant findings",
-    detailed: "Abdominal ultrasound: No signs of organomegaly, mass lesion, or free fluid.",
-    concise_fr: "Échographie abdominale: aucune anomalie significative",
-    detailed_fr: "Échographie abdominale: Aucun signe d'organomégalie, de lésion de masse ou de liquide libre."
-  },
-  "MRI_Abdomen": {
-    concise: "MRI abdomen: no significant findings",
-    detailed: "MRI abdomen: No signs of mass lesion, inflammation, or vascular abnormality.",
-    concise_fr: "IRM abdominale: aucune anomalie significative",
-    detailed_fr: "IRM abdominale: Aucun signe de lésion de masse, d'inflammation ou d'anomalie vasculaire."
-  },
-  "Ultrasound_GU": {
-    concise: "GU ultrasound: no significant findings",
-    detailed: "GU ultrasound: No signs of hydronephrosis, stones, or mass lesion. Normal bladder wall thickness."
-  },
-  "CT_GU": {
-    concise: "CT urogram: no significant findings",
-    detailed: "CT urogram: No signs of stones, obstruction, or mass lesion. Normal renal enhancement and excretion."
-  },
-  "MRI_GU": {
-    concise: "MRI pelvis: no significant findings",
-    detailed: "MRI pelvis: No signs of mass lesion, inflammation, or structural abnormality."
-  },
-  "X-Ray_GU": {
-    concise: "KUB X-ray: no significant findings",
-    detailed: "KUB X-ray: No signs of stones or foreign body. Normal bony pelvis."
-  },
-  "X-Ray_Lower_Limbs": {
-    concise: "Lower limb X-ray: no significant findings",
-    detailed: "Lower limb X-ray: No signs of fracture, dislocation, or bony abnormality. Normal joint spaces."
-  },
-  "CT_Lower_Limbs": {
-    concise: "CT lower limbs: no significant findings",
-    detailed: "CT lower limbs: No signs of fracture, mass lesion, or vascular abnormality."
-  },
-  "MRI_Lower_Limbs": {
-    concise: "MRI lower limbs: no significant findings",
-    detailed: "MRI lower limbs: No signs of soft tissue injury, mass lesion, or bone marrow abnormality."
-  },
-  "Ultrasound_Lower_Limbs": {
-    concise: "Lower limb ultrasound: no significant findings",
-    detailed: "Lower limb ultrasound: No signs of deep vein thrombosis or arterial insufficiency. Normal flow patterns."
-  }
-};
-
-const intubationParameters = {
-  "Mode": { name: "Ventilator Mode", options: ["AC/VC", "SIMV", "PSV", "CPAP", "BiPAP"], unit: "" },
-  "TV": { name: "Tidal Volume", range: "200-800", unit: "mL", min: 200, max: 800, step: 10 },
-  "RR": { name: "Respiratory Rate", range: "8-35", unit: "/min", min: 8, max: 35, step: 1 },
-  "PEEP": { name: "PEEP", range: "0-20", unit: "cmH2O", min: 0, max: 20, step: 1 },
-  "FiO2": { name: "FiO2", range: "21-100", unit: "%", min: 21, max: 100, step: 1 },
-  "Peak_Pressure": { name: "Peak Pressure", range: "10-50", unit: "cmH2O", min: 10, max: 50, step: 1 },
-  "Plateau_Pressure": { name: "Plateau Pressure", range: "10-40", unit: "cmH2O", min: 10, max: 40, step: 1 },
-  "Mean_Pressure": { name: "Mean Airway Pressure", range: "5-25", unit: "cmH2O", min: 5, max: 25, step: 1 }
 };
 
 const rosOptions = {
-  General: {
-    detailed: "No fevers, chills, night sweats, or weight loss",
-    concise: "No constitutional symptoms"
+  "Constitutional": {
+    detailed: "No fever, chills, night sweats, or unintentional weight loss",
+    concise: "Constitutional symptoms negative"
   },
-  HEENT: {
-    detailed: "No headaches, visual changes, hearing loss, sore throat, or nasal congestion",
-    concise: "No HEENT symptoms"
+  "HEENT": {
+    detailed: "No headache, vision changes, hearing loss, sore throat, or nasal congestion",
+    concise: "HEENT review negative"
   },
-  Cardiovascular: {
+  "Cardiovascular": {
     detailed: "No chest pain, palpitations, shortness of breath, or lower extremity edema",
-    concise: "No cardiovascular symptoms"
+    concise: "Cardiovascular review negative"
   },
-  Respiratory: {
-    detailed: "No cough, shortness of breath, wheezing, or chest tightness",
-    concise: "No respiratory symptoms"
+  "Respiratory": {
+    detailed: "No shortness of breath, cough, sputum production, or wheezing",
+    concise: "Respiratory review negative"
   },
-  Gastrointestinal: {
+  "Gastrointestinal": {
     detailed: "No abdominal pain, nausea, vomiting, diarrhea, or constipation",
-    concise: "No gastrointestinal symptoms"
+    concise: "Gastrointestinal review negative"
   },
-  Genitourinary: {
-    detailed: "No urinary frequency, urgency, dysuria, or hematuria",
-    concise: "No genitourinary symptoms"
+  "Genitourinary": {
+    detailed: "No dysuria, frequency, urgency, or hematuria",
+    concise: "Genitourinary review negative"
   },
-  Musculoskeletal: {
-    detailed: "No joint pain, muscle aches, back pain, or stiffness",
-    concise: "No musculoskeletal symptoms"
+  "Musculoskeletal": {
+    detailed: "No joint pain, muscle weakness, or limitation of movement",
+    concise: "Musculoskeletal review negative"
   },
-  Neurological: {
-    detailed: "No headaches, dizziness, weakness, numbness, or changes in coordination",
-    concise: "No neurological symptoms"
+  "Neurological": {
+    detailed: "No headache, dizziness, seizures, weakness, or numbness",
+    concise: "Neurological review negative"
   },
-  Psychiatric: {
+  "Psychiatric": {
     detailed: "No depression, anxiety, mood changes, or sleep disturbances",
-    concise: "No psychiatric symptoms"
+    concise: "Psychiatric review negative"
   },
-  Skin: {
-    detailed: "No rashes, lesions, itching, or changes in moles",
-    concise: "No skin symptoms"
+  "Endocrine": {
+    detailed: "No polyuria, polydipsia, heat or cold intolerance",
+    concise: "Endocrine review negative"
   },
-  Endocrine: {
-    detailed: "No heat or cold intolerance, excessive thirst, or changes in appetite",
-    concise: "No endocrine symptoms"
-  },
-  Hematologic: {
-    detailed: "No easy bruising, bleeding, or swollen lymph nodes",
-    concise: "No hematologic symptoms"
+  "Hematologic": {
+    detailed: "No easy bruising, bleeding, or lymph node enlargement",
+    concise: "Hematologic review negative"
   }
 };
 
 const physicalExamOptions = {
-  General: "Alert, well-appearing, in no acute distress",
-  Vital: "Afebrile, normotensive, normal heart rate and respiratory rate",
-  HEENT: "NCAT, PERRL, EOMI, no lymphadenopathy, throat clear",
-  Cardiovascular: "Regular rate and rhythm, no murmurs, rubs, or gallops",
-  Respiratory: "Clear to auscultation bilaterally, no wheezes or rales", 
-  Gastrointestinal: "Soft, non-tender, non-distended, normal bowel sounds",
-  Genitourinary: "Deferred or normal external genitalia",
-  Musculoskeletal: "Normal range of motion, no joint swelling or tenderness",
-  Neurological: "Alert and oriented x3, cranial nerves II-XII intact, normal strength and sensation",
-  Skin: "Warm, dry, intact, no rashes or lesions",
-  Extremities: "No clubbing, cyanosis, or edema"
-};
-
-const systemIcons = {
-  General: Thermometer,
-  HEENT: Eye,
-  Cardiovascular: Heart,
-  Respiratory: HeartPulse,
-  Gastrointestinal: Pill,
-  Genitourinary: Shield,
-  Musculoskeletal: Bone,
-  Neurological: Brain,
-  Psychiatric: Activity,
-  Skin: CheckCircle,
-  Endocrine: Activity,
-  Hematologic: Heart,
-  Vital: Activity,
-  Extremities: Bone
-};
-
-const systemColors = {
-  General: "bg-blue-600",
-  HEENT: "bg-emerald-600", 
-  Cardiovascular: "bg-red-600",
-  Respiratory: "bg-cyan-600",
-  Gastrointestinal: "bg-orange-600",
-  Genitourinary: "bg-purple-600",
-  Musculoskeletal: "bg-amber-600",
-  Neurological: "bg-indigo-600",
-  Psychiatric: "bg-pink-600",
-  Skin: "bg-teal-600",
-  Endocrine: "bg-green-600",
-  Hematologic: "bg-rose-600",
-  Vital: "bg-slate-600",
-  Extremities: "bg-yellow-600"
+  "General": "Well-appearing, in no acute distress",
+  "Vital Signs": "Temperature 98.6°F, Blood pressure 120/80, Heart rate 72, Respiratory rate 16, Oxygen saturation 98% on room air",
+  "HEENT": "Normocephalic, atraumatic. Pupils equal, round, reactive to light. Extraocular movements intact. Oropharynx clear",
+  "Cardiovascular": "Regular rate and rhythm, no murmurs, rubs, or gallops. No peripheral edema",
+  "Respiratory": "Clear to auscultation bilaterally, no wheezes, rales, or rhonchi",
+  "Abdominal": "Soft, non-tender, non-distended, bowel sounds present",
+  "Neurological": "Alert and oriented x3, cranial nerves II-XII intact, motor strength 5/5 throughout",
+  "Musculoskeletal": "Normal range of motion, no joint swelling or tenderness",
+  "Skin": "Warm, dry, intact, no rashes or lesions"
 };
 
 function ReviewOfSystems() {
-  const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const [selectedRosSystems, setSelectedRosSystems] = useState<Set<string>>(new Set());
-  const [selectedPeSystems, setSelectedPeSystems] = useState<Set<string>>(new Set());
-  const [selectedLabCategories, setSelectedLabCategories] = useState<Set<string>>(new Set());
-  const [labValues, setLabValues] = useState<Record<string, Record<string, { current: string; past: string[] }>>>({});
-  const [normalCategories, setNormalCategories] = useState<Set<string>>(new Set());
-  const [bloodGasTypes, setBloodGasTypes] = useState<Record<string, string>>({});
-  const [customLabs, setCustomLabs] = useState<Record<string, { current: string; past: string[] }>>({});
-  const [newCustomLabName, setNewCustomLabName] = useState("");
-  const [tempLabData, setTempLabData] = useState({ current: "", past: ["", "", "", ""] });
-  const [rosSystemModes, setRosSystemModes] = useState<Record<string, "detailed" | "concise">>({});
-  const [intubationValues, setIntubationValues] = useState<Record<string, { current: string; past: string[] }>>({});
-
-  const [selectedImagingRegions, setSelectedImagingRegions] = useState<Set<string>>(new Set());
-  const [selectedImagingModalities, setSelectedImagingModalities] = useState<Record<string, string>>({});
-  const [imagingResults, setImagingResults] = useState<Record<string, { normal: boolean; customResult: string; mode?: "detailed" | "concise" }>>({});
+  // Note state with diff-patch-merge tracking
   const [note, setNote] = useState("");
-  const [currentSection, setCurrentSection] = useState(0);
+  const [initialGeneratedText, setInitialGeneratedText] = useState("");
+  const [selectedSubOption, setSelectedSubOption] = useState("note-type");
+  const [currentText, setCurrentText] = useState("");
+  const dmp = useRef(new DiffMatchPatch.diff_match_patch());
+  
   const [noteType, setNoteType] = useState<"admission" | "progress" | "consultation" | null>(null);
   const [admissionType, setAdmissionType] = useState<"general" | "icu">("general");
   const [progressType, setProgressType] = useState<"general" | "icu">("general");
-  const [sectionTemplates, setSectionTemplates] = useState<Record<string, string>>({});
   
-  // Custom text preservation - track if user has manually edited the note
-  const [hasUserEditedNote, setHasUserEditedNote] = useState(false);
-  const [userNoteContent, setUserNoteContent] = useState("");
+  // Template context
+  const { selectedTemplate, setSelectedTemplate, isTemplateActive } = useTemplate();
+  
+  // Template-related state (keeping local for loading/error states)
+  const [availableTemplates, setAvailableTemplates] = useState<Template[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  
+  // New ROS symptom-level selection state
+  const [selectedSystem, setSelectedSystem] = useState<string | null>(null);
+  const [selectedSymptoms, setSelectedSymptoms] = useState<Record<string, Set<string>>>({}); // systemKey -> Set of symptom keys
+
+  const [selectedPeSystems, setSelectedPeSystems] = useState<Set<string>>(new Set());
+  
+  // ICU intubation parameters
+  const [intubationValues, setIntubationValues] = useState<Record<string, { current: string; past: string[] }>>({});
+  
   const [medications, setMedications] = useState<MedicationData>({ 
     homeMedications: [], 
     hospitalMedications: [] 
   });
-  const [allergies, setAllergies] = useState<AllergiesData>({
-    hasAllergies: false,
-    allergiesList: []
-  });
-  const [socialHistory, setSocialHistory] = useState<SocialHistoryData>({
-    smoking: { status: false, details: '' },
-    alcohol: { status: false, details: '' },
-    drugs: { status: false, details: '' }
-  });
-  const [chiefComplaint, setChiefComplaint] = useState<ChiefComplaintData>({
-    selectedTemplate: '',
-    customComplaint: '',
-    presentingSymptoms: '',
-    onsetDuration: '',
-    associatedSymptoms: '',
-    aggravatingFactors: '',
-    relievingFactors: '',
-    previousTreatment: ''
-  });
-  const [allergiesExpanded, setAllergiesExpanded] = useState(false);
+  
+  const [allergies, setAllergies] = useState<AllergiesData>({ hasAllergies: false, allergiesList: [] });
   const [newAllergy, setNewAllergy] = useState("");
   
-  // Template state
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
-  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [socialHistory, setSocialHistory] = useState<SocialHistoryData>({
+    smoking: { status: false, details: "" },
+    alcohol: { status: false, details: "" },
+    drugs: { status: false, details: "" }
+  });
   
+  // Use refs to store current values for note generation without triggering re-renders
+  const allergiesRef = useRef(allergies);
+  const socialHistoryRef = useRef(socialHistory);
+  
+  // Update refs when values change - ensure refs are always current
+  allergiesRef.current = allergies;
+  socialHistoryRef.current = socialHistory;
+  
+  const [chiefComplaint, setChiefComplaint] = useState<ChiefComplaintData>({
+    selectedTemplate: "",
+    customComplaint: "",
+    presentingSymptoms: "",
+    onsetDuration: "",
+    associatedSymptoms: "",
+    aggravatingFactors: "",
+    relievingFactors: "",
+    previousTreatment: ""
+  });
+
+  // HPI/HMA state
+  const [hpiText, setHpiText] = useState<string>("");
+
+  const [pmhText, setPmhText] = useState<string>('');
+  const [impressionText, setImpressionText] = useState<string>('');
+
+  const [labValues, setLabValues] = useState<LabValue[]>([]);
+  const [processedLabValues, setProcessedLabValues] = useState<ProcessedLabValue[]>([]);
+  const [selectedLabTests, setSelectedLabTests] = useState<Set<string>>(new Set());
+  
+  // Active tab state for keyboard navigation
+  const [activeTab, setActiveTab] = useState("note-type");
+  
+  // Reset confirmation dialog state
+  const [showResetDialog, setShowResetDialog] = useState(false);
+
   const { toast } = useToast();
   const { language, setLanguage, t } = useLanguage();
+  const auth = useAuth();
 
-  // Handle note text changes to preserve user edits
-  const handleNoteChange = (newText: string) => {
-    setNote(newText);
-    setHasUserEditedNote(true);
-    setUserNoteContent(newText);
-  };
+  // Sidebar navigation state
+  const [selectedMenu, setSelectedMenu] = useState("medical-notes");
 
-  const [sections, setSections] = useState([
-    { id: 'noteType', name: 'Note Type' },
-    { id: 'allergies', name: 'Allergies' },
-    { id: 'medications', name: 'Medications' },
-    { id: 'ros', name: 'Review of Systems' },
-    { id: 'pe', name: 'Physical Exam' },
-    { id: 'lab', name: 'Laboratory' },
-    { id: 'imaging', name: 'Imaging' }
-  ]);
+  // Imagery section state (move to top-level)
+  const imagerySystems = [
+    { key: "neuro", label: "Neuro", modalities: ["CT Scan", "MRI", "Angio Scan"] },
+    { key: "cardiac", label: "Cardiac", modalities: ["Echo", "CT Angio", "MRI"] },
+    { key: "chest", label: "Chest", modalities: ["X-Ray", "CT Scan", "Ultrasound"] },
+    { key: "abdomen", label: "Abdomen", modalities: ["Ultrasound", "CT Scan", "MRI"] },
+    { key: "pelvis", label: "Pelvis", modalities: ["Ultrasound", "CT Scan", "MRI"] },
+    { key: "spine", label: "Spine", modalities: ["X-Ray", "CT Scan", "MRI"] },
+    { key: "limb", label: "Limb", modalities: ["X-Ray", "CT Scan", "MRI"] },
+  ];
+  const [imageryStudies, setImageryStudies] = React.useState<{ system: string; modality: string; result: string }[]>([]);
+  const [newSystem, setNewSystem] = React.useState("");
+  const [newModality, setNewModality] = React.useState("");
+  const [newResult, setNewResult] = React.useState("");
+  
+  // UI state for imagery section - moved to top level to avoid conditional hooks
+  const [expandedSystem, setExpandedSystem] = React.useState<string | null>(null);
+  const [selectedModality, setSelectedModality] = React.useState<string>("");
+  const [resultInput, setResultInput] = React.useState<string>("");
 
-  // Update sections when note type changes
-  React.useEffect(() => {
-    const baseSections = [
-      { id: 'noteType', name: 'Note Type' },
-      { id: 'allergies', name: 'Allergies' },
-      { id: 'medications', name: 'Medications' },
-      { id: 'ros', name: 'Review of Systems' },
-      { id: 'pe', name: 'Physical Exam' },
-      { id: 'lab', name: 'Laboratory' },
-      { id: 'imaging', name: 'Imaging' }
-    ];
-    
-    // Only add intubation parameters for ICU note types
-    if ((noteType === "admission" && admissionType === "icu") || (noteType === "progress" && progressType === "icu")) {
-      baseSections.push({ id: 'intubation', name: 'Intubation Parameters' });
+  // Template API functions
+  const getApiHeaders = useCallback((id_token: string) => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${id_token}`,
+  }), []);
+
+  const loadTemplatesForNoteType = useCallback(async (noteType: NoteType | null, subtype: NoteSubtype) => {
+    if (!auth.user?.id_token || !noteType) {
+      setAvailableTemplates([]);
+      return;
     }
-    
-    setSections(baseSections);
-  }, [noteType, admissionType, progressType]);
 
-  // Helper function to get translated system names
-  const getTranslatedSystemName = (system: string, type: 'ros' | 'pe' | 'lab') => {
-    if (language === 'fr') {
-      const key = `${type}.${system.toLowerCase().replace(/[^a-z]/g, '')}`;
-      const translated = t(key);
-      return translated !== key ? translated : system;
-    }
-    return system;
-  }
-
-
-
-  const getTranslatedBloodGasType = (gasType: string): string => {
-    if (language === 'fr') {
-      const gasTypeTranslations: Record<string, string> = {
-        'Arterial': 'Gaz artériel',
-        'Venous': 'Gaz veineux',
-        'Capillary': 'Gaz capillaire',
-        'ABG': 'Gaz artériel',
-        'VBG': 'Gaz veineux'
-      };
+    try {
+      setLoadingTemplates(true);
+      setTemplateError(null);
       
-      if (gasType.includes('blood gas')) {
-        const type = gasType.replace(' blood gas', '');
-        return gasTypeTranslations[type] || gasType;
+      const params = new URLSearchParams();
+      // Add filtering parameters for template compatibility
+      params.append('compatible_note_type', noteType);
+      params.append('compatible_subtype', subtype);
+      
+      const response = await fetch(`/api/templates?${params.toString()}`, {
+        headers: getApiHeaders(auth.user.id_token),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to load templates');
       }
       
-      return gasTypeTranslations[gasType] || gasType;
-    }
-    return gasType;
-  };
-
-  const getTranslatedIntubationParameterName = (paramName: string): string => {
-    if (language === 'fr') {
-      const paramTranslations: Record<string, string> = {
-        'Ventilator Mode': 'Mode ventilatoire',
-        'Tidal Volume': 'Volume courant',
-        'Respiratory Rate': 'Fréquence respiratoire',
-        'PEEP': 'PEEP',
-        'FiO2': 'FiO2',
-        'Peak Pressure': 'Pression de crête',
-        'Plateau Pressure': 'Pression de plateau',
-        'Mean Airway Pressure': 'Pression moyenne des voies aériennes'
-      };
+      const data = await response.json();
+      const templates = data.map((template: any) => ({
+        ...template,
+        createdAt: new Date(template.createdAt),
+        updatedAt: new Date(template.updatedAt)
+      }));
       
-      return paramTranslations[paramName] || paramName;
+      // Filter templates based on compatibility
+      const compatibleTemplates = templates.filter((template: Template) => {
+        const noteTypes = template.compatibleNoteTypes as string[] || [];
+        const subtypes = template.compatibleSubtypes as string[] || [];
+        
+        return noteTypes.includes(noteType) && 
+               (subtypes.length === 0 || subtypes.includes(subtype));
+      });
+      
+      setAvailableTemplates(compatibleTemplates);
+    } catch (error) {
+      console.error('Failed to load templates:', error);
+      setTemplateError(error instanceof Error ? error.message : 'Failed to load templates');
+      setAvailableTemplates([]);
+    } finally {
+      setLoadingTemplates(false);
     }
-    return paramName;
+  }, [auth.user?.id_token, getApiHeaders]);
+
+  // Get default content for a section from selected template
+  const getSectionDefaultContent = useCallback((sectionId: string): string => {
+    if (!selectedTemplate || !selectedTemplate.content) return '';
+    
+    try {
+      let templateContent: TemplateContent;
+      
+      // Handle object content
+      if (typeof selectedTemplate.content === 'object' && selectedTemplate.content !== null) {
+        templateContent = selectedTemplate.content as TemplateContent;
+      } 
+      // Handle string content
+      else if (typeof selectedTemplate.content === 'string' && selectedTemplate.content.trim()) {
+        const parsed = JSON.parse(selectedTemplate.content);
+        // Validate parsed content has expected structure
+        if (!parsed || typeof parsed !== 'object') {
+          console.warn('Invalid template content structure:', parsed);
+          return '';
+        }
+        templateContent = parsed as TemplateContent;
+      } 
+      // Handle other types
+      else {
+        console.warn('Unsupported template content type:', typeof selectedTemplate.content);
+        return '';
+      }
+      
+      // Validate templateContent structure
+      if (!templateContent || !Array.isArray(templateContent.sections)) {
+        console.warn('Template content missing sections array:', templateContent);
+        return '';
+      }
+      
+      // Find the section in the template
+      const section = templateContent.sections.find(s => s && s.sectionId === sectionId);
+      const content = section?.customContent;
+      
+      // Return content if it's a string, empty string otherwise
+      return typeof content === 'string' ? content : '';
+    } catch (error) {
+      console.error('Error accessing section defaults for sectionId:', sectionId, error);
+      return '';
+    }
+  }, [selectedTemplate]);
+
+  // Track template usage
+  const trackTemplateUsage = useCallback(async (template: Template) => {
+    if (!auth.user?.id_token) return;
+    
+    try {
+      await fetch('/api/template-usage', {
+        method: 'POST',
+        headers: getApiHeaders(auth.user.id_token),
+        body: JSON.stringify({
+          templateId: template.id,
+          patientContext: {
+            noteType,
+            admissionType,
+            progressType,
+            timestamp: new Date().toISOString()
+          }
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to track template usage:', error);
+      // Don't throw error as this is not critical for functionality
+    }
+  }, [auth.user?.id_token, getApiHeaders, noteType, admissionType, progressType]);
+
+  // Handle template selection with usage tracking
+  const handleTemplateSelection = useCallback((template: Template | null) => {
+    setSelectedTemplate(template);
+    if (template) {
+      trackTemplateUsage(template);
+    }
+  }, [trackTemplateUsage]);
+
+  const handleAddStudy = () => {
+    if (!newSystem || !newModality) return;
+    setImageryStudies([
+      ...imageryStudies,
+      { system: newSystem, modality: newModality, result: newResult }
+    ]);
+    setNewSystem("");
+    setNewModality("");
+    setNewResult("");
+  };
+  const handleRemoveStudy = (idx: number) => {
+    setImageryStudies(imageryStudies.filter((_, i) => i !== idx));
   };
 
-  // Helper function to translate laboratory test names
-  // Enhanced lab test name mapping with OCR support
-  const getLabTestName = (testName: string) => {
-    if (language === 'fr') {
-      const testMap: { [key: string]: string } = {
-        'White Blood Cells': 'Globules blancs',
-        'Red Blood Cells': 'Globules rouges',
-        'Hemoglobin': 'Hémoglobine',
-        'Hematocrit': 'Hématocrite',
-        'Platelets': 'Plaquettes',
-        'Sodium': 'Sodium',
-        'Potassium': 'Potassium',
-        'Chloride': 'Chlorure',
-        'CO2': 'CO2',
-        'Bicarbonate': 'Bicarbonate',
-        'Glucose': 'Glucose',
-        'Creatinine': 'Créatinine',
-        'BUN': 'Urée',
-        'Urea': 'Urée',
-        'ALT': 'ALT',
-        'AST': 'AST',
-        'ALP': 'ALP',
-        'Alkaline Phosphatase': 'Phosphatase alcaline',
-        'Total Bilirubin': 'Bilirubine totale',
-        'Albumin': 'Albumine',
-        'PT': 'TP',
-        'INR': 'INR',
-        'PTT': 'TCA',
-        'Prothrombin Time': 'Temps de prothrombine',
-        'Partial Thromboplastin Time': 'Temps de thromboplastine partielle',
-        'Troponin': 'Troponine',
-        'CK_MB': 'CK-MB',
-        'BNP': 'BNP',
-        'C-Reactive Protein': 'Protéine C-réactive',
-        'ESR': 'VS',
-        'Procalcitonin': 'Procalcitonine',
-        'pH': 'pH',
-        'pCO2': 'pCO2',
-        'pO2': 'pO2',
-        'HCO3': 'HCO3',
-        'Base Excess': 'Excès de base',
-        'O2 Sat': 'SatO2',
-        'Lactate': 'Lactate',
-        'Mean Corpuscular Volume': 'Volume globulaire moyen'
-      };
-      return testMap[testName] || testName;
-    }
-    return testName;
-  }
-
-  // Helper function to resolve test names from OCR or predefined categories
-  const resolveTestName = (testKey: string, categoryData: any, testInfo: any) => {
-    if (testInfo?.name) {
-      return getLabTestName(testInfo.name);
-    }
+  // Comprehensive reset function
+  const handleCompleteReset = useCallback(() => {
+    // Reset all note type selections
+    setNoteType(null);
+    setAdmissionType("general");
+    setProgressType("general");
     
-    // OCR test name mapping
-    const ocrTestMap: { [key: string]: string } = {
-      'CRP': 'C-Reactive Protein',
-      'Na': 'Sodium',
-      'K': 'Potassium',
-      'Cl': 'Chloride',
-      'Hb': 'Hemoglobin',
-      'GB': 'White Blood Cells',
-      'Plt': 'Platelets',
-      'VGM': 'Mean Corpuscular Volume',
-      'TP RNI': 'Prothrombin Time (INR)',
-      'TTPa': 'Partial Thromboplastin Time'
-    };
+    // Reset all form data
+    setAllergies({ hasAllergies: false, allergiesList: [] });
+    setSocialHistory({
+      smoking: { status: false, details: "" },
+      alcohol: { status: false, details: "" },
+      drugs: { status: false, details: "" }
+    });
+    setMedications({
+      homeMedications: [],
+      hospitalMedications: []
+    });
+    setSelectedSymptoms({} as Record<string, Set<string>>);
+    setSelectedPeSystems(new Set());
+    setIntubationValues({});
+    setPmhText('');
+    setImpressionText('');
+    setChiefComplaint({
+      selectedTemplate: "",
+      customComplaint: "",
+      presentingSymptoms: "",
+      onsetDuration: "",
+      associatedSymptoms: "",
+      aggravatingFactors: "",
+      relievingFactors: "",
+      previousTreatment: ""
+    });
+    setLabValues([]);
+    setProcessedLabValues([]);
+    setSelectedLabTests(new Set());
     
-    const mappedName = ocrTestMap[testKey] || testKey.replace(/_/g, ' ');
-    return getLabTestName(mappedName);
-  };
+    // Reset text fields
+    setCurrentText("");
+    setInitialGeneratedText("");
+    
+    // Return to note type selection tab
+    setActiveTab("note-type");
+    
+    // Close the dialog
+    setShowResetDialog(false);
+    
+    // Show confirmation toast
+    toast({
+      title: language === 'fr' ? 'Réinitialisation complète' : 'Complete Reset',
+      description: language === 'fr' ? 'Toutes les données ont été effacées' : 'All data has been cleared',
+    });
+  }, [language, toast]);
 
-  // Helper function to translate units
-  const getTranslatedUnit = (unit: string) => {
-    if (language === 'fr') {
-      const unitMap: { [key: string]: string } = {
-        'seconds': t('lab.unit.seconds')
-      };
-      return unitMap[unit] || unit;
+  // Define tab order for keyboard navigation
+  const getTabOrder = useCallback(() => {
+    const baseTabs = ["note-type", "pmh", "allergies-social", "hpi", "meds", "ros"];
+    const icuTabs = ((noteType === "admission" && admissionType === "icu") || (noteType === "progress" && progressType === "icu")) 
+      ? ["ventilation"] : [];
+    const endTabs = ["impression", "labs", "imagery"];
+    return [...baseTabs, ...icuTabs, ...endTabs];
+  }, [noteType, admissionType, progressType]);
+  const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Calculate documented systems
+  const documentedSystems = Object.keys(selectedSymptoms).length + selectedPeSystems.size;
+  const totalSystems = Object.keys(rosOptions).length + Object.keys(physicalExamOptions).length;
+
+  // --- PASTE THIS CORRECTED CODE IN ITS PLACE ---
+
+  // Handle lab values extraction
+  const handleLabValuesExtracted = useCallback((newLabValues: LabValue[]) => {
+    // This is the fix: It REPLACES the old data with the new data
+    setLabValues(newLabValues);
+  }, []);
+
+  // Update processed lab values when labValues changes
+  useEffect(() => {
+    if (labValues && labValues.length > 0) {
+      const processed = processLabValues(labValues);
+      setProcessedLabValues(processed);
+    } else {
+      // This makes sure the display clears if there are no labs
+      setProcessedLabValues([]);
     }
-    return unit;
-  };
+  }, [labValues]);
 
-  // Helper function to translate laboratory category names
-  const getLabCategoryName = (categoryName: string) => {
-    if (language === 'fr') {
-      const categoryMap: { [key: string]: string } = {
-        'CBC': 'FSC',
-        'BMP': 'Chimie',
-        'LFT': 'Bilan hépatique',
-        'LFTs': 'Bilan hépatique',
-        'Cardiac': 'Cardiaque',
-        'Inflammatory': 'Inflammatoire',
-        'Blood Gases': 'Gaz'
-      };
-      return categoryMap[categoryName] || categoryName;
+  // --- END OF CORRECTED CODE ---
+  // Generate text from current options
+  const generateTextFromOptions = useCallback(() => {
+    if (noteType === null) {
+      return language === 'fr' 
+        ? 'Sélectionnez un type de note (Admission, Évolution ou Consultation) pour commencer à générer votre note clinique.'
+        : 'Select a note type (Admission, Progress, or Consultation) to start generating your clinical note.';
     }
-    return categoryName;
-  };
 
-  // Function to scroll to a specific section in the note
-  const scrollToNoteSection = useCallback((sectionKeyword: string) => {
-    if (!noteTextareaRef.current || !note) return;
-    
-    const textarea = noteTextareaRef.current;
-    const noteText = note.toLowerCase();
-    const keywords = [
-      sectionKeyword.toLowerCase(),
-      // Common section headers to search for
-      'chief complaint',
-      'review of systems',
-      'physical exam', 
-      'examination',
-      'medications',
-      'laboratory',
-      'imaging',
-      'allergies',
-      'social history',
-      'intubation'
-    ];
-    
-    let targetIndex = -1;
-    for (const keyword of keywords) {
-      const index = noteText.indexOf(keyword);
-      if (index !== -1) {
-        targetIndex = index;
-        break;
+    // Check if template is active and get template content
+    const templateContent = selectedTemplate ? (() => {
+      try {
+        if (typeof selectedTemplate.content === 'object') {
+          return selectedTemplate.content;
+        }
+        if (typeof selectedTemplate.content === 'string') {
+          return JSON.parse(selectedTemplate.content);
+        }
+        return null;
+      } catch (error) {
+        console.error('Error parsing template content:', error);
+        return null;
+      }
+    })() : null;
+
+    // If template is active, use template-based generation
+    if (templateContent && templateContent.sections && Array.isArray(templateContent.sections)) {
+      try {
+        return generateTemplateBasedNote(templateContent);
+      } catch (error) {
+        console.error('Template-based generation failed, falling back to default:', error);
+        // Fall through to default generation
       }
     }
-    
-    if (targetIndex !== -1) {
-      // Calculate approximate line position
-      const textBeforeTarget = note.substring(0, targetIndex);
-      const lines = textBeforeTarget.split('\n');
-      const lineHeight = 20; // Approximate line height in pixels
-      const scrollPosition = Math.max(0, (lines.length - 2) * lineHeight);
+
+    // Fallback to default note generation
+    return generateDefaultNote();
+  }, [noteType, selectedTemplate, language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, admissionType, progressType]);
+
+  // Template-based note generation
+  const generateTemplateBasedNote = useCallback((templateContent: any) => {
+    try {
+      const sections: string[] = [];
       
-      textarea.scrollTop = scrollPosition;
-    }
-  }, [note]);
+      // Validate template content structure
+      if (!templateContent || !Array.isArray(templateContent.sections)) {
+        console.error('Invalid template content structure');
+        throw new Error('Invalid template content structure');
+      }
 
-  // Update note when note type or admission type changes
-  React.useEffect(() => {
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  }, [noteType, admissionType, progressType]);
+      const enabledSections = templateContent.sections
+        .filter((section: any) => section && section.sectionId && section.isEnabled !== false)
+        .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
 
-  // Update note when medications change
-  React.useEffect(() => {
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  }, [medications]);
-
-  // Update note when allergies change
-  React.useEffect(() => {
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  }, [allergies]);
-
-  // Update note when lab values change (including OCR extracted values)
-  React.useEffect(() => {
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  }, [labValues, selectedLabCategories]);
-
-  // Update note when social history changes
-  React.useEffect(() => {
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  }, [socialHistory]);
-
-  // Update note when chief complaint changes
-  React.useEffect(() => {
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  }, [chiefComplaint]);
-
-  // Update note when language changes
-  React.useEffect(() => {
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  }, [language]);
-
-  // Update note when imaging results change
-  React.useEffect(() => {
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  }, [imagingResults, selectedImagingModalities]);
-
-  // Imaging helper functions
-  const toggleImagingRegion = (region: string) => {
-    const newSelected = new Set(selectedImagingRegions);
-    if (newSelected.has(region)) {
-      newSelected.delete(region);
-      const newModalities = { ...selectedImagingModalities };
-      delete newModalities[region];
-      setSelectedImagingModalities(newModalities);
-      
-      const newResults = { ...imagingResults };
-      Object.keys(newResults).forEach(key => {
-        if (key.endsWith(`_${region}`)) {
-          delete newResults[key];
+      enabledSections.forEach((templateSection: any) => {
+        try {
+          const sectionContent = generateSectionContent(templateSection.sectionId, templateSection.customContent);
+          if (sectionContent && sectionContent.trim()) {
+            sections.push(sectionContent);
+          }
+        } catch (error) {
+          console.error(`Error generating section content for ${templateSection.sectionId}:`, error);
+          // Continue with other sections instead of failing completely
         }
       });
-      setImagingResults(newResults);
-    } else {
-      newSelected.add(region);
+
+      return sections.filter(section => section && section.trim()).join('\n\n');
+    } catch (error) {
+      console.error('Error in generateTemplateBasedNote:', error);
+      // Return a simple fallback without circular dependency
+      return language === 'fr' ? 
+        'Erreur lors de la génération de la note avec le modèle. Veuillez réessayer.' :
+        'Error generating note with template. Please try again.';
     }
-    setSelectedImagingRegions(newSelected);
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-    // Scroll to imaging section
-    setTimeout(() => scrollToNoteSection('imaging'), 100);
-  };
+  }, [language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, noteType, admissionType, progressType]);
 
-  const selectImagingModality = (region: string, modality: string) => {
-    const newModalities = { ...selectedImagingModalities };
-    newModalities[region] = modality;
-    setSelectedImagingModalities(newModalities);
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  };
-
-  const toggleImagingNormal = (region: string, modality: string, mode: "detailed" | "concise") => {
-    const key = `${modality}_${region}`;
-    const newResults = { ...imagingResults };
-    newResults[key] = {
-      normal: true,
-      customResult: "",
-      mode: mode
-    };
-    setImagingResults(newResults);
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  };
-
-  const setCustomImagingResult = (region: string, modality: string, result: string) => {
-    const key = `${modality}_${region}`;
-    const newResults = { ...imagingResults };
-    newResults[key] = {
-      normal: false,
-      customResult: result,
-    };
-    setImagingResults(newResults);
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  };
-
-  const getTranslatedImagingRegionName = (regionKey: string): string => {
-    if (language === 'fr') {
-      const translations: Record<string, string> = {
-        'CNS': 'SNC',
-        'HEENT': 'TORL',
-        'Thyroid': 'Thyroïde',
-        'Thorax': 'Thorax',
-        'Abdomen': 'Abdomen',
-        'GU': 'Génito-urinaire',
-        'Lower_Limbs': 'Membres inférieurs'
+  // Generate content for a specific section with template custom content
+  const generateSectionContent = useCallback((sectionId: string, customContent?: string) => {
+    try {
+      // Helper function to get section header
+      const getSectionHeader = (sectionId: string): string => {
+        const headers: Record<string, { en: string; fr: string }> = {
+          'note-type': { en: 'NOTE TYPE', fr: 'TYPE DE NOTE' },
+          'pmh': { en: 'PAST MEDICAL HISTORY', fr: 'ANTÉCÉDENTS MÉDICAUX' },
+          'allergies-social': { en: 'ALLERGIES & SOCIAL HISTORY', fr: 'ALLERGIES & HISTOIRE SOCIALE' },
+          'meds': { en: 'MEDICATIONS', fr: 'MÉDICAMENTS' },
+          'hpi': { en: 'HISTORY OF PRESENT ILLNESS', fr: 'HISTOIRE DE LA MALADIE ACTUELLE' },
+          'physical-exam': { en: 'PHYSICAL EXAMINATION', fr: 'EXAMEN PHYSIQUE' },
+          'labs': { en: 'LABORATORY RESULTS', fr: 'RÉSULTATS DE LABORATOIRE' },
+          'imagery': { en: 'IMAGING', fr: 'IMAGERIE' },
+          'impression': { en: 'CLINICAL IMPRESSION', fr: 'IMPRESSION CLINIQUE' },
+          'ventilation': { en: 'VENTILATION PARAMETERS', fr: 'PARAMÈTRES DE VENTILATION' },
+          'plan': { en: 'PLAN', fr: 'PLAN' }
+        };
+        
+        const header = headers[sectionId];
+        if (!header) return sectionId.toUpperCase();
+        return language === 'fr' ? header.fr : header.en;
       };
-      return translations[regionKey] || regionKey;
-    }
-    return imagingRegions[regionKey as keyof typeof imagingRegions]?.name || regionKey;
-  };
-
-  const getTranslatedImagingModality = (modality: string): string => {
-    if (language === 'fr') {
-      const translations: Record<string, string> = {
-        'CT': 'TDM',
-        'MRI': 'IRM',
-        'Angiography': 'Angiographie',
-        'X-Ray': 'Radiographie',
-        'Ultrasound': 'Échographie',
-        'Nuclear Medicine': 'Médecine nucléaire'
-      };
-      return translations[modality] || modality;
-    }
-    return modality;
-  };
-
-  // Custom lab handlers
-  const addCustomLab = (labName: string) => {
-    if (labName.trim() && !customLabs[labName]) {
-      const newCustomLabs = { ...customLabs };
-      newCustomLabs[labName] = { 
-        current: tempLabData.current, 
-        past: tempLabData.past.filter(val => val.trim() !== "") 
-      };
-      setCustomLabs(newCustomLabs);
-      setNewCustomLabName("");
-      setTempLabData({ current: "", past: ["", "", "", ""] });
-      updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-    }
-  };
-
-  const handleCustomLabKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && newCustomLabName.trim()) {
-      addCustomLab(newCustomLabName.trim());
-    }
-  };
-
-  const updateCustomLabValue = (labName: string, field: 'current' | 'past', value: string, index?: number) => {
-    const newCustomLabs = { ...customLabs };
-    if (field === 'current') {
-      newCustomLabs[labName].current = value;
-    } else if (field === 'past' && typeof index === 'number') {
-      newCustomLabs[labName].past[index] = value;
-    }
-    setCustomLabs(newCustomLabs);
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  };
-
-  const addCustomLabPastValue = (labName: string) => {
-    const newCustomLabs = { ...customLabs };
-    newCustomLabs[labName].past.push("");
-    setCustomLabs(newCustomLabs);
-  };
-
-  const removeCustomLabPastValue = (labName: string, index: number) => {
-    const newCustomLabs = { ...customLabs };
-    newCustomLabs[labName].past.splice(index, 1);
-    setCustomLabs(newCustomLabs);
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  };
-
-  const removeCustomLab = (labName: string) => {
-    const newCustomLabs = { ...customLabs };
-    delete newCustomLabs[labName];
-    setCustomLabs(newCustomLabs);
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  };
-
-  // Keyboard navigation for section switching
-  React.useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
       
-      if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        setCurrentSection(prev => Math.min(prev + 1, sections.length - 1));
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        setCurrentSection(prev => Math.max(prev - 1, 0));
+      // If custom content is provided, use it with proper header
+      if (customContent && customContent.trim()) {
+        const header = getSectionHeader(sectionId);
+        return `${header}:\n${customContent}`;
+      }
+      
+      // Generate content based on section type with proper headers
+      switch (sectionId) {
+        case 'note-type': {
+          const header = getSectionHeader(sectionId);
+          const content = noteType ? noteType.toUpperCase() : '[Enter note type]';
+          return `${header}:\n${content}`;
+        }
+        
+        case 'pmh': {
+          const header = getSectionHeader(sectionId);
+          if (!pmhText.trim()) {
+            const placeholder = language === 'fr' ? '[Entrer les antécédents médicaux]' : '[Enter past medical history]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          // Format the smart text entry input
+          const lines = pmhText.split('\n');
+          const formatted: string[] = [];
+          let conditionCount = 0;
+
+          for (let line of lines) {
+            line = line.trim();
+            if (!line) continue;
+
+            if (line.startsWith('#')) {
+              conditionCount++;
+              const condition = line.replace('#', '').trim();
+              formatted.push(`${conditionCount}. ${condition}`);
+            } else if (line.startsWith('-')) {
+              const detail = line.replace('-', '').trim();
+              formatted.push(`     - ${detail}`);
+            } else {
+              conditionCount++;
+              formatted.push(`${conditionCount}. ${line}`);
+            }
+          }
+          
+          return `${header}:\n${formatted.join('\n')}`;
+        }
+        
+        case 'allergies-social': {
+          const header = getSectionHeader(sectionId);
+          
+          // Generate allergies text
+          let allergiesText = '';
+          const currentAllergies = allergiesRef.current;
+          if (!currentAllergies) {
+            allergiesText = language === 'fr' ? 'ALLERGIES :\nAucune allergie connue' : 'ALLERGIES:\nNKDA (No Known Drug Allergies)';
+          } else if (language === 'fr') {
+            if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+              allergiesText = `ALLERGIES :\n${currentAllergies.allergiesList.join(', ')}`;
+            } else {
+              allergiesText = `ALLERGIES :\nAucune allergie connue`;
+            }
+          } else {
+            if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+              allergiesText = `ALLERGIES:\n${currentAllergies.allergiesList.join(', ')}`;
+            } else {
+              allergiesText = `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
+            }
+          }
+
+          // Generate social history text
+          let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
+          const socialItems = [];
+          
+          // Always include smoking status
+          const currentSocialHistory = socialHistoryRef.current;
+          if (!currentSocialHistory) {
+            socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+            socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+            socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+          } else {
+            // Smoking status
+            if (currentSocialHistory.smoking?.status) {
+              socialItems.push(language === 'fr' 
+                ? `Tabagisme: ${currentSocialHistory.smoking.details || ''}`
+                : `Smoking: ${currentSocialHistory.smoking.details || ''}`);
+            } else {
+              socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+            }
+            
+            // Alcohol status
+            if (currentSocialHistory.alcohol?.status) {
+              socialItems.push(language === 'fr' 
+                ? `Alcool: ${currentSocialHistory.alcohol.details || ''}`
+                : `Alcohol: ${currentSocialHistory.alcohol.details || ''}`);
+            } else {
+              socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+            }
+            
+            // Drugs status
+            if (currentSocialHistory.drugs?.status) {
+              socialItems.push(language === 'fr' 
+                ? `Drogues: ${currentSocialHistory.drugs.details || ''}`
+                : `Drugs: ${currentSocialHistory.drugs.details || ''}`);
+            } else {
+              socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+            }
+          }
+          
+          socialText += socialItems.join('\n');
+          return `${allergiesText}\n\n${socialText.trim()}`;
+        }
+        
+        case 'meds': {
+          const header = getSectionHeader(sectionId);
+          let medicationsText = "";
+          
+          if (language === 'fr') {
+            if (medications.homeMedications.length > 0) {
+              const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'fr');
+              medicationsText += `MÉDICAMENTS À DOMICILE :\n${organizedHomeMeds}\n\n`;
+            } else {
+              medicationsText += `MÉDICAMENTS À DOMICILE :\n[Aucun médicament à domicile]\n\n`;
+            }
+            
+            if (medications.hospitalMedications.length > 0) {
+              const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'fr');
+              medicationsText += `MÉDICAMENTS HOSPITALIERS :\n${organizedHospitalMeds}`;
+            } else {
+              medicationsText += `MÉDICAMENTS HOSPITALIERS :\n[Aucun médicament hospitalier]`;
+            }
+          } else {
+            if (medications.homeMedications.length > 0) {
+              const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'en');
+              medicationsText += `HOME MEDICATIONS:\n${organizedHomeMeds}\n\n`;
+            } else {
+              medicationsText += `HOME MEDICATIONS:\n[No home medications]\n\n`;
+            }
+            
+            if (medications.hospitalMedications.length > 0) {
+              const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'en');
+              medicationsText += `HOSPITAL MEDICATIONS:\n${organizedHospitalMeds}`;
+            } else {
+              medicationsText += `HOSPITAL MEDICATIONS:\n[No hospital medications]`;
+            }
+          }
+          
+          return medicationsText;
+        }
+        
+        case 'hpi': {
+          const header = getSectionHeader(sectionId);
+          const content = hpiText || (language === 'fr' ? "[Entrer l'HMA]" : "[Enter HPI]");
+          
+          // Generate ROS text
+          let rosText = '';
+          if (Object.keys(selectedSymptoms).length > 0) {
+            const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<string>]) => {
+              const symptomList = Array.from(symptoms);
+              if (symptomList.length === 0) return '';
+              const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string}[]} >)[system];
+              const getLabel = (key: string) => {
+                const found = systemObj?.symptoms.find((s: {key: string}) => s.key === key);
+                if (!found) return key.replace(/_/g, ' ');
+                return language === 'fr' ? found.fr : found.en;
+              };
+              let sentence = '';
+              if (language === 'fr') {
+                sentence = symptomList.map(symptom => `pas de ${getLabel(symptom)}`).join(', ');
+              } else {
+                sentence = symptomList.map(symptom => `no ${getLabel(symptom).charAt(0).toLowerCase() + getLabel(symptom).slice(1)}`).join(', ');
+              }
+              sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+              if (!sentence.endsWith('.')) sentence += '.';
+              return sentence;
+            }).filter(Boolean);
+
+            if (language === 'fr') {
+              rosText = rosSentences.join(' ');
+              const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+              if (uncoveredSystems.length > 0) {
+                rosText += ' Tous les autres systèmes révisés et négatifs.';
+              }
+            } else {
+              rosText = rosSentences.join(' ');
+              const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+              if (uncoveredSystems.length > 0) {
+                rosText += ' All other systems reviewed and negative.';
+              }
+            }
+          }
+          
+          // Add ROS if available
+          const fullContent = rosText ? 
+            (content.trim().endsWith('.') ? `${content} ${rosText}` : `${content}. ${rosText}`) : 
+            content;
+          
+          return `${header}:\n${fullContent}`;
+        }
+        
+        case 'physical-exam': {
+          const header = getSectionHeader(sectionId);
+          if (selectedPeSystems.size === 0) {
+            const placeholder = language === 'fr' ? '[Entrer l\'examen physique]' : '[Enter physical examination]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          const peEntries = Array.from(selectedPeSystems).map(system => {
+            const findings = physicalExamOptions[system as keyof typeof physicalExamOptions];
+            return language === 'fr' ? findings : `${system}: ${findings}`;
+          });
+          
+          return `${header}:\n${peEntries.join("\n")}`;
+        }
+        
+        case 'labs': {
+          const header = getSectionHeader(sectionId);
+          if (processedLabValues.length === 0) {
+            const placeholder = language === 'fr' ? '[Entrer les résultats de laboratoire]' : '[Enter laboratory results]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          const labText = formatLabValuesForNote(processedLabValues);
+          return `${header}:\n${labText}`;
+        }
+        
+        case 'imagery': {
+          const header = getSectionHeader(sectionId);
+          if (imageryStudies.length === 0) {
+            const placeholder = language === 'fr' ? '[Entrer les résultats d\'imagerie]' : '[Enter imaging results]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          const studies = imageryStudies.map(study => 
+            `${study.system} ${study.modality}: ${study.result}`
+          ).join('\n');
+          
+          return `${header}:\n${studies}`;
+        }
+        
+        case 'impression': {
+          const header = getSectionHeader(sectionId);
+          
+          // Combine custom content (template default) with user input
+          let contentToFormat = impressionText;
+          
+          // If no user input but we have template custom content, use that
+          if (!impressionText.trim() && customContent && customContent.trim()) {
+            contentToFormat = customContent;
+          }
+          
+          if (!contentToFormat.trim()) {
+            const placeholder = language === 'fr' ? '[Entrer les impressions cliniques]' : '[Enter clinical impressions]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          // Format the smart text entry input with auto-numbering and indenting
+          const lines = contentToFormat.split('\n');
+          const formatted: string[] = [];
+          let conditionCount = 0;
+
+          for (let line of lines) {
+            line = line.trim();
+            if (!line) continue;
+
+            // Skip instruction lines from template defaults
+            const lowerLine = line.toLowerCase();
+            if (lowerLine.startsWith('instructions:') || 
+                lowerLine.startsWith('instruction:') ||
+                lowerLine.includes('new line = auto-numbered') ||
+                lowerLine.includes('tab = add sub-point')) {
+              continue;
+            }
+
+            if (line.startsWith('#')) {
+              conditionCount++;
+              const condition = line.replace('#', '').trim();
+              formatted.push(`${conditionCount}. ${condition}`);
+            } else if (line.startsWith('-')) {
+              const detail = line.replace('-', '').trim();
+              formatted.push(`     - ${detail}`);
+            } else {
+              conditionCount++;
+              formatted.push(`${conditionCount}. ${line}`);
+            }
+          }
+          
+          return `${header}:\n${formatted.join('\n')}`;
+        }
+        
+        case 'ventilation': {
+          const header = getSectionHeader(sectionId);
+          
+          // Generate intubation parameters text
+          if (Object.keys(intubationValues).length === 0) {
+            const placeholder = language === 'fr' ? '[Entrer les paramètres de ventilation]' : '[Enter ventilation parameters]';
+            return `${header}:\n${placeholder}`;
+          }
+          
+          let intubationText = "";
+          Object.entries(intubationValues).forEach(([param, data]) => {
+            if (data.current) {
+              intubationText += `${param}: ${data.current}\n`;
+            }
+          });
+          
+          return `${header}:\n${intubationText.trim()}`;
+        }
+        
+        case 'plan': {
+          const header = getSectionHeader(sectionId);
+          const placeholder = language === 'fr' ? '[Entrer le plan de traitement]' : '[Enter treatment plan]';
+          return `${header}:\n${placeholder}`;
+        }
+        
+        default: {
+          const header = getSectionHeader(sectionId);
+          return `${header}:\n[${sectionId}]`;
+        }
+      }
+    } catch (error) {
+      console.error(`Error generating content for section ${sectionId}:`, error);
+      const header = sectionId.toUpperCase();
+      return `${header}:\n[Error: ${sectionId}]`;
+    }
+  }, [language, pmhText, medications, selectedPeSystems, processedLabValues, hpiText, impressionText, intubationValues, noteType, selectedSymptoms, imageryStudies]);
+
+  // Default note generation (existing logic)
+  const generateDefaultNote = useCallback(() => {
+    let generatedText = "";
+    
+    // Generate allergies text
+    const generateAllergiesText = () => {
+      const currentAllergies = allergiesRef.current;
+      if (!currentAllergies) {
+        return language === 'fr' ? 'ALLERGIES :\nAucune allergie connue' : 'ALLERGIES:\nNKDA (No Known Drug Allergies)';
+      }
+      
+      if (language === 'fr') {
+        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+          return `ALLERGIES :\n${currentAllergies.allergiesList.join(', ')}`;
+        } else {
+          return `ALLERGIES :\nAucune allergie connue`;
+        }
+      } else {
+        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+          return `ALLERGIES:\n${currentAllergies.allergiesList.join(', ')}`;
+        } else {
+          return `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
+        }
       }
     };
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [sections]);
+    // Generate past medical history text
+    const generatePMHText = () => {
+      if (!pmhText.trim()) {
+        return language === 'fr' 
+          ? "ANTÉCÉDENTS MÉDICAUX :\n[Entrer les antécédents médicaux]"
+          : "PAST MEDICAL HISTORY:\n[Enter past medical history]";
+      }
+      
+      // Format the smart text entry input
+      const lines = pmhText.split('\n');
+      const formatted: string[] = [];
+      let conditionCount = 0;
 
-  const navigateToSection = (index: number) => {
-    setCurrentSection(index);
-  };
+      for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
 
-  const nextSection = () => {
-    if (currentSection < sections.length - 1) {
-      setCurrentSection(currentSection + 1);
-    }
-  };
+        if (line.startsWith('#')) {
+          conditionCount++;
+          const condition = line.replace('#', '').trim();
+          formatted.push(`${conditionCount}. ${condition}`);
+        } else if (line.startsWith('-')) {
+          const detail = line.replace('-', '').trim();
+          formatted.push(`     - ${detail}`);
+        } else {
+          conditionCount++;
+          formatted.push(`${conditionCount}. ${line}`);
+        }
+      }
+      
+      const header = language === 'fr' ? "ANTÉCÉDENTS MÉDICAUX :\n" : "PAST MEDICAL HISTORY:\n";
+      return header + formatted.join('\n');
+    };
 
-  const prevSection = () => {
-    if (currentSection > 0) {
-      setCurrentSection(currentSection - 1);
-    }
-  };
+    // Generate impression text
+    const generateImpressionText = () => {
+      if (!impressionText.trim()) {
+        return language === 'fr' 
+          ? "IMPRESSION CLINIQUE :\n[Entrer les impressions cliniques]"
+          : "CLINICAL IMPRESSION:\n[Enter clinical impressions]";
+      }
+      
+      // Format the smart text entry input
+      const lines = impressionText.split('\n');
+      const formatted: string[] = [];
+      let conditionCount = 0;
 
-  const renderCurrentSection = () => {
-    const currentSectionId = sections[currentSection]?.id;
+      for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
+
+        if (line.startsWith('#')) {
+          conditionCount++;
+          const condition = line.replace('#', '').trim();
+          formatted.push(`${conditionCount}. ${condition}`);
+        } else if (line.startsWith('-')) {
+          const detail = line.replace('-', '').trim();
+          formatted.push(`     - ${detail}`);
+        } else {
+          conditionCount++;
+          formatted.push(`${conditionCount}. ${line}`);
+        }
+      }
+      
+      const header = language === 'fr' ? "IMPRESSION CLINIQUE :\n" : "CLINICAL IMPRESSION:\n";
+      return header + formatted.join('\n');
+    };
+
+    // Generate social history text
+    const generateSocialHistoryText = () => {
+      let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
+      const socialItems = [];
+      const currentSocialHistory = socialHistoryRef.current;
+      
+      if (!currentSocialHistory) {
+        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+        socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+        socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+      } else {
+        // Always include smoking status
+        if (currentSocialHistory.smoking?.status) {
+        socialItems.push(language === 'fr' 
+          ? `Tabagisme: ${currentSocialHistory.smoking.details}`
+          : `Smoking: ${currentSocialHistory.smoking.details}`);
+      } else {
+        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+      }
+      
+        // Always include alcohol status
+        if (currentSocialHistory.alcohol?.status) {
+          socialItems.push(language === 'fr' 
+            ? `Alcool: ${currentSocialHistory.alcohol.details || ''}`
+            : `Alcohol: ${currentSocialHistory.alcohol.details || ''}`);
+        } else {
+          socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+        }
+        
+        // Always include drugs status
+        if (currentSocialHistory.drugs?.status) {
+          socialItems.push(language === 'fr' 
+            ? `Drogues: ${currentSocialHistory.drugs.details || ''}`
+            : `Drugs: ${currentSocialHistory.drugs.details || ''}`);
+        } else {
+          socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+        }
+      }
+      
+      socialText += socialItems.join('\n');
+      return socialText.trim();
+    };
+
+    // Generate medications text
+    const generateMedicationsText = () => {
+      let medicationsText = "";
+      
+      if (language === 'fr') {
+        if (medications.homeMedications.length > 0) {
+          const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'fr');
+          medicationsText += `MÉDICAMENTS À DOMICILE :\n${organizedHomeMeds}\n\n`;
+        } else {
+          medicationsText += `MÉDICAMENTS À DOMICILE :\n[Aucun médicament à domicile]\n\n`;
+        }
+        
+        if (medications.hospitalMedications.length > 0) {
+          const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'fr');
+          medicationsText += `MÉDICAMENTS HOSPITALIERS :\n${organizedHospitalMeds}`;
+        } else {
+          medicationsText += `MÉDICAMENTS HOSPITALIERS :\n[Aucun médicament hospitalier]`;
+        }
+      } else {
+        if (medications.homeMedications.length > 0) {
+          const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'en');
+          medicationsText += `HOME MEDICATIONS:\n${organizedHomeMeds}\n\n`;
+        } else {
+          medicationsText += `HOME MEDICATIONS:\n[No home medications]\n\n`;
+        }
+        
+        if (medications.hospitalMedications.length > 0) {
+          const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'en');
+          medicationsText += `HOSPITAL MEDICATIONS:\n${organizedHospitalMeds}`;
+        } else {
+          medicationsText += `HOSPITAL MEDICATIONS:\n[No hospital medications]`;
+        }
+      }
+      
+      return medicationsText;
+    };
+
+    // Generate ROS text
+    const generateRosText = () => {
+      if (Object.keys(selectedSymptoms).length === 0) return "";
+      // Each system gets its own sentence. Sentence case for first word, period at end.
+      const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<string>]) => {
+        const symptomList = Array.from(symptoms);
+        if (symptomList.length === 0) return '';
+        const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string}[]} >)[system];
+        const getLabel = (key: string) => {
+          const found = systemObj?.symptoms.find((s: {key: string}) => s.key === key);
+          if (!found) return key.replace(/_/g, ' ');
+          return language === 'fr' ? found.fr : found.en;
+        };
+        let sentence = '';
+        if (language === 'fr') {
+          sentence = symptomList.map(symptom => `pas de ${getLabel(symptom)}`).join(', ');
+        } else {
+          sentence = symptomList.map(symptom => `no ${getLabel(symptom).charAt(0).toLowerCase() + getLabel(symptom).slice(1)}`).join(', ');
+        }
+        // Sentence case: only first letter capitalized
+        sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+        // Ensure sentence ends with a period
+        if (!sentence.endsWith('.')) sentence += '.';
+        return sentence;
+      }).filter(Boolean);
+
+      let rosText = '';
+      if (language === 'fr') {
+        rosText = rosSentences.join(' ');
+        const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+        if (uncoveredSystems.length > 0) {
+          rosText += ' Tous les autres systèmes révisés et négatifs.';
+        }
+      } else {
+        rosText = rosSentences.join(' ');
+        const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+        if (uncoveredSystems.length > 0) {
+          rosText += ' All other systems reviewed and negative.';
+        }
+      }
+      return rosText;
+    };
+
+    // Generate Physical Exam text
+    const generatePhysicalExamText = () => {
+      if (selectedPeSystems.size === 0) return "";
+      
+      const peEntries = Array.from(selectedPeSystems).map(system => {
+        const findings = physicalExamOptions[system as keyof typeof physicalExamOptions];
+        return language === 'fr' ? findings : `${system}: ${findings}`;
+      });
+      
+      return language === 'fr' 
+        ? `EXAMEN PHYSIQUE :\n${peEntries.join("\n")}`
+        : `PHYSICAL EXAMINATION:\n${peEntries.join("\n")}`;
+    };
+
+    // Generate intubation parameters text for ICU notes (without header)
+    const generateIntubationText = () => {
+      if (Object.keys(intubationValues).length === 0) return "";
+      
+      let intubationText = "";
+      Object.entries(intubationValues).forEach(([param, data]) => {
+        if (data.current) {
+          intubationText += `${param}: ${data.current}\n`;
+        }
+      });
+      return intubationText.trim();
+    };
+
+    // Generate lab values text
+    const generateLabValuesText = () => {
+      if (processedLabValues.length === 0) return "";
+      
+      const labText = formatLabValuesForNote(processedLabValues);
+      return labText ? (language === 'fr' ? `RÉSULTATS DE LABORATOIRE:\n${labText}` : `LABORATORY RESULTS:\n${labText}`) : "";
+    };
+
+    // Build note based on type and subtype
+    const sections: string[] = [];
+    const isICU = (noteType === "admission" && admissionType === "icu") || (noteType === "progress" && progressType === "icu");
     
-    switch (currentSectionId) {
-      case 'noteType':
+    if (noteType === "admission") {
+      if (isICU) {
+        // ICU Admission Note Template - Same as general but with systems instead of lab/imaging
+        if (language === 'fr') {
+          sections.push(`MOTIF D'ADMISSION :\n[Entrer le motif d'admission]`);
+          sections.push(generatePMHText());
+          sections.push(generateAllergiesText());
+          sections.push(generateSocialHistoryText());
+          sections.push(generateMedicationsText());
+          let hpiWithRosFr = hpiText || "[Entrer l'HMA]";
+          const rosText = generateRosText();
+          if (rosText) hpiWithRosFr = hpiWithRosFr.trim().endsWith('.') ? hpiWithRosFr + ' ' + rosText : hpiWithRosFr + '. ' + rosText;
+          sections.push(`HISTOIRE DE LA MALADIE ACTUELLE :
+${hpiWithRosFr}`); // ROS now integrated into HPI section; no separate ROS section.;
+          
+          const peText = generatePhysicalExamText();
+          if (peText) sections.push(peText);
+          
+          // ICU Systems sections instead of lab/imaging
+          sections.push(`NEURO :\n[État neurologique]`);
+          sections.push(`HÉMODYNAMIQUE :\n[État cardiovasculaire]`);
+          
+          // RESPIRATOIRE section with integrated ventilation parameters
+          const intubationText = generateIntubationText();
+          const respiratoryContent = intubationText ? 
+            `RESPIRATOIRE :\n[État respiratoire]\n\nParamètres de ventilation:\n${intubationText}` : 
+            `RESPIRATOIRE :\n[État respiratoire]`;
+          sections.push(respiratoryContent);
+          
+          sections.push(`GASTRO-INTESTINAL :\n[État gastro-intestinal]`);
+          sections.push(`NÉPHRO-MÉTABOLIQUE :\n[État rénal et métabolique]`);
+          sections.push(`HÉMATO-INFECTIEUX :\n[État hématologique et infectieux]`);
+          
+          sections.push(generateImpressionText());
+          sections.push(`PLAN :\n[Entrer le plan de traitement]`);
+        } else {
+          sections.push(`REASON FOR ADMISSION:\n[Enter reason for admission]`);
+          sections.push(generatePMHText());
+          sections.push(generateAllergiesText());
+          sections.push(generateSocialHistoryText());
+          sections.push(generateMedicationsText());
+          let hpiWithRos = hpiText || "[Enter HPI]";
+          const rosText = generateRosText();
+          if (rosText) hpiWithRos = hpiWithRos.trim().endsWith('.') ? hpiWithRos + ' ' + rosText : hpiWithRos + '. ' + rosText;
+          sections.push(`HISTORY OF PRESENTING ILLNESS:
+${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section.
+          
+          const peText = generatePhysicalExamText();
+          if (peText) sections.push(peText);
+          
+          // ICU Systems sections instead of lab/imaging
+          sections.push(`NEURO:\n[Neurological status]`);
+          sections.push(`HEMODYNAMIC:\n[Cardiovascular status]`);
+          
+          // RESPIRATORY section with integrated ventilation parameters
+          const intubationText = generateIntubationText();
+          const respiratoryContent = intubationText ? 
+            `RESPIRATORY:\n[Respiratory status]\n\nVentilation parameters:\n${intubationText}` : 
+            `RESPIRATORY:\n[Respiratory status]`;
+          sections.push(respiratoryContent);
+          
+          sections.push(`GASTROINTESTINAL:\n[Gastrointestinal status]`);
+          sections.push(`NEPHRO-METABOLIC:\n[Renal and metabolic status]`);
+          sections.push(`HEMATO-INFECTIOUS:\n[Hematologic and infectious status]`);
+          
+          sections.push(generateImpressionText());
+          sections.push(`PLAN:\n[Enter treatment plan]`);
+        }
+      } else {
+        // General Admission Note Template
+        if (language === 'fr') {
+          sections.push(`MOTIF D'ADMISSION :\n[Entrer le motif d'admission]`);
+          sections.push(generatePMHText());
+          sections.push(generateAllergiesText());
+          sections.push(generateSocialHistoryText());
+          sections.push(generateMedicationsText());
+          sections.push(`HISTOIRE DE LA MALADIE ACTUELLE :\n${hpiText || "[Entrer l'HMA]"}`);
+          
+          const rosText = generateRosText();
+          if (rosText) sections.push(rosText);
+          
+          const peText = generatePhysicalExamText();
+          if (peText) sections.push(peText);
+          
+          const labText = generateLabValuesText();
+          sections.push(labText || `RÉSULTATS DE LABORATOIRE :\n[Entrer les résultats de laboratoire]`);
+          sections.push(`IMAGERIE :\n[Entrer les résultats d'imagerie]`);
+          sections.push(generateImpressionText());
+          sections.push(`PLAN :\n[Entrer le plan de traitement]`);
+        } else {
+          sections.push(`REASON FOR ADMISSION:\n[Enter reason for admission]`);
+          sections.push(generatePMHText());
+          sections.push(generateAllergiesText());
+          sections.push(generateSocialHistoryText());
+          sections.push(generateMedicationsText());
+          sections.push(`HISTORY OF PRESENTING ILLNESS:\n${hpiText || "[Enter HPI]"}`);
+          
+          const rosText = generateRosText();
+          if (rosText) sections.push(rosText);
+          
+          const peText = generatePhysicalExamText();
+          if (peText) sections.push(peText);
+          
+          const labText = generateLabValuesText();
+          sections.push(labText || `LABORATORY RESULTS:\n[Enter laboratory results]`);
+          sections.push(`IMAGING:\n[Enter imaging results]`);
+          sections.push(generateImpressionText());
+          sections.push(`PLAN:\n[Enter treatment plan]`);
+        }
+      }
+    } else if (noteType === "progress") {
+      if (isICU) {
+        // ICU Progress Note Template - Same as general but with systems instead of lab/imaging
+        if (language === 'fr') {
+          sections.push(`HISTOIRE DE LA MALADIE ACTUELLE:\n${hpiText || "[Entrer le statut actuel et l'historique de l'intervalle]"}`);
+          
+          const rosText = generateRosText();
+          if (rosText) sections.push(rosText);
+          
+          const peText = generatePhysicalExamText();
+          if (peText) sections.push(peText);
+          
+          // ICU Systems sections instead of lab/imaging
+          sections.push(`NEURO :\n[État neurologique]`);
+          sections.push(`HÉMODYNAMIQUE :\n[État cardiovasculaire]`);
+          
+          // RESPIRATOIRE section with integrated ventilation parameters
+          const intubationTextFr = generateIntubationText();
+          const respiratoryContentFr = intubationTextFr ? 
+            `RESPIRATOIRE :\n[État respiratoire]\n\nParamètres de ventilation:\n${intubationTextFr}` : 
+            `RESPIRATOIRE :\n[État respiratoire]`;
+          sections.push(respiratoryContentFr);
+          
+          sections.push(`GASTRO-INTESTINAL :\n[État gastro-intestinal]`);
+          sections.push(`NÉPHRO-MÉTABOLIQUE :\n[État rénal et métabolique]`);
+          sections.push(`HÉMATO-INFECTIEUX :\n[État hématologique et infectieux]`);
+          
+          sections.push(`ÉVALUATION ET PLAN:\n[Entrer l'évaluation et le plan]`);
+        } else {
+          sections.push(`HISTORY OF PRESENTING ILLNESS:\n${hpiText || "[Enter current status and interval history]"}`);
+          
+          const rosText = generateRosText();
+          if (rosText) sections.push(rosText);
+          
+          const peText = generatePhysicalExamText();
+          if (peText) sections.push(peText);
+          
+          // ICU Systems sections instead of lab/imaging
+          sections.push(`NEURO:\n[Neurological status]`);
+          sections.push(`HEMODYNAMIC:\n[Cardiovascular status]`);
+          
+          // RESPIRATORY section with integrated ventilation parameters
+          const intubationTextEn = generateIntubationText();
+          const respiratoryContentEn = intubationTextEn ? 
+            `RESPIRATORY:\n[Respiratory status]\n\nVentilation parameters:\n${intubationTextEn}` : 
+            `RESPIRATORY:\n[Respiratory status]`;
+          sections.push(respiratoryContentEn);
+          
+          sections.push(`GASTROINTESTINAL:\n[Gastrointestinal status]`);
+          sections.push(`NEPHRO-METABOLIC:\n[Renal and metabolic status]`);
+          sections.push(`HEMATO-INFECTIOUS:\n[Hematologic and infectious status]`);
+          
+          sections.push(`ASSESSMENT AND PLAN:\n[Enter assessment and plan]`);
+        }
+      } else {
+        // General Progress Note Template
+        if (language === 'fr') {
+          sections.push(`HISTOIRE DE LA MALADIE ACTUELLE:\n${hpiText || "[Entrer le statut actuel et l'historique de l'intervalle]"}`);
+          
+          const rosText = generateRosText();
+          if (rosText) sections.push(rosText);
+          
+          const peText = generatePhysicalExamText();
+          if (peText) sections.push(peText);
+          
+          const labText = generateLabValuesText();
+          if (labText) {
+            sections.push(labText);
+          } else {
+            sections.push(`RÉSULTATS DE LABORATOIRE:\n[Entrer les résultats de laboratoire]`);
+          }
+          sections.push(`IMAGERIE:\n[Entrer les résultats d'imagerie]`);
+          sections.push(`ÉVALUATION ET PLAN:\n[Entrer l'évaluation et le plan]`);
+        } else {
+          sections.push(`HISTORY OF PRESENTING ILLNESS:\n${hpiText || "[Enter current status and interval history]"}`);
+          
+          const rosText = generateRosText();
+          if (rosText) sections.push(rosText);
+          
+          const peText = generatePhysicalExamText();
+          if (peText) sections.push(peText);
+          
+          const labText = generateLabValuesText();
+          if (labText) {
+            sections.push(labText);
+          } else {
+            sections.push(`LABORATORY RESULTS:\n[Enter laboratory results]`);
+          }
+          sections.push(`IMAGING:\n[Enter imaging results]`);
+          sections.push(`ASSESSMENT AND PLAN:\n[Enter assessment and plan]`);
+        }
+      }
+    } else if (noteType === "consultation") {
+      sections.push(`CONSULTATION NOTE:\n[Consultation sections to be defined]`);
+    }
+
+    return sections.filter(section => section.trim()).join('\n\n');
+  }, [noteType, admissionType, progressType, language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms]);
+
+  // Additional helper functions for template sections
+  const generateAllergiesSocialText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    // Generate allergies text
+    const generateAllergiesText = () => {
+      const currentAllergies = allergiesRef.current;
+      if (!currentAllergies) {
+        return language === 'fr' ? 'ALLERGIES :\nAucune allergie connue' : 'ALLERGIES:\nNKDA (No Known Drug Allergies)';
+      }
+      
+      if (language === 'fr') {
+        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+          return `ALLERGIES :\n${currentAllergies.allergiesList.join(', ')}`;
+        } else {
+          return `ALLERGIES :\nAucune allergie connue`;
+        }
+      } else {
+        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+          return `ALLERGIES:\n${currentAllergies.allergiesList.join(', ')}`;
+        } else {
+          return `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
+        }
+      }
+    };
+
+    // Generate social history text
+    const generateSocialHistoryText = () => {
+      let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
+      const socialItems = [];
+      const currentSocialHistory = socialHistoryRef.current;
+      
+      if (!currentSocialHistory) {
+        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+        socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+        socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+      } else {
+        // Always include smoking status
+        if (currentSocialHistory.smoking?.status) {
+        socialItems.push(language === 'fr' 
+          ? `Tabagisme: ${currentSocialHistory.smoking.details}`
+          : `Smoking: ${currentSocialHistory.smoking.details}`);
+      } else {
+        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+      }
+      
+        // Always include alcohol status
+        if (currentSocialHistory.alcohol?.status) {
+          socialItems.push(language === 'fr' 
+            ? `Alcool: ${currentSocialHistory.alcohol.details || ''}`
+            : `Alcohol: ${currentSocialHistory.alcohol.details || ''}`);
+        } else {
+          socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+        }
+        
+        // Always include drugs status
+        if (currentSocialHistory.drugs?.status) {
+          socialItems.push(language === 'fr' 
+            ? `Drogues: ${currentSocialHistory.drugs.details || ''}`
+            : `Drugs: ${currentSocialHistory.drugs.details || ''}`);
+        } else {
+          socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+        }
+      }
+      
+      socialText += socialItems.join('\n');
+      return socialText.trim();
+    };
+    
+    const allergiesText = generateAllergiesText();
+    const socialText = generateSocialHistoryText();
+    return `${allergiesText}\n\n${socialText}`;
+  }, [language]);
+
+  const generateHPIText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    const header = language === 'fr' ? "HISTOIRE DE LA MALADIE ACTUELLE :" : "HISTORY OF PRESENT ILLNESS:";
+    const content = hpiText || (language === 'fr' ? "[Entrer l'HMA]" : "[Enter HPI]");
+    
+    // Generate ROS text
+    const generateRosText = () => {
+      if (Object.keys(selectedSymptoms).length === 0) return "";
+      // Each system gets its own sentence. Sentence case for first word, period at end.
+      const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<string>]) => {
+        const symptomList = Array.from(symptoms);
+        if (symptomList.length === 0) return '';
+        const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string}[]} >)[system];
+        const getLabel = (key: string) => {
+          const found = systemObj?.symptoms.find((s: {key: string}) => s.key === key);
+          if (!found) return key.replace(/_/g, ' ');
+          return language === 'fr' ? found.fr : found.en;
+        };
+        let sentence = '';
+        if (language === 'fr') {
+          sentence = symptomList.map(symptom => `pas de ${getLabel(symptom)}`).join(', ');
+        } else {
+          sentence = symptomList.map(symptom => `no ${getLabel(symptom).charAt(0).toLowerCase() + getLabel(symptom).slice(1)}`).join(', ');
+        }
+        // Sentence case: only first letter capitalized
+        sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+        // Ensure sentence ends with a period
+        if (!sentence.endsWith('.')) sentence += '.';
+        return sentence;
+      }).filter(Boolean);
+
+      let rosText = '';
+      if (language === 'fr') {
+        rosText = rosSentences.join(' ');
+        const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+        if (uncoveredSystems.length > 0) {
+          rosText += ' Tous les autres systèmes révisés et négatifs.';
+        }
+      } else {
+        rosText = rosSentences.join(' ');
+        const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+        if (uncoveredSystems.length > 0) {
+          rosText += ' All other systems reviewed and negative.';
+        }
+      }
+      return rosText;
+    };
+    
+    // Add ROS if available
+    const rosText = generateRosText();
+    const fullContent = rosText ? 
+      (content.trim().endsWith('.') ? `${content} ${rosText}` : `${content}. ${rosText}`) : 
+      content;
+    
+    return `${header}\n${fullContent}`;
+  }, [hpiText, selectedSymptoms, language]);
+
+  const generateImageryText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    if (imageryStudies.length === 0) {
+      return language === 'fr' ? "IMAGERIE :\n[Entrer les résultats d'imagerie]" : "IMAGING:\n[Enter imaging results]";
+    }
+    
+    const header = language === 'fr' ? "IMAGERIE :" : "IMAGING:";
+    const studies = imageryStudies.map(study => 
+      `${study.system} ${study.modality}: ${study.result}`
+    ).join('\n');
+    
+    return `${header}\n${studies}`;
+  }, [imageryStudies, language]);
+
+  const generateVentilationText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    const header = language === 'fr' ? "PARAMÈTRES DE VENTILATION :" : "VENTILATION PARAMETERS:";
+    
+    // Generate intubation parameters text
+    const generateIntubationText = () => {
+      if (Object.keys(intubationValues).length === 0) return "";
+      
+      let intubationText = "";
+      Object.entries(intubationValues).forEach(([param, data]) => {
+        if (data.current) {
+          intubationText += `${param}: ${data.current}\n`;
+        }
+      });
+      return intubationText.trim();
+    };
+    
+    const intubationText = generateIntubationText();
+    
+    return intubationText ? `${header}\n${intubationText}` : "";
+  }, [intubationValues, language]);
+
+  const generatePlanText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    return language === 'fr' ? "PLAN :\n[Entrer le plan de traitement]" : "PLAN:\n[Enter treatment plan]";
+  }, [language]);
+
+  // Handle option changes with diff-patch-merge
+  const handleOptionChange = useCallback(() => {
+    const newGeneratedText = generateTextFromOptions();
+    
+    if (initialGeneratedText === "") {
+      // First generation
+      setInitialGeneratedText(newGeneratedText);
+      setCurrentText(newGeneratedText);
+      setNote(newGeneratedText);
+    } else {
+      // Apply diff-patch-merge
+      const diff = dmp.current.diff_main(initialGeneratedText, currentText);
+      dmp.current.diff_cleanupSemantic(diff);
+      const patch = dmp.current.patch_make(diff);
+      const [patchedText] = dmp.current.patch_apply(patch, newGeneratedText);
+      
+      setCurrentText(patchedText);
+      setInitialGeneratedText(newGeneratedText);
+      setNote(patchedText);
+    }
+  }, [generateTextFromOptions, initialGeneratedText, currentText]);
+
+  // Handle manual text changes
+  const handleNoteChange = (newText: string) => {
+    setCurrentText(newText);
+    setNote(newText);
+  };
+
+  // Reset to generated text
+  const resetToGenerated = () => {
+    const newGeneratedText = generateTextFromOptions();
+    setInitialGeneratedText(newGeneratedText);
+    setCurrentText(newGeneratedText);
+    setNote(newGeneratedText);
+  };
+
+  // Toggle functions (PE only)
+  const togglePeSystem = (system: string) => {
+    setSelectedPeSystems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(system)) {
+        newSet.delete(system);
+      } else {
+        newSet.add(system);
+      }
+      return newSet;
+    });
+  };
+
+  // ROS system-level select all removed. Use symptom-level logic instead.
+  const selectAllPeSystems = () => {
+    setSelectedPeSystems(new Set(Object.keys(physicalExamOptions)));
+  };
+
+  // Allergy functions
+  const addAllergy = () => {
+    if (newAllergy.trim() && !allergies.allergiesList.includes(newAllergy.trim())) {
+      setAllergies(prev => ({
+        hasAllergies: true,
+        allergiesList: [...prev.allergiesList, newAllergy.trim()]
+      }));
+      setNewAllergy("");
+    }
+  };
+
+  const removeAllergy = (allergyToRemove: string) => {
+    setAllergies(prev => {
+      const newList = prev.allergiesList.filter(allergy => allergy !== allergyToRemove);
+      return {
+        hasAllergies: newList.length > 0,
+        allergiesList: newList
+      };
+    });
+  };
+
+  // Copy to clipboard
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(note);
+      toast({
+        title: language === 'fr' ? "Copié!" : "Copied!",
+        description: language === 'fr' ? "La note a été copiée dans le presse-papiers." : "Note copied to clipboard.",
+      });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Failed to copy to clipboard.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Load templates when note type or subtype changes
+  useEffect(() => {
+    if (noteType) {
+      const subtype = noteType === "admission" ? admissionType : 
+                     noteType === "progress" ? progressType : "general";
+      loadTemplatesForNoteType(noteType, subtype);
+    } else {
+      setAvailableTemplates([]);
+      handleTemplateSelection(null);
+    }
+  }, [noteType, admissionType, progressType, loadTemplatesForNoteType]);
+
+  // Update note when options change
+  useEffect(() => {
+    handleOptionChange();
+  }, [handleOptionChange]);
+
+
+
+  // Additional effect to ensure medication changes trigger note updates
+  useEffect(() => {
+    handleOptionChange();
+  }, [medications]);
+
+  // Additional effect to ensure lab value changes trigger note updates
+  useEffect(() => {
+    handleOptionChange();
+  }, [processedLabValues]);
+
+  // Additional effect to ensure PMH changes trigger note updates
+  useEffect(() => {
+    handleOptionChange();
+  }, [pmhText]);
+
+  // Update note on blur for allergies and social history to prevent focus issues
+  const timeoutRef = useRef<NodeJS.Timeout[]>([]);
+  
+  const handleAllergiesBlur = useCallback(() => {
+    try {
+      handleOptionChange();
+    } catch (error) {
+      console.error('Error in handleAllergiesBlur:', error);
+    }
+  }, [handleOptionChange]);
+
+  const handleSocialHistoryBlur = useCallback(() => {
+    try {
+      handleOptionChange();
+    } catch (error) {
+      console.error('Error in handleSocialHistoryBlur:', error);
+    }
+  }, [handleOptionChange]);
+  
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      timeoutRef.current.forEach(timeout => clearTimeout(timeout));
+      timeoutRef.current = [];
+    };
+  }, []);
+
+  // Additional effect to ensure ROS and HPI changes trigger note updates
+  useEffect(() => {
+    handleOptionChange();
+  }, [selectedSystem, selectedSymptoms, hpiText]);
+
+  // Additional effect to ensure note type and subtype changes trigger note updates
+  useEffect(() => {
+    handleOptionChange();
+  }, [noteType, admissionType, progressType]);
+
+  // Additional effect to ensure chief complaint changes trigger note updates
+  useEffect(() => {
+    handleOptionChange();
+  }, [chiefComplaint]);
+
+  // Additional effect to ensure physical exam changes trigger note updates
+  useEffect(() => {
+    handleOptionChange();
+  }, [selectedPeSystems]);
+
+  // Additional effect to ensure ventilation parameters trigger note updates
+  useEffect(() => {
+    handleOptionChange();
+  }, [intubationValues]);
+
+  // Additional effect to ensure impression changes trigger note updates
+  useEffect(() => {
+    handleOptionChange();
+  }, [impressionText]);
+
+  // Template state persistence
+  useEffect(() => {
+    // Load saved template selection on component mount
+    const savedTemplateId = localStorage.getItem('selectedTemplateId');
+    if (savedTemplateId && availableTemplates.length > 0) {
+      const savedTemplate = availableTemplates.find(t => t.id.toString() === savedTemplateId);
+      if (savedTemplate) {
+        setSelectedTemplate(savedTemplate);
+      }
+    }
+  }, [availableTemplates]);
+
+  // Save selected template to localStorage
+  useEffect(() => {
+    if (selectedTemplate) {
+      localStorage.setItem('selectedTemplateId', selectedTemplate.id.toString());
+    } else {
+      localStorage.removeItem('selectedTemplateId');
+    }
+  }, [selectedTemplate]);
+
+  // Update note when template changes
+  useEffect(() => {
+    handleOptionChange();
+  }, [selectedTemplate, handleOptionChange]);
+
+  // Keyboard navigation for tabs
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only handle arrow keys when not typing in input fields
+      if (event.target instanceof HTMLInputElement || 
+          event.target instanceof HTMLTextAreaElement || 
+          event.target instanceof HTMLSelectElement) {
+        return;
+      }
+      
+      // Don't handle navigation if we're in the allergies-social section
+      if (selectedSubOption === 'allergies-social') {
+        return;
+      }
+
+      const tabOrder = getTabOrder();
+      const currentIndex = tabOrder.indexOf(activeTab);
+
+      if (event.key === 'ArrowLeft' && currentIndex > 0) {
+        event.preventDefault();
+        const newTab = tabOrder[currentIndex - 1];
+        setActiveTab(newTab);
+      } else if (event.key === 'ArrowRight' && currentIndex < tabOrder.length - 1) {
+        event.preventDefault();
+        const newTab = tabOrder[currentIndex + 1];
+        setActiveTab(newTab);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, getTabOrder]);
+
+  // Detect if text was manually edited
+  const isManuallyEdited = currentText !== initialGeneratedText && initialGeneratedText !== "";
+
+  // Add a mapping of subOption keys to their icons (matching MainLayout)
+  const sectionIcons: Record<string, React.ReactNode> = {
+    "note-type": <FileText className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" />,
+    "pmh": <Stethoscope className="w-6 h-6 text-emerald-600 bg-emerald-100 rounded-full p-1" />,
+    "meds": <Pill className="w-6 h-6 text-purple-600 bg-purple-100 rounded-full p-1" />,
+    "allergies": <AlertCircle className="w-6 h-6 text-orange-500 bg-orange-100 rounded-full p-1" />,
+    "social": <Users className="w-6 h-6 text-pink-500 bg-pink-100 rounded-full p-1" />,
+    "hpi": <ClipboardList className="w-6 h-6 text-cyan-600 bg-cyan-100 rounded-full p-1" />,
+    "physical-exam": <HeartPulse className="w-6 h-6 text-red-500 bg-red-100 rounded-full p-1" />,
+    "ventilation": <Wind className="w-6 h-6 text-sky-500 bg-sky-100 rounded-full p-1" />,
+    "labs": <TestTube className="w-6 h-6 text-yellow-600 bg-yellow-100 rounded-full p-1" />,
+    "imagery": <Image className="w-6 h-6 text-indigo-500 bg-indigo-100 rounded-full p-1" />,
+    "impression": <Brain className="w-6 h-6 text-gray-700 bg-gray-100 rounded-full p-1" />,
+  };
+
+  // In SectionWrapper, allow rendering of controls in the header
+  const SectionWrapper = ({ title, sectionKey, controls, children }: { title: string; sectionKey: string; controls?: React.ReactNode; children: React.ReactNode }) => (
+    <div className="medical-section-wrapper">
+      <div className="medical-card-header flex items-center justify-between">
+        <h2 className="medical-section-title flex items-center gap-2">
+          {sectionIcons[sectionKey]}
+          {title}
+        </h2>
+        {controls && <div className="flex gap-2">{controls}</div>}
+      </div>
+      <div className="medical-section-content">
+        {children}
+      </div>
+    </div>
+  );
+
+  // Clear PMH function for the new simple component
+  const clearAllPmhEntries = () => {
+    setPmhText('');
+  };
+
+  const pmhControls = (
+    <button
+      onClick={clearAllPmhEntries}
+      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm transition-colors"
+    >
+      {language === 'fr' ? 'Effacer' : 'Clear'}
+    </button>
+  );
+
+  // Render the main content based on selectedSubOption
+  const renderMainContent = () => {
+    const sectionTitle: Record<string, string> = {
+      "note-type": "Note Type",
+      "hpi": "History of Present Illness (HPI)",
+      "ros": "Review of Systems (ROS)",
+      "pmh": "Past Medical History (PMH)",
+      "meds": "Medications",
+      "labs": "Laboratory Results",
+      "allergies-social": "Allergies & Social History",
+      "imagery": "Imagery",
+      "impression": "Impression",
+      "ventilation": "Ventilation Parameters"
+    };
+
+    switch (selectedSubOption) {
+      case "note-type":
         return (
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">{t('noteType.label')}</h3>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    setNoteType(null);
-                    setAdmissionType("general");
-                    setProgressType("general");
-                  }}
-                  className="text-gray-600 hover:text-gray-800"
-                >
-                  {t('button.clear')}
-                </Button>
-              </div>
-              
+          <SectionWrapper title={sectionTitle["note-type"]} sectionKey="note-type">
+            <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div 
-                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
-                    noteType === "admission" 
-                      ? "border-blue-500 bg-blue-50" 
+                <div
+                  className={`max-w-xs w-full p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
+                    noteType === "admission"
+                      ? "border-blue-500 bg-blue-50"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
                   onClick={() => setNoteType("admission")}
                 >
                   <div className="flex items-center space-x-2 mb-2">
                     <FileText className="w-5 h-5 text-blue-600" />
-                    <span className="font-medium text-gray-900">{t('noteType.admission')}</span>
+                    <span className="font-medium text-gray-900">Admission</span>
                   </div>
-                  <p className="text-sm text-gray-600">{t('noteType.admission.desc')}</p>
+                  <p className="text-sm text-gray-600">For new patient admissions.</p>
                 </div>
-
-                <div 
-                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
-                    noteType === "progress" 
-                      ? "border-green-500 bg-green-50" 
+                <div
+                  className={`max-w-xs w-full p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
+                    noteType === "progress"
+                      ? "border-green-500 bg-green-50"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
                   onClick={() => setNoteType("progress")}
                 >
                   <div className="flex items-center space-x-2 mb-2">
                     <TrendingUp className="w-5 h-5 text-green-600" />
-                    <span className="font-medium text-gray-900">{t('noteType.progress')}</span>
+                    <span className="font-medium text-gray-900">Progress</span>
                   </div>
-                  <p className="text-sm text-gray-600">{t('noteType.progress.desc')}</p>
+                  <p className="text-sm text-gray-600">For daily or interval progress updates.</p>
                 </div>
-
-                <div 
-                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
-                    noteType === "consultation" 
-                      ? "border-purple-500 bg-purple-50" 
+                <div
+                  className={`max-w-xs w-full p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
+                    noteType === "consultation"
+                      ? "border-purple-500 bg-purple-50"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
                   onClick={() => setNoteType("consultation")}
                 >
                   <div className="flex items-center space-x-2 mb-2">
                     <Users className="w-5 h-5 text-purple-600" />
-                    <span className="font-medium text-gray-900">{t('noteType.consultation')}</span>
+                    <span className="font-medium text-gray-900">Consultation</span>
                   </div>
-                  <p className="text-sm text-gray-600">{t('noteType.consultation.desc')}</p>
+                  <p className="text-sm text-gray-600">For specialist or consult notes.</p>
                 </div>
               </div>
-
-              {/* Template Selection */}
-              {noteType && (
-                <div className="border-t pt-4 mt-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-medium text-gray-900">
-                      {language === 'fr' ? 'Sélectionner un modèle' : 'Select Template'}
-                    </h4>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowTemplateSelector(!showTemplateSelector)}
-                    >
-                      {showTemplateSelector 
-                        ? (language === 'fr' ? 'Masquer' : 'Hide')
-                        : (language === 'fr' ? 'Parcourir' : 'Browse')
-                      }
-                    </Button>
-                  </div>
-                  
-                  {selectedTemplate ? (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-blue-600" />
-                          <span className="font-medium text-blue-900">{selectedTemplate.name}</span>
-                          <Badge variant="secondary">{selectedTemplate.category}</Badge>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedTemplate(null)}
-                          className="text-gray-500 hover:text-gray-700"
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                      {selectedTemplate.description && (
-                        <p className="text-sm text-gray-600 mt-1">{selectedTemplate.description}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="p-3 border-2 border-dashed border-gray-300 rounded-lg text-center">
-                      <p className="text-sm text-gray-500 mb-2">
-                        {language === 'fr' 
-                          ? 'Aucun modèle sélectionné - utilisation de la structure par défaut'
-                          : 'No template selected - using default structure'
-                        }
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowTemplateSelector(true)}
-                      >
-                        {language === 'fr' ? 'Choisir un modèle' : 'Choose Template'}
-                      </Button>
-                    </div>
-                  )}
-                  
-                  {showTemplateSelector && (
-                    <div className="mt-3">
-                      <TemplateSelector
-                        onTemplateSelect={(template) => {
-                          setSelectedTemplate(template);
-                          setShowTemplateSelector(false);
-                        }}
-                        selectedTemplate={selectedTemplate}
-                        noteType={noteType}
-                        className="border-0 shadow-none"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Sub-options for admission/progress */}
-              {noteType === "admission" && (
-                <div className="border-t pt-4 mt-4">
-                  <h4 className="font-medium text-gray-900 mb-3">{language === 'fr' ? 'Type d\'admission' : 'Admission Type'}</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div 
-                      className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
-                        admissionType === "general" 
-                          ? "border-blue-500 bg-blue-50" 
-                          : "border-gray-200 hover:border-gray-300"
-                      }`}
-                      onClick={() => setAdmissionType("general")}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <div className={`w-3 h-3 rounded-full ${admissionType === "general" ? "bg-blue-500" : "bg-gray-300"}`} />
-                        <span className="font-medium text-gray-900">{t('admission.general')}</span>
-                      </div>
-                      <p className="text-sm text-gray-500 ml-5">{t('admission.general.desc')}</p>
-                    </div>
-                    
-                    <div 
-                      className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
-                        admissionType === "icu" 
-                          ? "border-blue-500 bg-blue-50" 
-                          : "border-gray-200 hover:border-gray-300"
-                      }`}
-                      onClick={() => setAdmissionType("icu")}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <div className={`w-3 h-3 rounded-full ${admissionType === "icu" ? "bg-blue-500" : "bg-gray-300"}`} />
-                        <span className="font-medium text-gray-900">{t('admission.icu')}</span>
-                      </div>
-                      <p className="text-sm text-gray-500 ml-5">{t('admission.icu.desc')}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
               {noteType === "progress" && (
                 <div className="border-t pt-4 mt-4">
-                  <h4 className="font-medium text-gray-900 mb-3">{language === 'fr' ? 'Type d\'évolution' : 'Progress Type'}</h4>
+                  <h4 className="font-medium text-gray-900 mb-3">Progress Type</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div 
+                    <div
                       className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
-                        progressType === "general" 
-                          ? "border-green-500 bg-green-50" 
+                        progressType === "general"
+                          ? "border-green-500 bg-green-50"
                           : "border-gray-200 hover:border-gray-300"
                       }`}
                       onClick={() => setProgressType("general")}
                     >
                       <div className="flex items-center space-x-2">
                         <div className={`w-3 h-3 rounded-full ${progressType === "general" ? "bg-green-500" : "bg-gray-300"}`} />
-                        <span className="font-medium text-gray-900">{t('progress.general')}</span>
+                        <span className="font-medium text-gray-900">General</span>
                       </div>
-                      <p className="text-sm text-gray-500 ml-5">{t('progress.general.desc')}</p>
+                      <p className="text-sm text-gray-500 ml-5">Standard progress note.</p>
                     </div>
-                    
-                    <div 
+                    <div
                       className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
-                        progressType === "icu" 
-                          ? "border-green-500 bg-green-50" 
+                        progressType === "icu"
+                          ? "border-green-500 bg-green-50"
                           : "border-gray-200 hover:border-gray-300"
                       }`}
                       onClick={() => setProgressType("icu")}
                     >
                       <div className="flex items-center space-x-2">
                         <div className={`w-3 h-3 rounded-full ${progressType === "icu" ? "bg-green-500" : "bg-gray-300"}`} />
-                        <span className="font-medium text-gray-900">{t('progress.icu')}</span>
+                        <span className="font-medium text-gray-900">ICU</span>
                       </div>
-                      <p className="text-sm text-gray-500 ml-5">{t('progress.icu.desc')}</p>
+                      <p className="text-sm text-gray-500 ml-5">ICU-specific progress note.</p>
                     </div>
                   </div>
                 </div>
               )}
-
-              {noteType === "consultation" && (
+              {noteType === "admission" && (
                 <div className="border-t pt-4 mt-4">
-                  <ChiefComplaintSection
-                    data={chiefComplaint}
-                    onChange={setChiefComplaint}
-                  />
+                  <h4 className="font-medium text-gray-900 mb-3">Admission Type</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div
+                      className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
+                        admissionType === "general"
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 hover:border-gray-300"
+                      }`}
+                      onClick={() => setAdmissionType("general")}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${admissionType === "general" ? "bg-blue-500" : "bg-gray-300"}`} />
+                        <span className="font-medium text-gray-900">General</span>
+                      </div>
+                      <p className="text-sm text-gray-500 ml-5">Standard admission note.</p>
+                    </div>
+                    <div
+                      className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
+                        admissionType === "icu"
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 hover:border-gray-300"
+                      }`}
+                      onClick={() => setAdmissionType("icu")}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${admissionType === "icu" ? "bg-blue-500" : "bg-gray-300"}`} />
+                        <span className="font-medium text-gray-900">ICU</span>
+                      </div>
+                      <p className="text-sm text-gray-500 ml-5">ICU-specific admission note.</p>
+                    </div>
+                  </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        );
+              
+              {/* Template Selection Section */}
+              {noteType && (
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="font-medium text-gray-900 mb-3">Template Selection</h4>
+                  <div className="space-y-3">
+                    {/* Standard Note Option */}
+                    <div
+                      className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
+                        selectedTemplate === null
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 hover:border-gray-300"
+                      }`}
+                      onClick={() => handleTemplateSelection(null)}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-3 h-3 rounded-full ${selectedTemplate === null ? "bg-blue-500" : "bg-gray-300"}`} />
+                        <div className="flex items-center space-x-2">
+                          <FileText className="w-4 h-4 text-gray-600" />
+                          <span className="font-medium text-gray-900">Standard Note</span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-500 ml-6">Use the default medical note format with all sections</p>
+                    </div>
 
-      case 'allergies':
-        return (
-          <Card className="overflow-hidden">
-            <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <Shield className="text-white w-5 h-5" />
-                  <h3 className="text-lg font-semibold text-white">
-                    {language === 'fr' ? 'Allergies et Habitudes de vie' : 'Allergies & Social History'}
-                  </h3>
+                    {/* Loading State */}
+                    {loadingTemplates && (
+                      <div className="p-3 border rounded-lg bg-gray-50">
+                        <div className="flex items-center space-x-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          <span className="text-sm text-gray-600">Loading templates...</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Template Error */}
+                    {templateError && (
+                      <div className="p-3 border border-red-200 rounded-lg bg-red-50">
+                        <div className="flex items-center space-x-2">
+                          <AlertCircle className="w-4 h-4 text-red-600" />
+                          <span className="text-sm text-red-600">{templateError}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Available Templates */}
+                    {!loadingTemplates && availableTemplates.map((template) => (
+                      <div
+                        key={template.id}
+                        className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
+                          selectedTemplate?.id === template.id
+                            ? "border-purple-500 bg-purple-50"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                        onClick={() => handleTemplateSelection(template)}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className={`w-3 h-3 rounded-full ${
+                            selectedTemplate?.id === template.id ? "bg-purple-500" : "bg-gray-300"
+                          }`} />
+                          <div className="flex items-center space-x-2">
+                            <ClipboardList className="w-4 h-4 text-purple-600" />
+                            <span className="font-medium text-gray-900">{template.name}</span>
+                            {template.specialty && (
+                              <Badge variant="outline" className="text-xs">
+                                {template.specialty}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        {template.description && (
+                          <p className="text-sm text-gray-500 ml-6 mt-1">{template.description}</p>
+                        )}
+                        <div className="flex items-center space-x-4 ml-6 mt-2 text-xs text-gray-400">
+                          <span>Category: {template.category}</span>
+                          {template.isFavorite && (
+                            <span className="flex items-center space-x-1">
+                              <span className="text-yellow-500">★</span>
+                              <span>Favorite</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* No Templates Message */}
+                    {!loadingTemplates && !templateError && availableTemplates.length === 0 && (
+                      <div className="p-3 border border-dashed rounded-lg bg-gray-50">
+                        <div className="text-center">
+                          <ClipboardList className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                          <p className="text-sm text-gray-600 mb-1">No templates available for this note type</p>
+                          <p className="text-xs text-gray-500">Create templates in Smart Functions → Templates</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Browse All Templates Link */}
+                    {!loadingTemplates && availableTemplates.length > 0 && (
+                      <div className="text-center pt-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-blue-600 hover:text-blue-700"
+                          onClick={() => {
+                            // This would typically navigate to template manager
+                            toast({
+                              title: "Template Manager",
+                              description: "Go to Smart Functions → Templates to manage all templates",
+                            });
+                          }}
+                        >
+                          Browse All Templates
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <button
-                  onClick={() => {
-                    setAllergies({ hasAllergies: false, allergiesList: [] });
-                    setSocialHistory({
-                      smoking: { status: false, details: '' },
-                      alcohol: { status: false, details: '' },
-                      drugs: { status: false, details: '' }
-                    });
-                  }}
-                  className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors"
-                >
-                  {language === 'fr' ? 'Effacer' : 'Clear'}
-                </button>
-              </div>
+              )}
             </div>
-            <CardContent className="p-6 space-y-6">
+          </SectionWrapper>
+        );
+      case "hpi":
+        return (
+          <SectionWrapper title={sectionTitle["hpi"]} sectionKey="hpi">
+            <HpiSection
+              selectedSymptoms={selectedSymptoms}
+              setSelectedSymptoms={setSelectedSymptoms}
+            />
+          </SectionWrapper>
+        );
+      case "ros":
+        return (
+          <SectionWrapper title={sectionTitle["ros"]} sectionKey="ros">
+            {/* Review of Systems UI will go here */}
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">Review of systems examination.</p>
+            </div>
+          </SectionWrapper>
+        );
+      case "pmh":
+        return (
+          <SectionWrapper title={sectionTitle["pmh"]} sectionKey="pmh" controls={pmhControls}>
+            <SmartPMHSection
+              value={pmhText}
+              onChange={setPmhText}
+              defaultContent={getSectionDefaultContent("pmh")}
+            />
+          </SectionWrapper>
+        );
+      case "meds":
+        return (
+          <SectionWrapper title={sectionTitle["meds"]} sectionKey="meds">
+            <MedicationSection medications={medications} onMedicationsChange={setMedications} />
+          </SectionWrapper>
+        );
+      case "labs":
+        return (
+          <SectionWrapper title={sectionTitle["labs"]} sectionKey="labs">
+            <div className="space-y-4">
+              <LabImageUpload onLabValuesExtracted={handleLabValuesExtracted} />
+              {processedLabValues.length > 0 && (
+                <div className="medical-card">
+                  <div className="medical-card-header">
+                    <div className="flex items-center space-x-2">
+                      <TestTube className="w-5 h-5" />
+                      <span className="medical-section-title">{language === 'fr' ? 'Valeurs de laboratoire' : 'Laboratory Values'}</span>
+                      <span className="medical-badge">{processedLabValues.length}</span>
+                    </div>
+                  </div>
+                  <div className="medical-card-content">
+                    <LabValuesDisplay processedLabs={processedLabValues} onLabsChange={setProcessedLabValues} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </SectionWrapper>
+        );
+      case "allergies-social":
+        return (
+          <SectionWrapper title={sectionTitle["allergies-social"]} sectionKey="allergies">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Allergies Section */}
               <div className="space-y-4">
-                <h4 className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-purple-600" />
+                <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-orange-500" />
                   {language === 'fr' ? 'Allergies' : 'Allergies'}
                 </h4>
-                <div className="flex items-center gap-4">
-                  <Button
-                    variant={allergies.hasAllergies ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setAllergies({
-                      hasAllergies: true,
-                      allergiesList: allergies.allergiesList
-                    })}
-                    className="w-16"
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-sm text-gray-600">{language === 'fr' ? 'Patient a des allergies' : 'Patient has allergies'}</span>
+                  <button
+                    onClick={() => {
+                      setAllergies({
+                        hasAllergies: !allergies.hasAllergies,
+                        allergiesList: allergies.hasAllergies ? [] : allergies.allergiesList
+                      });
+                      // Trigger note update immediately for toggle actions
+                      const timeout = setTimeout(handleAllergiesBlur, 0);
+                      timeoutRef.current.push(timeout);
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
+                      allergies.hasAllergies ? 'bg-orange-500' : 'bg-gray-200'
+                    }`}
                   >
-                    {language === 'fr' ? 'Oui' : 'Yes'}
-                  </Button>
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        allergies.hasAllergies ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    value={newAllergy}
+                    onChange={(e) => setNewAllergy(e.target.value)}
+                    placeholder={language === 'fr' ? 'Ajouter une allergie...' : 'Add allergy...'}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newAllergy.trim()) {
+                        if (!allergies.allergiesList.includes(newAllergy.trim())) {
+                          setAllergies(prev => ({
+                            hasAllergies: true,
+                            allergiesList: [...prev.allergiesList, newAllergy.trim()]
+                          }));
+                        }
+                        setNewAllergy('');
+                        handleAllergiesBlur();
+                      }
+                    }}
+                    onBlur={handleAllergiesBlur}
+                    className="flex-1"
+                  />
                   <Button
-                    variant={!allergies.hasAllergies ? "default" : "outline"}
+                    onClick={() => {
+                      if (newAllergy.trim() && !allergies.allergiesList.includes(newAllergy.trim())) {
+                        setAllergies(prev => ({
+                          hasAllergies: true,
+                          allergiesList: [...prev.allergiesList, newAllergy.trim()]
+                        }));
+                        setNewAllergy('');
+                      }
+                    }}
                     size="sm"
-                    onClick={() => setAllergies({
-                      hasAllergies: false,
-                      allergiesList: []
-                    })}
-                    className="w-16"
+                    variant="outline"
                   >
-                    {language === 'fr' ? 'Non' : 'No'}
+                    <Plus className="w-4 h-4" />
                   </Button>
                 </div>
-                {allergies.hasAllergies && (
-                  <div className="space-y-2">
-                    <Input
-                      value={newAllergy}
-                      onChange={(e) => setNewAllergy(e.target.value)}
-                      placeholder={language === 'fr' ? 'Ajouter une allergie...' : 'Add allergy...'}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && newAllergy.trim()) {
-                          setAllergies({
+                {allergies.hasAllergies && allergies.allergiesList.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {allergies.allergiesList.map((allergy, index) => (
+                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                        {allergy}
+                        <X
+                          className="w-3 h-3 cursor-pointer hover:text-red-600"
+                          onClick={() => setAllergies(prev => ({
                             hasAllergies: true,
-                            allergiesList: [...allergies.allergiesList, newAllergy.trim()]
-                          });
-                          setNewAllergy('');
-                        }
-                      }}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      {allergies.allergiesList.map((allergy, index) => (
-                        <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                          {allergy}
-                          <button
-                            onClick={() => setAllergies({
-                              hasAllergies: true,
-                              allergiesList: allergies.allergiesList.filter((_, i) => i !== index)
-                            })}
-                            className="ml-1 hover:text-red-600"
-                          >
-                            ×
-                          </button>
-                        </Badge>
-                      ))}
-                    </div>
+                            allergiesList: prev.allergiesList.filter((_, i) => i !== index)
+                          }))}
+                        />
+                      </Badge>
+                    ))}
                   </div>
                 )}
               </div>
-
-              {/* Social History */}
+              
+              {/* Social History Section */}
               <div className="space-y-4">
-                <h4 className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                  <Users className="h-4 w-4 text-purple-600" />
-                  {language === 'fr' ? 'Habitudes de vie' : 'Social History'}
+                <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-pink-500" />
+                  {language === 'fr' ? 'Histoire Sociale' : 'Social History'}
                 </h4>
-                
-                {/* Smoking */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {language === 'fr' ? 'Tabagisme' : 'Smoking'}
-                  </label>
-                  <div className="flex items-center gap-4">
-                    <Button
-                      variant={socialHistory.smoking.status ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSocialHistory({
-                        ...socialHistory,
-                        smoking: { status: true, details: socialHistory.smoking.details }
-                      })}
-                      className="w-16"
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">{language === 'fr' ? 'Tabagisme' : 'Smoking'}</span>
+                    <button
+                      onClick={() => {
+                        setSocialHistory(prev => ({ ...prev, smoking: { status: !prev.smoking.status, details: prev.smoking.status ? '' : prev.smoking.details } }));
+                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
+                        timeoutRef.current.push(timeout);
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
+                        socialHistory.smoking.status ? 'bg-pink-500' : 'bg-gray-200'
+                      }`}
                     >
-                      {language === 'fr' ? 'Oui' : 'Yes'}
-                    </Button>
-                    <Button
-                      variant={!socialHistory.smoking.status ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSocialHistory({
-                        ...socialHistory,
-                        smoking: { status: false, details: '' }
-                      })}
-                      className="w-16"
-                    >
-                      {language === 'fr' ? 'Non' : 'No'}
-                    </Button>
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          socialHistory.smoking.status ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
                   </div>
                   {socialHistory.smoking.status && (
                     <Input
+                      placeholder={language === 'fr' ? 'Détails du tabagisme...' : 'Smoking details...'}
                       value={socialHistory.smoking.details}
-                      onChange={(e) => setSocialHistory({
-                        ...socialHistory,
-                        smoking: { status: true, details: e.target.value }
-                      })}
-                      placeholder={language === 'fr' ? 'ex: 1 paquet/jour ou 20 paquets-années' : 'e.g., 1 pack/day or 20 pack-years'}
-                      className="mt-2"
+                      onChange={(e) => setSocialHistory(prev => ({ ...prev, smoking: { ...prev.smoking, details: e.target.value } }))}
+                      onBlur={handleSocialHistoryBlur}
                     />
                   )}
-                </div>
-
-                {/* Alcohol */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {language === 'fr' ? 'Alcool' : 'Alcohol'}
-                  </label>
-                  <div className="flex items-center gap-4">
-                    <Button
-                      variant={socialHistory.alcohol.status ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSocialHistory({
-                        ...socialHistory,
-                        alcohol: { status: true, details: socialHistory.alcohol.details }
-                      })}
-                      className="w-16"
+                  
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">{language === 'fr' ? 'Alcool' : 'Alcohol'}</span>
+                    <button
+                      onClick={() => {
+                        setSocialHistory(prev => ({ ...prev, alcohol: { status: !prev.alcohol.status, details: prev.alcohol.status ? '' : prev.alcohol.details } }));
+                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
+                        timeoutRef.current.push(timeout);
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
+                        socialHistory.alcohol.status ? 'bg-pink-500' : 'bg-gray-200'
+                      }`}
                     >
-                      {language === 'fr' ? 'Oui' : 'Yes'}
-                    </Button>
-                    <Button
-                      variant={!socialHistory.alcohol.status ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSocialHistory({
-                        ...socialHistory,
-                        alcohol: { status: false, details: '' }
-                      })}
-                      className="w-16"
-                    >
-                      {language === 'fr' ? 'Non' : 'No'}
-                    </Button>
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          socialHistory.alcohol.status ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
                   </div>
                   {socialHistory.alcohol.status && (
                     <Input
+                      placeholder={language === 'fr' ? 'Détails de l\'alcool...' : 'Alcohol details...'}
                       value={socialHistory.alcohol.details}
-                      onChange={(e) => setSocialHistory({
-                        ...socialHistory,
-                        alcohol: { status: true, details: e.target.value }
-                      })}
-                      placeholder={language === 'fr' ? 'ex: 2-3 consommations/semaine' : 'e.g., 2-3 drinks/week'}
-                      className="mt-2"
+                      onChange={(e) => setSocialHistory(prev => ({ ...prev, alcohol: { ...prev.alcohol, details: e.target.value } }))}
+                      onBlur={handleSocialHistoryBlur}
                     />
                   )}
-                </div>
-
-                {/* Drugs */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {language === 'fr' ? 'Drogues' : 'Drugs'}
-                  </label>
-                  <div className="flex items-center gap-4">
-                    <Button
-                      variant={socialHistory.drugs.status ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSocialHistory({
-                        ...socialHistory,
-                        drugs: { status: true, details: socialHistory.drugs.details }
-                      })}
-                      className="w-16"
+                  
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">{language === 'fr' ? 'Drogues' : 'Drugs'}</span>
+                    <button
+                      onClick={() => {
+                        setSocialHistory(prev => ({ ...prev, drugs: { status: !prev.drugs.status, details: prev.drugs.status ? '' : prev.drugs.details } }));
+                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
+                        timeoutRef.current.push(timeout);
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
+                        socialHistory.drugs.status ? 'bg-pink-500' : 'bg-gray-200'
+                      }`}
                     >
-                      {language === 'fr' ? 'Oui' : 'Yes'}
-                    </Button>
-                    <Button
-                      variant={!socialHistory.drugs.status ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSocialHistory({
-                        ...socialHistory,
-                        drugs: { status: false, details: '' }
-                      })}
-                      className="w-16"
-                    >
-                      {language === 'fr' ? 'Non' : 'No'}
-                    </Button>
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          socialHistory.drugs.status ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
                   </div>
                   {socialHistory.drugs.status && (
                     <Input
+                      placeholder={language === 'fr' ? 'Détails des drogues...' : 'Drug details...'}
                       value={socialHistory.drugs.details}
-                      onChange={(e) => setSocialHistory({
-                        ...socialHistory,
-                        drugs: { status: true, details: e.target.value }
-                      })}
-                      placeholder={language === 'fr' ? 'ex: Cannabis occasionnel' : 'e.g., Occasional cannabis'}
-                      className="mt-2"
+                      onChange={(e) => setSocialHistory(prev => ({ ...prev, drugs: { ...prev.drugs, details: e.target.value } }))}
+                      onBlur={handleSocialHistoryBlur}
                     />
                   )}
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        );
-
-      case 'medications':
-        return (
-          <MedicationSection 
-            medications={medications}
-            onMedicationsChange={setMedications}
-          />
-        );
-
-      case 'ros':
-        return renderRosSection();
-
-      case 'pe':
-        return renderPeSection();
-
-      case 'lab':
-        return (
-          <Card className="overflow-hidden">
-            <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <TestTube className="text-white w-5 h-5" />
-                  <h3 className="text-lg font-semibold text-white">{t('labResults.title')}</h3>
-                  <span className="text-white/80 text-sm">({selectedLabCategories.size}/{Object.keys(labCategories).length})</span>
-                </div>
-                <button
-                  onClick={() => {
-                    setSelectedLabCategories(new Set());
-                    setLabValues({});
-                    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory);
-                  }}
-                  className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors"
-                >
-                  {language === 'fr' ? t('button.clear') : 'Clear'}
-                </button>
-              </div>
             </div>
-            <CardContent className="p-6">
-              {/* Lab Image Upload Component */}
-              <LabImageUpload 
-                onLabValuesExtracted={(extractedLabValues) => {
-                  // Group lab values by test name and create trends with timestamp sorting
-                  const groupedValues: Record<string, Array<{value: string, unit: string, timestamp: string}>> = {};
-                  
-                  extractedLabValues.forEach(labValue => {
-                    const key = labValue.testName;
-                    if (!groupedValues[key]) {
-                      groupedValues[key] = [];
-                    }
-                    groupedValues[key].push({
-                      value: labValue.value,
-                      unit: labValue.unit || '',
-                      timestamp: (labValue as any).timestamp || ''
-                    });
-                  });
-                  
-                  // Sort each group by timestamp (most recent first)
-                  Object.keys(groupedValues).forEach(testName => {
-                    groupedValues[testName].sort((a, b) => {
-                      // Convert YYMMDD HHMM format to comparable number
-                      const parseTimestamp = (ts: string) => {
-                        if (!ts) return 0;
-                        const parts = ts.split(' ');
-                        if (parts.length !== 2) return 0;
-                        return parseInt(parts[0] + parts[1]);
-                      };
-                      
-                      const timestampA = parseTimestamp(a.timestamp);
-                      const timestampB = parseTimestamp(b.timestamp);
-                      
-                      return timestampB - timestampA; // Most recent first
-                    });
-                  });
-                  
-                  // Process grouped values and populate appropriate categories
-                  const newLabValues = { ...labValues };
-                  const newSelectedCategories = new Set(selectedLabCategories);
-                  
-                  Object.entries(groupedValues).forEach(([testName, values]) => {
-                    // Map test names to categories (including French terms)
-                    let targetCategory = '';
-                    const testNameLower = testName.toLowerCase();
-                    
-                    // CBC/FSC (French: Formule Sanguine Complète) 
-                    if (testNameLower.includes('hb') || testNameLower.includes('hemoglobin') ||
-                        testNameLower.includes('hte') || testNameLower.includes('hematocrit') ||
-                        testNameLower.includes('vgm') || testNameLower.includes('mcv') ||
-                        testNameLower.includes('gb') || testNameLower.includes('wbc') ||
-                        testNameLower.includes('plt') || testNameLower.includes('plaquettes') ||
-                        testNameLower.includes('platelet')) {
-                      targetCategory = 'CBC';
-                    }
-                    // Electrolytes - Use BMP category which exists in predefined categories
-                    else if (testNameLower.includes('na') || testNameLower.includes('sodium') ||
-                             testNameLower.includes('k') || testNameLower.includes('potassium') ||
-                             testNameLower.includes('cl') || testNameLower.includes('chloride')) {
-                      targetCategory = 'BMP';
-                    }
-                    // Coagulation
-                    else if (testNameLower.includes('tp') || testNameLower.includes('rni') ||
-                             testNameLower.includes('inr') || testNameLower.includes('ttpa') ||
-                             testNameLower.includes('ptt') || testNameLower.includes('pt')) {
-                      targetCategory = 'Coagulation';
-                    }
-                    // Chemistry/Inflammatory markers - use existing categories
-                    else if (testNameLower.includes('crp') || testNameLower.includes('protein')) {
-                      targetCategory = 'Inflammatory';
-                    }
-                    else {
-                      targetCategory = 'Other';
-                    }
-                    
-                    // Add category to selected categories
-                    newSelectedCategories.add(targetCategory);
-                    
-                    // Initialize category in labValues if not exists
-                    if (!newLabValues[targetCategory]) {
-                      newLabValues[targetCategory] = {};
-                    }
-                    
-                    // Most recent first (already sorted by timestamp)
-                    const mostRecent = values[0];
-                    const trends = values.slice(1, 4); // Take up to 3 older values
-                    
-                    // Create the lab entry with trending - store only values without units
-                    const testKey = testName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-                    const currentValue = mostRecent.value; // Only the number
-                    const pastValues = trends.map(trend => trend.value); // Only the numbers
-                    
-                    newLabValues[targetCategory][testKey] = {
-                      current: currentValue,
-                      past: pastValues
-                    };
-                  });
-                  
-                  setSelectedLabCategories(newSelectedCategories);
-                  setLabValues(newLabValues);
-                  
-                  // Force update the note with the new lab values - the useEffect will handle this automatically
-                  // No need for explicit updateNote call since useEffect [labValues] dependency will trigger it
-                  
-                  // Show success message with extracted count
-                  toast({
-                    title: language === 'fr' ? 'Valeurs extraites' : 'Values Extracted',
-                    description: language === 'fr' 
-                      ? `${Object.keys(groupedValues).length} tests de laboratoire extraits avec tendances`
-                      : `${Object.keys(groupedValues).length} lab tests extracted with trends`,
-                  });
-                }}
-              />
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(labCategories).map(([category, categoryData]) => {
-                  if (!categoryData || !categoryData.tests) return null;
-                  
-                  const IconComponent = categoryData.icon;
-                  const colorClass = categoryData.color;
-                  const isSelected = selectedLabCategories.has(category);
-                  
-                  return (
-                    <div key={category} className="group relative">
-                      <Card 
-                        className={`transition-all duration-200 hover:shadow-lg ${
-                          isSelected ? 'ring-2 ring-emerald-500 bg-emerald-50' : 'hover:bg-gray-50'
-                        }`}
-                      >
-                        <CardContent className="p-4">
-                          <div 
-                            className="flex items-start space-x-3 mb-3 cursor-pointer"
-                            onClick={() => toggleLabCategory(category)}
-                          >
-                            <div className={`${colorClass} p-2 rounded-lg flex-shrink-0`}>
-                              <IconComponent className="text-white w-4 h-4" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between mb-1">
-                                <h4 className="font-semibold text-gray-900 text-sm">{getLabCategoryName(category)}</h4>
-                                {isSelected && (
-                                  <CheckCircle className="text-green-500 w-4 h-4" />
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-600">
-                                {categoryData && categoryData.tests ? Object.entries(categoryData.tests).map(([key, test]) => getLabTestName(test.name)).join(', ') : 'Extracted lab values'}
-                              </p>
-                            </div>
-                          </div>
-                          
-                          {/* Lab Value Input Section - Only show when selected */}
-                          {isSelected && (
-                            <div className="mt-4 space-y-3 border-t pt-4">
-                              {/* Quick Normal Option */}
-                              <div className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  checked={normalCategories[category] || false}
-                                  onChange={(e) => {
-                                    const newNormalCategories = {...normalCategories};
-                                    newNormalCategories[category] = e.target.checked;
-                                    setNormalCategories(newNormalCategories);
-                                    
-                                    // Clear specific values if marking as normal
-                                    if (e.target.checked) {
-                                      const newLabValues = {...labValues};
-                                      if (newLabValues[category]) {
-                                        Object.keys(newLabValues[category]).forEach(key => {
-                                          if (!key.endsWith('_normal')) {
-                                            delete newLabValues[category][key];
-                                          }
-                                        });
-                                        newLabValues[category][`${category}_normal`] = {
-                                          current: language === 'fr' ? 'Normal' : 'Normal',
-                                          past: []
-                                        };
-                                      }
-                                      setLabValues(newLabValues);
-                                    } else {
-                                      // Remove normal entry if unchecked
-                                      const newLabValues = {...labValues};
-                                      if (newLabValues[category] && newLabValues[category][`${category}_normal`]) {
-                                        delete newLabValues[category][`${category}_normal`];
-                                      }
-                                      setLabValues(newLabValues);
-                                    }
-                                    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory);
-                                  }}
-                                  className="rounded"
-                                />
-                                <label className="text-sm text-gray-700 font-medium">
-                                  {language === 'fr' ? 'Marquer comme normal' : 'Mark as normal'}
-                                </label>
-                              </div>
-                              
-                              {/* Individual Test Inputs - Only show if not marked as normal */}
-                              {!normalCategories[category] && (
-                                <div className="space-y-2">
-                                  {Object.entries(categoryData.tests).map(([testKey, testData]) => (
-                                    <div key={testKey} className="border-b border-gray-200 py-1 last:border-b-0">
-                                      {/* Test name row */}
-                                      <div className="mb-1">
-                                        <span className="text-xs font-medium text-gray-800">{getLabTestName(testData.name)}</span>
-                                        <span className="text-xs text-gray-500 ml-2">({testData.range} {testData.unit})</span>
-                                      </div>
-                                      
-                                      {/* Input row - properly contained */}
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        {/* Current value input */}
-                                        <input
-                                          type="text"
-                                          placeholder="Current"
-                                          value={labValues[category]?.[testKey]?.current || ''}
-                                          onChange={(e) => {
-                                            const newLabValues = {...labValues};
-                                            if (!newLabValues[category]) newLabValues[category] = {};
-                                            if (!newLabValues[category][testKey]) {
-                                              newLabValues[category][testKey] = { current: '', past: ['', '', ''] };
-                                            }
-                                            newLabValues[category][testKey].current = e.target.value;
-                                            setLabValues(newLabValues);
-                                            updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory);
-                                          }}
-                                          className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                        />
-                                        
-                                        {/* Fixed 3 past value inputs */}
-                                        {[0, 1, 2].map((index) => (
-                                          <input
-                                            key={index}
-                                            type="text"
-                                            placeholder={`P${index + 1}`}
-                                            value={labValues[category]?.[testKey]?.past?.[index] || ''}
-                                            onChange={(e) => {
-                                              const newLabValues = {...labValues};
-                                              if (!newLabValues[category]) newLabValues[category] = {};
-                                              if (!newLabValues[category][testKey]) {
-                                                newLabValues[category][testKey] = { current: '', past: ['', '', ''] };
-                                              }
-                                              if (!newLabValues[category][testKey].past) {
-                                                newLabValues[category][testKey].past = ['', '', ''];
-                                              }
-                                              newLabValues[category][testKey].past[index] = e.target.value;
-                                              setLabValues(newLabValues);
-                                              updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory);
-                                            }}
-                                            className="w-14 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                          />
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+          </SectionWrapper>
         );
 
-      case 'imaging':
-        return (
-          <Card className="overflow-hidden">
-            <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <Camera className="text-white w-5 h-5" />
-                  <h3 className="text-lg font-semibold text-white">{language === 'fr' ? 'Imagerie' : 'Imagery'}</h3>
-                  <span className="text-white/80 text-sm">({selectedImagingRegions.size}/{Object.keys(imagingRegions).length})</span>
-                </div>
-                <button
-                  onClick={() => {
-                    setSelectedImagingRegions(new Set());
-                    setSelectedImagingModalities({});
-                    setImagingResults({});
-                    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-                  }}
-                  className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors"
-                >
-                  {language === 'fr' ? 'Effacer' : 'Clear'}
-                </button>
-              </div>
-            </div>
-            <CardContent className="p-4">
-              <div className="grid grid-cols-3 gap-4">
-                {/* Anatomical Regions */}
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-gray-900 text-xs mb-2">{language === 'fr' ? 'Régions anatomiques' : 'Anatomical Regions'}</h4>
-                  <div className="max-h-60 overflow-y-auto space-y-1">
-                    {Object.entries(imagingRegions).map(([regionKey, regionData]) => {
-                      const IconComponent = regionData.icon;
-                      const colorClass = regionData.color;
-                      const isSelected = selectedImagingRegions.has(regionKey);
-                      
-                      return (
-                        <Card 
-                          key={regionKey} 
-                          className={`cursor-pointer transition-all duration-200 hover:shadow-md ${
-                            isSelected ? 'ring-2 ring-purple-500 bg-purple-50' : 'hover:bg-gray-50'
-                          }`}
-                          onClick={() => toggleImagingRegion(regionKey)}
-                        >
-                          <CardContent className="p-2">
-                            <div className="flex items-center space-x-2">
-                              <div className={`${colorClass} p-1 rounded flex-shrink-0`}>
-                                <IconComponent className="text-white w-3 h-3" />
-                              </div>
-                              <span className="text-xs font-medium text-gray-900">{getTranslatedImagingRegionName(regionKey)}</span>
-                              {isSelected && (
-                                <CheckCircle className="text-green-500 w-3 h-3 ml-auto" />
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Modalities */}
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-gray-900 text-xs mb-2">{language === 'fr' ? 'Modalités' : 'Modalities'}</h4>
-                  <div className="max-h-60 overflow-y-auto space-y-2">
-                    {Array.from(selectedImagingRegions).map(regionKey => {
-                      const region = imagingRegions[regionKey as keyof typeof imagingRegions];
-                      const selectedModality = selectedImagingModalities[regionKey];
-                      
-                      return (
-                        <div key={regionKey} className="space-y-1">
-                          <h5 className="text-xs font-medium text-gray-600 px-1">{getTranslatedImagingRegionName(regionKey)}</h5>
-                          <div className="space-y-1">
-                            {region.modalities.map(modality => (
-                              <Card 
-                                key={modality}
-                                className={`cursor-pointer transition-all duration-200 hover:shadow-sm ${
-                                  selectedModality === modality ? 'ring-1 ring-purple-400 bg-purple-50' : 'hover:bg-gray-50'
-                                }`}
-                                onClick={() => setSelectedImagingModalities({...selectedImagingModalities, [regionKey]: modality})}
-                              >
-                                <CardContent className="p-2">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-xs text-gray-700">{getTranslatedImagingModality(modality)}</span>
-                                    {selectedModality === modality && (
-                                      <CheckCircle className="text-green-500 w-3 h-3" />
-                                    )}
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {selectedImagingRegions.size === 0 && (
-                      <p className="text-xs text-gray-500 italic px-1">{language === 'fr' ? 'Sélectionnez une région anatomique' : 'Select an anatomical region'}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Results */}
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-gray-900 text-xs mb-2">{language === 'fr' ? 'Résultats' : 'Results'}</h4>
-                  <div className="max-h-60 overflow-y-auto space-y-2">
-                    {Object.entries(selectedImagingModalities).map(([regionKey, modality]) => {
-                      const resultKey = `${modality}_${regionKey}`;
-                      const currentResult = imagingResults[resultKey];
-                      const findingKey = resultKey as keyof typeof imagingFindings;
-                      const findings = imagingFindings[findingKey];
-                      
-                      return (
-                        <div key={resultKey} className="space-y-2">
-                          <h5 className="text-xs font-medium text-gray-600 px-1">{getTranslatedImagingModality(modality)} - {getTranslatedImagingRegionName(regionKey)}</h5>
-                          
-                          {/* Normal checkbox with hover for detailed/concise */}
-                          <div className="group relative">
-                            <Card className={`transition-all duration-200 ${currentResult?.normal ? 'bg-green-50 border-green-200' : 'hover:bg-gray-50'}`}>
-                              <CardContent className="p-2">
-                                <div className="flex items-center justify-between">
-                                  <label className="flex items-center space-x-2 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={currentResult?.normal || false}
-                                      onChange={(e) => toggleImagingNormal(regionKey, modality, e.target.checked ? "detailed" : "concise")}
-                                      className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-                                    />
-                                    <span className="text-xs text-gray-700">{language === 'fr' ? 'Normal' : 'Normal'}</span>
-                                  </label>
-                                </div>
-                              </CardContent>
-                            </Card>
-
-                            {/* Hover options for detailed/concise */}
-                            {currentResult?.normal && findings && (
-                              <div className="absolute z-10 top-0 left-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white border border-gray-200 rounded shadow-lg">
-                                <div className="flex">
-                                  <div 
-                                    className={`flex-1 p-2 cursor-pointer hover:bg-blue-50 border-r border-gray-200 ${
-                                      currentResult.mode === "detailed" ? "bg-blue-100" : ""
-                                    }`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleImagingNormal(regionKey, modality, "detailed");
-                                    }}
-                                  >
-                                    <div className="text-center p-1">
-                                      <h6 className="font-medium text-gray-900 text-xs mb-1">{language === 'fr' ? 'Détaillé' : 'Detailed'}</h6>
-                                      <p className="text-xs text-gray-600 leading-relaxed break-words">{(language === 'fr' && (findings as any).detailed_fr ? (findings as any).detailed_fr : findings.detailed).substring(0, 50)}...</p>
-                                    </div>
-                                  </div>
-                                  <div 
-                                    className={`flex-1 p-2 cursor-pointer hover:bg-purple-50 ${
-                                      currentResult.mode === "concise" ? "bg-purple-100" : ""
-                                    }`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleImagingNormal(regionKey, modality, "concise");
-                                    }}
-                                  >
-                                    <div className="text-center p-1">
-                                      <h6 className="font-medium text-gray-900 text-xs mb-1">{language === 'fr' ? 'Concis' : 'Concise'}</h6>
-                                      <p className="text-xs text-gray-600 leading-relaxed break-words">{(language === 'fr' && (findings as any).concise_fr ? (findings as any).concise_fr : findings.concise).substring(0, 50)}...</p>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Custom result text area */}
-                          <Textarea
-                            placeholder={language === 'fr' ? 'Résultats personnalisés...' : 'Custom results...'}
-                            value={currentResult?.customResult || ""}
-                            onChange={(e) => setCustomImagingResult(regionKey, modality, e.target.value)}
-                            className="min-h-[60px] text-xs"
-                          />
-                        </div>
-                      );
-                    })}
-                    {Object.keys(selectedImagingModalities).length === 0 && (
-                      <p className="text-xs text-gray-500 italic px-1">{language === 'fr' ? 'Sélectionnez une modalité' : 'Select a modality'}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        );
-
-      case 'intubation':
-        return (
-          <Card className="overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <Activity className="text-white w-5 h-5" />
-                  <h3 className="text-lg font-semibold text-white">{language === 'fr' ? 'Paramètres d\'intubation' : 'Intubation Parameters'}</h3>
-                  <span className="text-white/80 text-sm">({Object.keys(intubationValues).filter(key => intubationValues[key]?.current).length}/{Object.keys(intubationParameters).length})</span>
-                </div>
-                <button
-                  onClick={() => {
-                    setIntubationValues({});
-                    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes);
-                  }}
-                  className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded text-white text-sm transition-colors"
-                >
-                  {t('button.clear')}
-                </button>
-              </div>
-            </div>
-            
-            <CardContent className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {Object.entries(intubationParameters).map(([paramKey, paramData]) => {
-                  const translatedName = getTranslatedIntubationParameterName(paramData.name);
-                  
-                  return (
-                    <div key={paramKey} className="space-y-3">
-                      <label className="text-sm font-medium text-gray-700">
-                        {translatedName} {paramData.unit && `(${paramData.unit})`}
-                      </label>
-                      
-                      <div className="space-y-4">
-                        {/* Current Value */}
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <label className="text-xs text-gray-500">
-                              {language === 'fr' ? 'Actuel' : 'Current'}
-                            </label>
-                            <span className="text-sm font-medium text-gray-900">
-                              {intubationValues[paramKey]?.current || (paramData as any).min || 0}
-                              {paramData.unit && ` ${paramData.unit}`}
-                            </span>
-                          </div>
-                          {(paramData as any).options ? (
-                            <Select
-                              value={intubationValues[paramKey]?.current || ''}
-                              onValueChange={(value) => {
-                                const newValues = { ...intubationValues };
-                                if (!newValues[paramKey]) {
-                                  newValues[paramKey] = { current: '', past: ['', '', ''] };
-                                }
-                                newValues[paramKey].current = value;
-                                setIntubationValues(newValues);
-                                updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes);
-                              }}
-                            >
-                              <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select mode" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {(paramData as any).options.map((option: string) => (
-                                  <SelectItem key={option} value={option}>{option}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Slider
-                              value={[parseInt(intubationValues[paramKey]?.current) || (paramData as any).min || 0]}
-                              onValueChange={(value) => {
-                                const newValues = { ...intubationValues };
-                                if (!newValues[paramKey]) {
-                                  newValues[paramKey] = { current: '', past: ['', '', ''] };
-                                }
-                                newValues[paramKey].current = value[0].toString();
-                                setIntubationValues(newValues);
-                                updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes);
-                              }}
-                              max={(paramData as any).max || 100}
-                              min={(paramData as any).min || 0}
-                              step={(paramData as any).step || 1}
-                              className="w-full"
-                            />
-                          )}
-                        </div>
-                        
-                        {/* Past Values */}
-                        <div className="grid grid-cols-3 gap-3">
-                          {[0, 1, 2].map((index) => (
-                            <div key={index}>
-                              <div className="flex justify-between items-center mb-2">
-                                <label className="text-xs text-gray-500">
-                                  P{index + 1}
-                                </label>
-                                <span className="text-sm font-medium text-gray-700">
-                                  {intubationValues[paramKey]?.past?.[index] || (paramData as any).min || 0}
-                                  {paramData.unit && ` ${paramData.unit}`}
-                                </span>
-                              </div>
-                              {(paramData as any).options ? (
-                                <Select
-                                  value={intubationValues[paramKey]?.past?.[index] || ''}
-                                  onValueChange={(value) => {
-                                    const newValues = { ...intubationValues };
-                                    if (!newValues[paramKey]) {
-                                      newValues[paramKey] = { current: '', past: ['', '', ''] };
-                                    }
-                                    if (!newValues[paramKey].past) {
-                                      newValues[paramKey].past = ['', '', ''];
-                                    }
-                                    newValues[paramKey].past[index] = value;
-                                    setIntubationValues(newValues);
-                                    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes);
-                                  }}
-                                >
-                                  <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="--" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {(paramData as any).options.map((option: string) => (
-                                      <SelectItem key={option} value={option}>{option}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              ) : (
-                                <Slider
-                                  value={[parseInt(intubationValues[paramKey]?.past?.[index]) || (paramData as any).min || 0]}
-                                  onValueChange={(value) => {
-                                    const newValues = { ...intubationValues };
-                                    if (!newValues[paramKey]) {
-                                      newValues[paramKey] = { current: '', past: ['', '', ''] };
-                                    }
-                                    if (!newValues[paramKey].past) {
-                                      newValues[paramKey].past = ['', '', ''];
-                                    }
-                                    newValues[paramKey].past[index] = value[0].toString();
-                                    setIntubationValues(newValues);
-                                    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes);
-                                  }}
-                                  max={(paramData as any).max || 100}
-                                  min={(paramData as any).min || 0}
-                                  step={(paramData as any).step || 1}
-                                  className="w-full"
-                                />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        );
-
-      default:
-        return <div>Section not found</div>;
-    }
-  };
-
-  // Initial update to show instruction message when no note type is selected
-  React.useEffect(() => {
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  }, []);
-
-  const toggleLabCategory = (category: string) => {
-    const newSelected = new Set(selectedLabCategories);
-    if (newSelected.has(category)) {
-      newSelected.delete(category);
-      // Clear lab values for this category
-      const newLabValues = { ...labValues };
-      delete newLabValues[category];
-      setLabValues(newLabValues);
-      
-      // Remove from normal categories
-      const newNormalCategories = new Set(normalCategories);
-      newNormalCategories.delete(category);
-      setNormalCategories(newNormalCategories);
-    } else {
-      newSelected.add(category);
-      // Initialize lab values for this category
-      const categoryTests = labCategories[category as keyof typeof labCategories].tests;
-      const newLabValues = { ...labValues };
-      newLabValues[category] = {};
-      Object.keys(categoryTests).forEach(test => {
-        newLabValues[category][test] = { current: "", past: ["", "", "", ""] };
-      });
-      setLabValues(newLabValues);
-    }
-    setSelectedLabCategories(newSelected);
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory);
-    // Scroll to laboratory section
-    setTimeout(() => scrollToNoteSection('laboratory'), 100);
-  };
-
-  const updateLabValue = (category: string, test: string, value: string, type: 'current' | 'past' = 'current', pastIndex?: number) => {
-    const newLabValues = { ...labValues };
-    if (!newLabValues[category]) {
-      newLabValues[category] = {};
-    }
-    if (!newLabValues[category][test]) {
-      newLabValues[category][test] = { current: "", past: ["", "", "", ""] };
-    }
-    
-    if (type === 'current') {
-      newLabValues[category][test].current = value;
-    } else if (pastIndex !== undefined) {
-      // Update specific past value index
-      const pastValues = [...newLabValues[category][test].past];
-      while (pastValues.length < 4) {
-        pastValues.push("");
-      }
-      pastValues[pastIndex] = value;
-      newLabValues[category][test].past = pastValues;
-    }
-    
-    setLabValues(newLabValues);
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory);
-  };
-
-  const toggleNormalValues = (category: string) => {
-    const newLabValues = { ...labValues };
-    const newNormalCategories = new Set(normalCategories);
-    
-    if (normalCategories.has(category)) {
-      // Remove normal setting
-      if (newLabValues[category]) {
-        const categoryKey = `${category}_normal`;
-        delete newLabValues[category][categoryKey];
-        
-        // If no other values exist, clear the category completely
-        if (Object.keys(newLabValues[category]).length === 0) {
-          delete newLabValues[category];
-        }
-      }
-      newNormalCategories.delete(category);
-    } else {
-      // Set normal values
-      if (!newLabValues[category]) {
-        newLabValues[category] = {};
-      }
-      
-      const categoryKey = `${category}_normal`;
-      newLabValues[category][categoryKey] = { 
-        current: `${category} normal`, 
-        past: ["", "", "", ""] 
-      };
-      newNormalCategories.add(category);
-    }
-    
-    setNormalCategories(newNormalCategories);
-    setLabValues(newLabValues);
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory);
-  };
-
-  const toggleRosSystem = (system: string, mode: "detailed" | "concise") => {
-    const newSelected = new Set(selectedRosSystems);
-    const newModes = { ...rosSystemModes };
-    
-    if (newSelected.has(system) && rosSystemModes[system] === mode) {
-      // If already selected with same mode, remove it
-      newSelected.delete(system);
-      delete newModes[system];
-    } else {
-      // Add or update the system with new mode
-      newSelected.add(system);
-      newModes[system] = mode;
-    }
-    
-    setSelectedRosSystems(newSelected);
-    setRosSystemModes(newModes);
-    updateNote(newSelected, selectedPeSystems, newModes, medications, allergies, socialHistory, chiefComplaint);
-    
-    // Scroll to review of systems section
-    setTimeout(() => scrollToNoteSection('review of systems'), 100);
-    
-    toast({
-      title: newSelected.has(system) ? "ROS System Added" : "ROS System Removed", 
-      description: `${system} ${newSelected.has(system) ? `(${mode}) added to` : "removed from"} note`,
-    });
-  };
-
-  const togglePeSystem = (system: string) => {
-    const newSelected = new Set(selectedPeSystems);
-    if (newSelected.has(system)) {
-      newSelected.delete(system);
-    } else {
-      newSelected.add(system);
-    }
-    setSelectedPeSystems(newSelected);
-    updateNote(selectedRosSystems, newSelected, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-    
-    // Scroll to physical exam section
-    setTimeout(() => scrollToNoteSection('physical exam'), 100);
-    
-    toast({
-      title: newSelected.has(system) ? "PE System Added" : "PE System Removed",
-      description: `${system} ${newSelected.has(system) ? "added to" : "removed from"} note`,
-    });
-  };
-
-  const selectAllRosSystems = () => {
-    const allSystems = new Set(Object.keys(rosOptions));
-    const allModes: Record<string, "detailed" | "concise"> = {};
-    Object.keys(rosOptions).forEach(system => {
-      allModes[system] = "detailed";
-    });
-    setSelectedRosSystems(allSystems);
-    setRosSystemModes(allModes);
-    updateNote(allSystems, selectedPeSystems, allModes, medications, allergies, socialHistory, chiefComplaint);
-    toast({
-      title: "All ROS Systems Selected",
-      description: "Complete ROS with all pertinent negatives generated",
-    });
-  };
-
-  const selectAllPeSystems = () => {
-    const allSystems = new Set(Object.keys(physicalExamOptions));
-    setSelectedPeSystems(allSystems);
-    updateNote(selectedRosSystems, allSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-    toast({
-      title: "All PE Systems Selected",
-      description: "Complete Physical Exam with all normal findings generated",
-    });
-  };
-
-  const selectAllSystems = () => {
-    const allRosSystems = new Set(Object.keys(rosOptions));
-    const allPeSystems = new Set(Object.keys(physicalExamOptions));
-    const allModes: Record<string, "detailed" | "concise"> = {};
-    Object.keys(rosOptions).forEach(system => {
-      allModes[system] = "detailed";
-    });
-    setSelectedRosSystems(allRosSystems);
-    setSelectedPeSystems(allPeSystems);
-    setRosSystemModes(allModes);
-    updateNote(allRosSystems, allPeSystems, allModes, medications, allergies, socialHistory, chiefComplaint);
-    toast({
-      title: "All Systems Selected",
-      description: "Complete ROS and Physical Exam generated",
-    });
-  };
-
-  const resetForm = () => {
-    setSelectedRosSystems(new Set());
-    setSelectedPeSystems(new Set());
-    setSelectedLabCategories(new Set());
-    setLabValues({});
-    setNormalCategories(new Set());
-    setBloodGasTypes({});
-    setRosSystemModes({});
-    setIntubationValues({});
-    setMedications({ homeMedications: [], hospitalMedications: [] });
-    setAllergies({ hasAllergies: false, allergiesList: [] });
-    setSocialHistory({
-      smoking: { status: false, details: '' },
-      alcohol: { status: false, details: '' },
-      drugs: { status: false, details: '' }
-    });
-    setChiefComplaint({
-      selectedTemplate: '',
-      customComplaint: '',
-      presentingSymptoms: '',
-      onsetDuration: '',
-      associatedSymptoms: '',
-      aggravatingFactors: '',
-      relievingFactors: '',
-      previousTreatment: ''
-    });
-    setSelectedImagingRegions(new Set());
-    setSelectedImagingModalities({});
-    setImagingResults({});
-    setNote("");
-    setAllergiesExpanded(false);
-    setNoteType(null);
-    setAdmissionType("general");
-    setProgressType("general");
-    clearSectionTemplates();
-    toast({
-      title: "Form Reset",
-      description: "All selections have been cleared",
-    });
-  };
-
-  // Helper function to generate allergies and social history sections
-  const generateAllergiesAndSocialHistory = (allergiesData: AllergiesData, socialHistoryData: SocialHistoryData, isfrench: boolean = false) => {
-    // Generate allergies section
-    let allergiesSection = "ALLERGIES:\n";
-    if (allergiesData.hasAllergies) {
-      if (allergiesData.allergiesList.length > 0 && allergiesData.allergiesList.some(a => a.trim())) {
-        allergiesSection += allergiesData.allergiesList.filter(a => a.trim()).join('\n');
-      } else {
-        allergiesSection += isfrench ? "[Entrer les allergies]" : "[Enter allergies]";
-      }
-    } else {
-      allergiesSection += isfrench ? "Aucune allergie connue" : "No known allergies";
-    }
-    
-    // Generate social history section
-    let socialSection = isfrench ? "\n\nHABITUDES DE VIE:\n" : "\n\nSOCIAL HISTORY:\n";
-    const socialItems = [];
-    
-    if (socialHistoryData.smoking.status) {
-      if (socialHistoryData.smoking.details.trim()) {
-        socialItems.push(isfrench ? `Tabagisme : ${socialHistoryData.smoking.details}` : `Smoking: ${socialHistoryData.smoking.details}`);
-      } else {
-        socialItems.push(isfrench ? "Tabagisme : [Entrer les détails]" : "Smoking: [Enter details]");
-      }
-    } else {
-      socialItems.push(isfrench ? "Non-fumeur" : "No smoking");
-    }
-    
-    if (socialHistoryData.alcohol.status) {
-      if (socialHistoryData.alcohol.details.trim()) {
-        socialItems.push(isfrench ? `Alcool : ${socialHistoryData.alcohol.details}` : `Alcohol: ${socialHistoryData.alcohol.details}`);
-      } else {
-        socialItems.push(isfrench ? "Alcool : [Entrer les détails]" : "Alcohol: [Enter details]");
-      }
-    } else {
-      socialItems.push(isfrench ? "Pas d'alcool" : "No alcohol");
-    }
-    
-    if (socialHistoryData.drugs.status) {
-      if (socialHistoryData.drugs.details.trim()) {
-        socialItems.push(isfrench ? `Drogues : ${socialHistoryData.drugs.details}` : `Drugs: ${socialHistoryData.drugs.details}`);
-      } else {
-        socialItems.push(isfrench ? "Drogues : [Entrer les détails]" : "Drugs: [Enter details]");
-      }
-    } else {
-      socialItems.push(isfrench ? "Pas de drogues" : "No drugs");
-    }
-    
-    socialSection += socialItems.join('\n');
-    return allergiesSection + socialSection;
-  };
-
-  const generateChiefComplaintText = (chiefComplaintData: ChiefComplaintData, isfrench: boolean = false) => {
-    if (!chiefComplaintData.selectedTemplate || !chiefComplaintData.customComplaint.trim()) {
-      return isfrench ? "[Entrer le motif de consultation]" : "[Enter reason for consultation]";
-    }
-
-    let ccText = chiefComplaintData.customComplaint.trim();
-    
-    if (chiefComplaintData.selectedTemplate !== 'basic' && chiefComplaintData.presentingSymptoms.trim()) {
-      ccText += `. ${chiefComplaintData.presentingSymptoms.trim()}`;
-    }
-    
-    if (chiefComplaintData.onsetDuration.trim()) {
-      ccText += `. ${isfrench ? 'Début' : 'Onset'}: ${chiefComplaintData.onsetDuration.trim()}`;
-    }
-    
-    if (chiefComplaintData.associatedSymptoms.trim()) {
-      ccText += `. ${isfrench ? 'Symptômes associés' : 'Associated symptoms'}: ${chiefComplaintData.associatedSymptoms.trim()}`;
-    }
-    
-    return ccText;
-  };
-
-  // Generate imaging results text
-  const generateImagingText = () => {
-    if (Object.keys(selectedImagingModalities).length === 0) {
-      return "";
-    }
-
-    const imagingEntries: string[] = [];
-    
-    Object.entries(selectedImagingModalities).forEach(([regionKey, modality]) => {
-      const resultKey = `${modality}_${regionKey}`;
-      const currentResult = imagingResults[resultKey];
-      const findingKey = resultKey as keyof typeof imagingFindings;
-      const findings = imagingFindings[findingKey];
-      
-      if (currentResult) {
-        // Create a proper imaging study name based on modality and region
-        let studyName = "";
-        const regionName = getTranslatedImagingRegionName(regionKey);
-        
-        if (modality === "X-Ray") {
-          if (regionKey === "Chest") {
-            studyName = language === 'fr' ? 'Radiographie pulmonaire' : 'Chest X-ray';
-          } else if (regionKey === "Abdomen") {
-            studyName = language === 'fr' ? 'Radiographie abdominale' : 'Abdominal X-ray';
-          } else {
-            studyName = language === 'fr' ? `Radiographie ${regionName}` : `${regionName} X-ray`;
-          }
-        } else if (modality === "CT") {
-          if (regionKey === "CNS") {
-            studyName = language === 'fr' ? 'TDM cérébrale' : 'CT head';
-          } else if (regionKey === "Chest") {
-            studyName = language === 'fr' ? 'TDM thoracique' : 'CT chest';
-          } else if (regionKey === "Abdomen") {
-            studyName = language === 'fr' ? 'TDM abdominale' : 'CT abdomen';
-          } else {
-            studyName = language === 'fr' ? `TDM ${regionName}` : `CT ${regionName}`;
-          }
-        } else if (modality === "MRI") {
-          if (regionKey === "CNS") {
-            studyName = language === 'fr' ? 'IRM cérébrale' : 'MRI brain';
-          } else {
-            studyName = language === 'fr' ? `IRM ${regionName}` : `MRI ${regionName}`;
-          }
-        } else {
-          // Fallback for other modalities
-          const modalityName = getTranslatedImagingModality(modality);
-          studyName = `${modalityName} ${regionName}`;
-        }
-        
-        let entry = `${studyName}: `;
-        
-        if (currentResult.normal && findings) {
-          const mode = currentResult.mode || "concise";
-          // Use French text if language is French and available
-          const textKey = language === 'fr' ? `${mode}_fr` : mode;
-          const findingsText = findings[textKey as keyof typeof findings] || findings[mode];
-          // Extract just the findings text after the colon to avoid redundancy
-          const colonIndex = findingsText.indexOf(': ');
-          const cleanFindings = colonIndex !== -1 ? findingsText.substring(colonIndex + 2) : findingsText;
-          entry += cleanFindings;
-        } else if (currentResult.customResult && currentResult.customResult.trim() !== "") {
-          entry += currentResult.customResult;
-        } else {
-          entry += language === 'fr' ? 'En attente' : 'Pending';
-        }
-        
-        imagingEntries.push(entry);
-      }
-    });
-    
-    return imagingEntries.length > 0 ? imagingEntries.join("\n") : "";
-  };
-
-  const updateNote = (rosSystems: Set<string>, peSystems: Set<string>, systemModes: Record<string, "detailed" | "concise">, medicationsData: MedicationData = medications, allergiesData: AllergiesData = allergies, socialHistoryData: SocialHistoryData = socialHistory, chiefComplaintData: ChiefComplaintData = chiefComplaint) => {
-    // Generate individual section templates without directly setting the note
-    generateSectionTemplates(rosSystems, peSystems, systemModes, medicationsData, allergiesData, socialHistoryData, chiefComplaintData);
-  };
-
-  const generateSectionTemplates = (rosSystems: Set<string>, peSystems: Set<string>, systemModes: Record<string, "detailed" | "concise">, medicationsData: MedicationData = medications, allergiesData: AllergiesData = allergies, socialHistoryData: SocialHistoryData = socialHistory, chiefComplaintData: ChiefComplaintData = chiefComplaint) => {
-    // If no note type is selected, show instruction message
-    if (noteType === null) {
-      const instructionText = language === 'fr' 
-        ? 'Sélectionnez un type de note (Admission, Évolution ou Consultation) pour commencer à générer votre note clinique.'
-        : 'Select a note type (Admission, Progress, or Consultation) to start generating your clinical note.';
-      setNote(instructionText);
-      return;
-    }
-
-    // Generate individual section templates
-    generateROSTemplate(rosSystems, systemModes);
-    generatePhysicalExamTemplate(peSystems);
-    generateLaboratoryTemplate();
-    generateImagingTemplate();
-    generateAllergiesTemplate(allergiesData);
-    generateSocialHistoryTemplate(socialHistoryData);
-    generateMedicationsTemplate(medicationsData);
-    generateChiefComplaintTemplate(chiefComplaintData);
-
-    // Generate and set the final note
-    const finalNote = generateFinalNote();
-    setNote(finalNote);
-  };
-
-  // Generate ROS section template
-  const generateROSTemplate = (rosSystems: Set<string>, systemModes: Record<string, "detailed" | "concise">) => {
-    let rosTemplate = "";
-    if (rosSystems.size > 0) {
-      const rosEntries = Array.from(rosSystems).map(system => {
-        if (language === 'fr') {
-          const mode = systemModes[system] || "detailed";
-          const key = `ros.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}.${mode}`;
-          const frenchFindings = t(key);
-          return frenchFindings !== key ? frenchFindings : rosOptions[system as keyof typeof rosOptions][mode];
-        } else {
-          const findings = rosOptions[system as keyof typeof rosOptions];
-          const mode = systemModes[system] || "detailed";
-          return findings[mode];
-        }
-      });
-      
-      rosTemplate = rosEntries.join(", ") + ".";
-      
-      const uncoveredRosSystems = Object.keys(rosOptions).filter(system => !rosSystems.has(system));
-      if (uncoveredRosSystems.length > 0) {
-        rosTemplate += language === 'fr' ? ` ${t('note.allOtherSystemsNegative')}` : " All other systems reviewed and negative.";
-      }
-    }
-    
-    updateSectionTemplate('ros', rosTemplate);
-  };
-
-  // Generate Physical Exam section template
-  const generatePhysicalExamTemplate = (peSystems: Set<string>) => {
-    let peTemplate = "";
-    if (peSystems.size > 0) {
-      const peEntries = Array.from(peSystems).map(system => {
-        if (language === 'fr') {
-          const frenchFindings = t(`pe.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}`);
-          const findings = frenchFindings !== `pe.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}` ? frenchFindings : physicalExamOptions[system as keyof typeof physicalExamOptions];
-          return findings;
-        } else {
-          const findings = physicalExamOptions[system as keyof typeof physicalExamOptions];
-          return `${system}: ${findings}`;
-        }
-      });
-      peTemplate = peEntries.join("\n");
-    }
-    
-    updateSectionTemplate('physicalExam', peTemplate);
-  };
-
-  // Generate Laboratory section template
-  const generateLaboratoryTemplate = () => {
-    let labTemplate = "";
-    
-    // Check if we have any lab data (standard categories, OCR extracted values, or custom labs)
-    const hasStandardLabs = selectedLabCategories.size > 0;
-    const hasOCRLabs = Object.keys(labValues).length > 0 && Object.values(labValues).some(categoryData => 
-      Object.values(categoryData).some(labData => labData.current && labData.current.trim() !== "")
-    );
-    const hasCustomLabs = Object.keys(customLabs).length > 0 && Object.values(customLabs).some(lab => lab.current.trim() !== "");
-    
-    if (hasStandardLabs || hasOCRLabs || hasCustomLabs) {
-      const labSections: string[] = [];
-      
-      // Track processed lab tests to avoid duplicates
-      const processedTests = new Set<string>();
-      const allLabResults: string[] = [];
-      
-      // Process all labValues (includes both standard and OCR-extracted values)
-      Object.entries(labValues).forEach(([category, categoryValues]) => {
-        if (categoryValues && typeof categoryValues === 'object') {
-          Object.entries(categoryValues).forEach(([testKey, testData]) => {
-            if (testData && testData.current && testData.current.trim() !== "") {
-              // Check if it's a "normal" entry
-              if (testKey.endsWith('_normal')) {
-                allLabResults.push(testData.current);
-              } else {
-                // Create a unique identifier for this test to prevent duplicates
-                const testIdentifier = `${category}:${testKey}`;
-                
-                // Skip if already processed (prevents OCR + manual selection duplicates)
-                if (processedTests.has(testIdentifier)) {
-                  return;
-                }
-                processedTests.add(testIdentifier);
-                
-                // Try to get test name from predefined categories first
-                const categoryData = labCategories[category as keyof typeof labCategories];
-                let testName = testKey;
-                
-                if (categoryData && categoryData.tests && categoryData.tests[testKey as keyof typeof categoryData.tests]) {
-                  const testInfo = categoryData.tests[testKey as keyof typeof categoryData.tests];
-                  testName = getLabTestName(testInfo.name);
-                } else {
-                  // Use the helper function for OCR-extracted values
-                  testName = resolveTestName(testKey, categoryData, null);
-                }
-                
-                let labEntry = `${testName}: ${testData.current}`;
-                
-                // Add trending data if available
-                const pastValues = testData.past ? testData.past.filter(val => val && val.trim() !== "") : [];
-                if (pastValues.length > 0) {
-                  labEntry += ` [${pastValues.join(", ")}]`;
-                }
-                
-                allLabResults.push(labEntry);
-              }
-            }
-          });
-        }
-      });
-      
-      // Add custom lab results (avoiding duplicates with main lab values)
-      Object.entries(customLabs).forEach(([labName, labData]) => {
-        if (labData.current && labData.current.trim() !== "") {
-          // Check if this custom lab duplicates an existing processed test
-          const customTestIdentifier = `custom:${labName}`;
-          if (processedTests.has(customTestIdentifier)) {
-            return;
-          }
-          processedTests.add(customTestIdentifier);
-          
-          // Apply French abbreviations in note generation
-          const getAbbreviatedName = (name: string) => {
-            if (language === 'fr') {
-              const abbreviations: Record<string, string> = {
-                'Globules blanches': 'Gb',
-                'Globules blancs': 'Gb',
-                'Hémoglobine': 'Hb',
-                'Plaquettes': 'Plq',
-                'Sodium': 'Na',
-                'Potassium': 'K',
-                'Créatinine': 'Créat',
-                'Phosphatase alkaline': 'PAL',
-                'Phosphoatase alkaline': 'PAL'
-              };
-              return abbreviations[name] || name;
-            }
-            return name;
-          };
-
-          const displayName = getAbbreviatedName(labName);
-          let customLabEntry = `${displayName}: ${labData.current}`;
-          
-          // Add trending data if available
-          const pastValues = labData.past ? labData.past.filter(val => val && val.trim() !== "") : [];
-          if (pastValues.length > 0) {
-            customLabEntry += ` [${pastValues.join(", ")}]`;
-          }
-          
-          allLabResults.push(customLabEntry);
-        }
-      });
-      
-      // Add all processed lab results to sections
-      if (allLabResults.length > 0) {
-        labSections.push(allLabResults.join(", "));
-      }
-      
-      if (labSections.length > 0) {
-        labTemplate = labSections.join("\n");
-      }
-    }
-    
-    updateSectionTemplate('laboratory', labTemplate);
-  };
-
-  // Generate other missing templates
-  const generateImagingTemplate = () => {
-    const imagingTemplate = generateImagingText();
-    updateSectionTemplate('imaging', imagingTemplate);
-  };
-
-  const generateAllergiesTemplate = (allergiesData: AllergiesData) => {
-    const allergiesTemplate = generateAllergiesAndSocialHistory(allergiesData, socialHistory, language === 'fr').split('\n\n')[0];
-    updateSectionTemplate('allergies', allergiesTemplate);
-  };
-
-  const generateSocialHistoryTemplate = (socialHistoryData: SocialHistoryData) => {
-    const socialTemplate = generateAllergiesAndSocialHistory(allergies, socialHistoryData, language === 'fr').split('\n\n')[1] || '';
-    updateSectionTemplate('socialHistory', socialTemplate);
-  };
-
-  const generateMedicationsTemplate = (medicationsData: MedicationData) => {
-    const homeText = medicationsData.homeMedications.length > 0 ? formatMedicationsForNote(medicationsData.homeMedications, language) : '[Enter home medications]';
-    const hospitalText = medicationsData.hospitalMedications.length > 0 ? formatMedicationsForNote(medicationsData.hospitalMedications, language) : '[Enter hospital medications]';
-    const medicationsTemplate = language === 'fr' 
-      ? `MÉDICAMENTS À DOMICILE :\n${homeText}\n\nMÉDICAMENTS HOSPITALIERS :\n${hospitalText}`
-      : `HOME MEDICATIONS:\n${homeText}\n\nHOSPITAL MEDICATIONS:\n${hospitalText}`;
-    updateSectionTemplate('medications', medicationsTemplate);
-  };
-
-  const generateChiefComplaintTemplate = (chiefComplaintData: ChiefComplaintData) => {
-    const ccText = generateChiefComplaintText(chiefComplaintData, language === 'fr');
-    if (ccText && ccText.trim()) {
-      updateSectionTemplate('hpi', ccText);
-    }
-  };
-
-  // Update individual section template
-  const updateSectionTemplate = (sectionKey: string, template: string) => {
-    // Safety check for parameters
-    if (typeof sectionKey !== 'string' || sectionKey.trim() === '') {
-      console.warn('Invalid sectionKey provided to updateSectionTemplate:', sectionKey);
-      return;
-    }
-    
-    // Ensure template is a string (can be empty)
-    const safeTemplate = typeof template === 'string' ? template : '';
-    
-    setSectionTemplates(prev => {
-      // Safety check for previous state
-      const safePrev = prev && typeof prev === 'object' ? prev : {};
-      return {
-        ...safePrev,
-        [sectionKey]: safeTemplate
-      };
-    });
-  };
-
-  // Clear all section templates (useful for reset functionality)
-  const clearSectionTemplates = () => {
-    setSectionTemplates({});
-  };
-
-  // Generate the final note by combining all section templates with headers
-  const generateFinalNote = () => {
-    let finalNote = "";
-    
-    // Define the order and headers for each section based on note type
-    const sectionOrder = noteType === "admission" 
-      ? [
-          { key: 'reasonForAdmission', header: language === 'fr' ? 'MOTIF D\'ADMISSION' : 'REASON FOR ADMISSION' },
-          { key: 'pmh', header: language === 'fr' ? 'ANTÉCÉDENTS MÉDICAUX' : 'PAST MEDICAL HISTORY' },
-          { key: 'allergies', header: language === 'fr' ? 'ALLERGIES' : 'ALLERGIES' },
-          { key: 'socialHistory', header: language === 'fr' ? 'HABITUDES DE VIE' : 'SOCIAL HISTORY' },
-          { key: 'medications', header: language === 'fr' ? 'MÉDICAMENTS' : 'MEDICATIONS' },
-          { key: 'hpi', header: language === 'fr' ? 'HISTOIRE DE LA MALADIE ACTUELLE' : 'HISTORY OF PRESENTING ILLNESS' },
-          { key: 'ros', header: language === 'fr' ? 'REVUE DES SYSTÈMES' : 'REVIEW OF SYSTEMS' },
-          { key: 'physicalExam', header: language === 'fr' ? 'EXAMEN PHYSIQUE' : 'PHYSICAL EXAMINATION' },
-          { key: 'laboratory', header: language === 'fr' ? 'RÉSULTATS DE LABORATOIRE' : 'LABORATORY RESULTS' },
-          { key: 'imaging', header: language === 'fr' ? 'IMAGERIE' : 'IMAGING' },
-          { key: 'impression', header: language === 'fr' ? 'IMPRESSION CLINIQUE' : 'CLINICAL IMPRESSION' },
-          { key: 'plan', header: language === 'fr' ? 'PLAN' : 'PLAN' }
-        ]
-      : noteType === "progress"
-      ? [
-          { key: 'progressNote', header: language === 'fr' ? 'NOTE D\'ÉVOLUTION' : 'PROGRESS NOTE' },
-          { key: 'ros', header: language === 'fr' ? 'REVUE DES SYSTÈMES' : 'REVIEW OF SYSTEMS' },
-          { key: 'physicalExam', header: language === 'fr' ? 'EXAMEN PHYSIQUE' : 'PHYSICAL EXAMINATION' },
-          { key: 'laboratory', header: language === 'fr' ? 'RÉSULTATS DE LABORATOIRE' : 'LABORATORY RESULTS' },
-          { key: 'imaging', header: language === 'fr' ? 'IMAGERIE' : 'IMAGING' },
-          { key: 'impression', header: language === 'fr' ? 'IMPRESSION CLINIQUE' : 'CLINICAL IMPRESSION' },
-          { key: 'plan', header: language === 'fr' ? 'PLAN' : 'PLAN' }
-        ]
-      : [
-          { key: 'consultation', header: language === 'fr' ? 'CONSULTATION' : 'CONSULTATION' },
-          { key: 'hpi', header: language === 'fr' ? 'HISTOIRE DE LA MALADIE ACTUELLE' : 'HISTORY OF PRESENTING ILLNESS' },
-          { key: 'ros', header: language === 'fr' ? 'REVUE DES SYSTÈMES' : 'REVIEW OF SYSTEMS' },
-          { key: 'physicalExam', header: language === 'fr' ? 'EXAMEN PHYSIQUE' : 'PHYSICAL EXAMINATION' },
-          { key: 'laboratory', header: language === 'fr' ? 'RÉSULTATS DE LABORATOIRE' : 'LABORATORY RESULTS' },
-          { key: 'imaging', header: language === 'fr' ? 'IMAGERIE' : 'IMAGING' },
-          { key: 'impression', header: language === 'fr' ? 'IMPRESSION CLINIQUE' : 'CLINICAL IMPRESSION' },
-          { key: 'plan', header: language === 'fr' ? 'PLAN' : 'PLAN' }
-        ];
-
-    // Add sections with headers and content
-    for (const section of sectionOrder) {
-      // Safety check for section object
-      if (!section || !section.key || !section.header) {
-        console.warn('Invalid section object:', section);
-        continue;
-      }
-      
-      const template = sectionTemplates[section.key];
-      
-      if (template && typeof template === 'string' && template.trim()) {
-        // Add section with header - ensure no duplicate headers
-        const trimmedTemplate = template.trim();
-        const headerPattern = new RegExp(`^${section.header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:?\\s*`, 'i');
-        
-        let sectionContent;
-        if (headerPattern.test(trimmedTemplate)) {
-          // Template already includes header
-          sectionContent = trimmedTemplate;
-        } else {
-          // Add header to template
-          sectionContent = `${section.header}:\n${trimmedTemplate}`;
-        }
-        
-        finalNote += (finalNote ? "\n\n" : "") + sectionContent;
-      } else if (section.key === 'reasonForAdmission' || section.key === 'hpi' || section.key === 'impression' || section.key === 'plan') {
-        // Always include these critical sections even if empty
-        const placeholder = language === 'fr' 
-          ? `[Entrer ${section.header.toLowerCase()}]`
-          : `[Enter ${section.header.toLowerCase()}]`;
-        const sectionContent = `${section.header}:\n${placeholder}`;
-        finalNote += (finalNote ? "\n\n" : "") + sectionContent;
-      }
-    }
-
-    return finalNote || (language === 'fr' 
-      ? 'Sélectionnez des sections à inclure dans la note.' 
-      : 'Select sections to include in the note.');
-  };
-
-  // Generate note based on selected template or basic structure
-  React.useEffect(() => {
-    // If no note type is selected, show instruction
-    if (noteType === null) {
-      const instructionText = language === 'fr' 
-        ? 'Sélectionnez un type de note (Admission, Évolution ou Consultation) pour commencer à générer votre note clinique.'
-        : 'Select a note type (Admission, Progress, or Consultation) to start generating your clinical note.';
-      setNote(instructionText);
-      return;
-    }
-
-    // If a template is selected, generate note based on template sections
-    if (selectedTemplate && selectedTemplate.content) {
-      generateNoteFromTemplate(selectedTemplate.content as TemplateContent);
-      return;
-    }
-
-    // Generate note using the new section-based system
-    updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-  }, [noteType, language, allergies, socialHistory, medications, selectedTemplate, selectedRosSystems, selectedPeSystems, rosSystemModes, chiefComplaint]);
-
-  // Regenerate final note when section templates change
-  React.useEffect(() => {
-    if (noteType && !selectedTemplate) {
-      const finalNote = generateFinalNote();
-      setNote(finalNote);
-    }
-  }, [sectionTemplates, noteType, selectedTemplate, language]);
-
-  // Update section templates when lab-related data changes
-  React.useEffect(() => {
-    if (noteType && !selectedTemplate) {
-      generateLaboratoryTemplate();
-    }
-  }, [selectedLabCategories, labValues, customLabs, normalCategories, noteType, selectedTemplate, language]);
-
-  // Update section templates when imaging data changes
-  React.useEffect(() => {
-    if (noteType && !selectedTemplate) {
-      generateImagingTemplate();
-    }
-  }, [selectedImagingRegions, selectedImagingModalities, imagingResults, noteType, selectedTemplate, language]);
-
-  // Initialize section templates on component mount and when noteType changes
-  React.useEffect(() => {
-    if (noteType && !selectedTemplate) {
-      // Clear existing templates to avoid stale data
-      clearSectionTemplates();
-      
-      // Regenerate all templates after a brief delay to ensure state is updated
-      const timeoutId = setTimeout(() => {
-        updateNote(selectedRosSystems, selectedPeSystems, rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-      }, 10);
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [noteType]);
-
-  // Generate note from selected template
-  const generateNoteFromTemplate = (templateContent: TemplateContent) => {
-    let templateNote = "";
-    
-    // Safety check for template content
-    if (!templateContent || !templateContent.sections || !Array.isArray(templateContent.sections)) {
-      console.error('Invalid template content structure');
-      setNote(language === 'fr' 
-        ? 'Erreur: Structure de modèle invalide' 
-        : 'Error: Invalid template structure');
-      return;
-    }
-    
-    // Get enabled sections sorted by order
-    const enabledSections = templateContent.sections
-      .filter(section => section && section.isEnabled !== false && section.sectionId)
-      .sort((a, b) => (a.order || 0) - (b.order || 0));
-
-    for (const section of enabledSections) {
-      const sectionDef = getSectionById(section.sectionId);
-      if (!sectionDef) continue;
-
-      // Generate section content based on section type
-      let sectionContent = "";
-      
-      switch (section.sectionId) {
-        case 'hpi':
-          sectionContent = language === 'fr' 
-            ? "HISTOIRE DE LA MALADIE ACTUELLE:\n[Entrer l'HMA]"
-            : "HISTORY OF PRESENTING ILLNESS:\n[Enter HPI]";
-          break;
-        case 'impression':
-          sectionContent = language === 'fr'
-            ? "IMPRESSION CLINIQUE:\n[Entrer les impressions cliniques]"
-            : "CLINICAL IMPRESSION:\n[Enter clinical impressions]";
-          break;
-        case 'pmh':
-          sectionContent = language === 'fr'
-            ? "ANTÉCÉDENTS MÉDICAUX:\n[Entrer les antécédents médicaux]"
-            : "PAST MEDICAL HISTORY:\n[Enter past medical history]";
-          break;
-        case 'meds':
-          const homeText = medications.homeMedications.length > 0 
-            ? formatMedicationsForNote(medications.homeMedications, language) 
-            : (language === 'fr' ? '[Entrer les médicaments à domicile]' : '[Enter home medications]');
-          const hospitalText = medications.hospitalMedications.length > 0 
-            ? formatMedicationsForNote(medications.hospitalMedications, language) 
-            : (language === 'fr' ? '[Entrer les médicaments hospitaliers]' : '[Enter hospital medications]');
-          sectionContent = language === 'fr' 
-            ? `MÉDICAMENTS À DOMICILE:\n${homeText}\n\nMÉDICAMENTS HOSPITALIERS:\n${hospitalText}`
-            : `HOME MEDICATIONS:\n${homeText}\n\nHOSPITAL MEDICATIONS:\n${hospitalText}`;
-          break;
-        case 'allergies-social':
-          sectionContent = generateAllergiesAndSocialHistory(allergies, socialHistory, language === 'fr');
-          break;
-        case 'plan':
-          sectionContent = language === 'fr'
-            ? "PLAN:\n[Entrer le plan de traitement]"
-            : "PLAN:\n[Enter treatment plan]";
-          break;
-        case 'note-type':
-          // Generate note type header if custom content exists or create default header
-          if (section.customContent && section.customContent.trim()) {
-            sectionContent = section.customContent.trim();
-          } else {
-            // Handle null/undefined noteType safely
-            if (!noteType) {
-              sectionContent = language === 'fr' 
-                ? 'TYPE DE NOTE: [Non défini]'
-                : 'NOTE TYPE: [Not defined]';
-            } else {
-              const noteTypeText = noteType === 'admission' 
-                ? (language === 'fr' ? 'ADMISSION' : 'ADMISSION')
-                : noteType === 'progress'
-                ? (language === 'fr' ? 'ÉVOLUTION' : 'PROGRESS')
-                : noteType === 'consultation'
-                ? (language === 'fr' ? 'CONSULTATION' : 'CONSULTATION')
-                : noteType.toUpperCase();
-              
-              sectionContent = language === 'fr' 
-                ? `TYPE DE NOTE: ${noteTypeText}`
-                : `NOTE TYPE: ${noteTypeText}`;
-            }
-          }
-          break;
-        default:
-          // For other sections, use custom content or placeholder
-          if (section.customContent && section.customContent.trim()) {
-            // If there's custom content, ensure it has a proper header
-            const trimmedContent = section.customContent.trim();
-            const header = `${sectionDef.name.toUpperCase()}:`;
-            
-            // Check if custom content already starts with the header (case insensitive)
-            const customContentUpper = trimmedContent.toUpperCase().trim();
-            const headerUpper = header.toUpperCase().trim();
-            
-            if (customContentUpper.startsWith(headerUpper)) {
-              sectionContent = trimmedContent;
-            } else {
-              sectionContent = `${header}\n${trimmedContent}`;
-            }
-          } else {
-            // Use default placeholder with header
-            sectionContent = language === 'fr' 
-              ? `${sectionDef.name.toUpperCase()}:\n[Entrer ${sectionDef.name.toLowerCase()}]`
-              : `${sectionDef.name.toUpperCase()}:\n[Enter ${sectionDef.name.toLowerCase()}]`;
-          }
-      }
-
-      if (sectionContent) {
-        templateNote += (templateNote ? "\n\n" : "") + sectionContent;
-      }
-    }
-
-    setNote(templateNote);
-  };
-
-  // Fallback basic note generation for when no template is selected
-  const generateBasicNote = () => {
-    let basicNote = "";
-    
-    if (noteType === "admission") {
-      if (language === 'fr') {
-        basicNote = `MOTIF D'ADMISSION :\n[Entrer le motif d'admission]\n\n`;
-        basicNote += `ANTÉCÉDENTS MÉDICAUX :\n[Entrer les antécédents médicaux]\n\n`;
-        basicNote += `${generateAllergiesAndSocialHistory(allergies, socialHistory, true)}\n\n`;
-        basicNote += `MÉDICAMENTS À DOMICILE :\n${medications.homeMedications.length > 0 ? formatMedicationsForNote(medications.homeMedications, 'fr') : '[Entrer les médicaments à domicile]'}\n\n`;
-        basicNote += `MÉDICAMENTS HOSPITALIERS :\n${medications.hospitalMedications.length > 0 ? formatMedicationsForNote(medications.hospitalMedications, 'fr') : '[Entrer les médicaments hospitaliers]'}\n\n`;
-        basicNote += `HISTOIRE DE LA MALADIE ACTUELLE :\n[Entrer l'HMA]`;
-      } else {
-        basicNote = `REASON FOR ADMISSION:\n[Enter reason for admission]\n\n`;
-        basicNote += `PAST MEDICAL HISTORY:\n[Enter past medical history]\n\n`;
-        basicNote += `${generateAllergiesAndSocialHistory(allergies, socialHistory, false)}\n\n`;
-        basicNote += `HOME MEDICATIONS:\n${medications.homeMedications.length > 0 ? formatMedicationsForNote(medications.homeMedications, language) : '[Enter home medications]'}\n\n`;
-        basicNote += `HOSPITAL MEDICATIONS:\n${medications.hospitalMedications.length > 0 ? formatMedicationsForNote(medications.hospitalMedications, language) : '[Enter hospital medications]'}\n\n`;
-        basicNote += `HISTORY OF PRESENTING ILLNESS:\n[Enter HPI]`;
-      }
-    }
-    
-    setNote(basicNote);
-  };
-
-  // Old updateNote function content - will be cleaned up
-  const oldUpdateNoteContent = () => {
-      const rosEntries = Array.from(rosSystems).map(system => {
-        if (language === 'fr') {
-          // Use French clinical findings
-          const mode = systemModes[system] || "detailed";
-          const key = `ros.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}.${mode}`;
-          const frenchFindings = t(key);
-          return frenchFindings !== key ? frenchFindings : rosOptions[system as keyof typeof rosOptions][mode];
-        } else {
-          const findings = rosOptions[system as keyof typeof rosOptions];
-          const mode = systemModes[system] || "detailed";
-          return findings[mode];
-        }
-      });
-      
-      rosText = rosEntries.join(", ") + ".";
-      
-      const uncoveredRosSystems = Object.keys(rosOptions).filter(system => !rosSystems.has(system));
-      if (uncoveredRosSystems.length > 0) {
-        rosText += language === 'fr' ? ` ${t('note.allOtherSystemsNegative')}` : " All other systems reviewed and negative.";
-      }
-    }
-    
-    // Generate Physical Exam text
-    let peText = "";
-    if (peSystems.size > 0) {
-      const peEntries = Array.from(peSystems).map(system => {
-        if (language === 'fr') {
-          const systemName = getTranslatedSystemName(system, 'pe');
-          const frenchFindings = t(`pe.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}`);
-          const findings = frenchFindings !== `pe.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}` ? frenchFindings : physicalExamOptions[system as keyof typeof physicalExamOptions];
-          return findings;
-        } else {
-          const findings = physicalExamOptions[system as keyof typeof physicalExamOptions];
-          return `${system}: ${findings}`;
-        }
-      });
-      peText = peEntries.join("\n");
-    }
-
-    // Generate Laboratory Results text
-    let labText = "";
-    
-    // Check if we have any lab data (standard categories, OCR extracted values, or custom labs)
-    const hasStandardLabs = selectedLabCategories.size > 0;
-    const hasOCRLabs = Object.keys(labValues).length > 0 && Object.values(labValues).some(categoryData => 
-      Object.values(categoryData).some(labData => labData.current && labData.current.trim() !== "")
-    );
-    const hasCustomLabs = Object.keys(customLabs).length > 0 && Object.values(customLabs).some(lab => lab.current.trim() !== "");
-    
-    if (hasStandardLabs || hasOCRLabs || hasCustomLabs) {
-      const labSections: string[] = [];
-      
-      // Track processed lab tests to avoid duplicates
-      const processedTests = new Set<string>();
-      const allLabResults: string[] = [];
-      
-      // Process all labValues (includes both standard and OCR-extracted values)
-      Object.entries(labValues).forEach(([category, categoryValues]) => {
-        if (categoryValues && typeof categoryValues === 'object') {
-          Object.entries(categoryValues).forEach(([testKey, testData]) => {
-            if (testData && testData.current && testData.current.trim() !== "") {
-              // Check if it's a "normal" entry
-              if (testKey.endsWith('_normal')) {
-                allLabResults.push(testData.current);
-              } else {
-                // Create a unique identifier for this test to prevent duplicates
-                const testIdentifier = `${category}:${testKey}`;
-                
-                // Skip if already processed (prevents OCR + manual selection duplicates)
-                if (processedTests.has(testIdentifier)) {
-                  return;
-                }
-                processedTests.add(testIdentifier);
-                
-                // Try to get test name from predefined categories first
-                const categoryData = labCategories[category as keyof typeof labCategories];
-                let testName = testKey;
-                
-                if (categoryData && categoryData.tests && categoryData.tests[testKey as keyof typeof categoryData.tests]) {
-                  const testInfo = categoryData.tests[testKey as keyof typeof categoryData.tests];
-                  testName = getLabTestName(testInfo.name);
-                } else {
-                  // Use the helper function for OCR-extracted values
-                  testName = resolveTestName(testKey, categoryData, null);
-                }
-                
-                let labEntry = `${testName}: ${testData.current}`;
-                
-                // Add trending data if available
-                const pastValues = testData.past ? testData.past.filter(val => val && val.trim() !== "") : [];
-                if (pastValues.length > 0) {
-                  labEntry += ` [${pastValues.join(", ")}]`;
-                }
-                
-                allLabResults.push(labEntry);
-              }
-            }
-          });
-        }
-      });
-      
-
-      
-      // Add custom lab results (avoiding duplicates with main lab values)
-      Object.entries(customLabs).forEach(([labName, labData]) => {
-        if (labData.current && labData.current.trim() !== "") {
-          // Check if this custom lab duplicates an existing processed test
-          const customTestIdentifier = `custom:${labName}`;
-          if (processedTests.has(customTestIdentifier)) {
-            return;
-          }
-          processedTests.add(customTestIdentifier);
-          
-          // Apply French abbreviations in note generation
-          const getAbbreviatedName = (name: string) => {
-            if (language === 'fr') {
-              const abbreviations: Record<string, string> = {
-                'Globules blanches': 'Gb',
-                'Globules blancs': 'Gb',
-                'Hémoglobine': 'Hb',
-                'Plaquettes': 'Plq',
-                'Sodium': 'Na',
-                'Potassium': 'K',
-                'Créatinine': 'Créat',
-                'Phosphatase alkaline': 'PAL',
-                'Phosphoatase alkaline': 'PAL'
-              };
-              return abbreviations[name] || name;
-            }
-            return name;
-          };
-
-          const displayName = getAbbreviatedName(labName);
-          let customLabEntry = `${displayName}: ${labData.current}`;
-          
-          // Add trending data if available
-          const pastValues = labData.past ? labData.past.filter(val => val && val.trim() !== "") : [];
-          if (pastValues.length > 0) {
-            customLabEntry += ` [${pastValues.join(", ")}]`;
-          }
-          
-          allLabResults.push(customLabEntry);
-        }
-      });
-      
-      // Add all processed lab results to sections
-      if (allLabResults.length > 0) {
-        labSections.push(allLabResults.join(", "));
-      }
-      
-      if (labSections.length > 0) {
-        labText = labSections.join("\n");
-      }
-    }
-    
-    // Generate note based on type
-    if (noteType === "admission") {
-      if (admissionType === "general") {
-        if (language === 'fr') {
-          noteText = `MOTIF D'ADMISSION :\n[Entrer le motif d'admission]\n\n`;
-          noteText += `ANTÉCÉDENTS MÉDICAUX :\n[Entrer les antécédents médicaux]\n\n`;
-          noteText += `${generateAllergiesAndSocialHistory(allergiesData, socialHistoryData, true)}\n\n`;
-          // Social history is included in the allergies function above
-          noteText += `MÉDICAMENTS À DOMICILE :\n${medicationsData.homeMedications.length > 0 ? formatMedicationsForNote(medicationsData.homeMedications, language) : '[Entrer les médicaments à domicile]'}\n\n`;
-          noteText += `MÉDICAMENTS HOSPITALIERS :\n${medicationsData.hospitalMedications.length > 0 ? formatMedicationsForNote(medicationsData.hospitalMedications, language) : '[Entrer les médicaments hospitaliers]'}\n\n`;
-          noteText += `HISTOIRE DE LA MALADIE ACTUELLE :\n[Entrer l'HMA]`;
-        } else {
-          noteText = `REASON FOR ADMISSION:\n[Enter reason for admission]\n\n`;
-          noteText += `PAST MEDICAL HISTORY:\n[Enter past medical history]\n\n`;
-          noteText += `${generateAllergiesAndSocialHistory(allergiesData, socialHistoryData, false)}\n\n`;
-          // Social history is included in the allergies function above
-          noteText += `HOME MEDICATIONS:\n${medicationsData.homeMedications.length > 0 ? formatMedicationsForNote(medicationsData.homeMedications, language) : '[Enter home medications]'}\n\n`;
-          noteText += `HOSPITAL MEDICATIONS:\n${medicationsData.hospitalMedications.length > 0 ? formatMedicationsForNote(medicationsData.hospitalMedications, language) : '[Enter hospital medications]'}\n\n`;
-          noteText += `HISTORY OF PRESENTING ILLNESS:\n[Enter HPI]`;
-        }
-        
-        if (rosText) {
-          noteText += `\n\n${rosText}`;
-        }
-        
-        noteText += language === 'fr' ? `\n\nEXAMEN PHYSIQUE:` : `\n\nPHYSICAL EXAMINATION:`;
-        if (peText) {
-          noteText += `\n${peText}`;
-        } else {
-          noteText += language === 'fr' ? `\n[Entrer les résultats de l'examen physique]` : `\n[Enter physical examination findings]`;
-        }
-        
-        noteText += language === 'fr' ? `\n\nRÉSULTATS DE LABORATOIRE:` : `\n\nLABORATORY RESULTS:`;
-        if (labText) {
-          noteText += `\n${labText}\n\n`;
-        } else {
-          noteText += language === 'fr' ? `\n[Entrer les résultats de laboratoire]\n\n` : `\n[Enter laboratory results]\n\n`;
-        }
-        
-        const imagingText = generateImagingText();
-        noteText += language === 'fr' ? `IMAGERIE:\n` : `IMAGING:\n`;
-        if (imagingText) {
-          noteText += `${imagingText}\n\n`;
-        } else {
-          noteText += language === 'fr' ? `[Entrer les résultats d'imagerie]\n\n` : `[Enter imaging results]\n\n`;
-        }
-        
-        noteText += language === 'fr' ? `IMPRESSION CLINIQUE:\n[Entrer les impressions cliniques]\n\n` : `CLINICAL IMPRESSION:\n[Enter clinical impressions]\n\n`;
-        noteText += language === 'fr' ? `PLAN:\n[Entrer le plan de traitement]` : `PLAN:\n[Enter treatment plan]`;
-      } else {
-        // ICU admission note
-        if (language === 'fr') {
-          noteText = `MOTIF D'ADMISSION :\n[Entrer le motif d'admission]\n\n`;
-          noteText += `ANTÉCÉDENTS MÉDICAUX :\n[Entrer les antécédents médicaux]\n\n`;
-          noteText += `${generateAllergiesAndSocialHistory(allergiesData, socialHistoryData, true)}\n\n`;
-          // Social history is included in the allergies function above
-          noteText += `MÉDICAMENTS À DOMICILE :\n${medicationsData.homeMedications.length > 0 ? formatMedicationsForNote(medicationsData.homeMedications, language) : '[Entrer les médicaments à domicile]'}\n\n`;
-          noteText += `MÉDICAMENTS HOSPITALIERS :\n${medicationsData.hospitalMedications.length > 0 ? formatMedicationsForNote(medicationsData.hospitalMedications, language) : '[Entrer les médicaments hospitaliers]'}\n\n`;
-          noteText += `HISTOIRE DE LA MALADIE ACTUELLE :\n[Entrer l'HMA]`;
-        } else {
-          noteText = `REASON FOR ADMISSION:\n[Enter reason for admission]\n\n`;
-          noteText += `PAST MEDICAL HISTORY:\n[Enter past medical history]\n\n`;
-          noteText += `${generateAllergiesAndSocialHistory(allergiesData, socialHistoryData, false)}\n\n`;
-          // Social history is included in the allergies function above
-          noteText += `HOME MEDICATIONS:\n${medicationsData.homeMedications.length > 0 ? formatMedicationsForNote(medicationsData.homeMedications, language) : '[Enter home medications]'}\n\n`;
-          noteText += `HOSPITAL MEDICATIONS:\n${medicationsData.hospitalMedications.length > 0 ? formatMedicationsForNote(medicationsData.hospitalMedications, language) : '[Enter hospital medications]'}\n\n`;
-          noteText += `HISTORY OF PRESENTING ILLNESS:\n[Enter HPI]`;
-        }
-        
-        if (rosText) {
-          noteText += `\n\n${rosText}`;
-        }
-        
-        // Map PE findings and lab results to ICU system sections for admission
-        const icuAdmissionSections = language === 'fr' ? {
-          "NEUROLOGIQUE": {
-            peFindings: ["General", "Neurological"],
-            labCategories: [],
-            labTests: [],
-            imagingRegions: ["CNS", "HEENT"]
-          },
-          "HÉMODYNAMIQUE": {
-            peFindings: ["Cardiovascular", "Vital"],
-            labCategories: ["Cardiac"],
-            labTests: ["Blood Gases:Lactate"],
-            imagingRegions: []
-          },
-          "RESPIRATOIRE": {
-            peFindings: ["Respiratory"],
-            labCategories: [],
-            labTests: ["Blood Gases:pH", "Blood Gases:pCO2", "Blood Gases:pO2", "Blood Gases:HCO3", "Blood Gases:Base_Excess", "Blood Gases:O2_Sat"],
-            imagingRegions: ["Thorax"]
-          },
-          "GASTRO-INTESTINAL": {
-            peFindings: ["Gastrointestinal"],
-            labCategories: ["LFTs"],
-            labTests: [],
-            imagingRegions: ["Abdomen"]
-          },
-          "NÉPHRO-MÉTABOLIQUE": {
-            peFindings: ["Genitourinary"],
-            labCategories: ["BMP"],
-            labTests: [],
-            imagingRegions: ["GU"]
-          },
-          "HÉMATO-INFECTIEUX": {
-            peFindings: ["Skin", "Extremities"],
-            labCategories: ["CBC", "Inflammatory", "Coagulation"],
-            labTests: [],
-            imagingRegions: ["Lower_Limbs"]
-          }
-        } : {
-          "NEUROLOGICAL": {
-            peFindings: ["General", "Neurological"],
-            labCategories: [],
-            labTests: [],
-            imagingRegions: ["CNS", "HEENT"]
-          },
-          "HEMODYNAMIC": {
-            peFindings: ["Cardiovascular", "Vital"],
-            labCategories: ["Cardiac"],
-            labTests: ["Blood Gases:Lactate"],
-            imagingRegions: []
-          },
-          "RESPIRATORY": {
-            peFindings: ["Respiratory"],
-            labCategories: [],
-            labTests: ["Blood Gases:pH", "Blood Gases:pCO2", "Blood Gases:pO2", "Blood Gases:HCO3", "Blood Gases:Base_Excess", "Blood Gases:O2_Sat"],
-            imagingRegions: ["Thorax"]
-          },
-          "GASTROINTESTINAL": {
-            peFindings: ["Gastrointestinal"],
-            labCategories: ["LFTs"],
-            labTests: [],
-            imagingRegions: ["Abdomen"]
-          },
-          "NEPHRO-METABOLIC": {
-            peFindings: ["Genitourinary"],
-            labCategories: ["BMP"],
-            labTests: [],
-            imagingRegions: ["GU"]
-          },
-          "HEMATO-INFECTIOUS": {
-            peFindings: ["Skin", "Extremities"],
-            labCategories: ["CBC", "Inflammatory", "Coagulation"],
-            labTests: [],
-            imagingRegions: ["Lower_Limbs"]
-          }
+      case "imagery": {
+        // --- Icons for systems ---
+        const systemIcons: Record<string, React.ReactNode> = {
+          neuro: <Brain className="w-5 h-5 text-indigo-600 bg-indigo-100 rounded-full p-1" />,
+          cardiac: <HeartPulse className="w-5 h-5 text-rose-600 bg-rose-100 rounded-full p-1" />,
+          chest: <Activity className="w-5 h-5 text-cyan-600 bg-cyan-100 rounded-full p-1" />,
+          abdomen: <Apple className="w-5 h-5 text-yellow-600 bg-yellow-100 rounded-full p-1" />,
+          pelvis: <Shield className="w-5 h-5 text-emerald-600 bg-emerald-100 rounded-full p-1" />,
+          spine: <Bone className="w-5 h-5 text-orange-600 bg-orange-100 rounded-full p-1" />,
+          limb: <Activity className="w-5 h-5 text-blue-600 bg-blue-100 rounded-full p-1" />,
         };
-        
-        Object.entries(icuAdmissionSections).forEach(([sectionName, config]) => {
-          noteText += `\n\n${sectionName}:`;
-          
-          // Add PE findings with French translation
-          const sectionPeFindings = config.peFindings.filter(system => 
-            peSystems.size > 0 && Array.from(peSystems).includes(system)
-          ).map(system => {
-            if (language === 'fr') {
-              const key = `pe.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}`;
-              const frenchFindings = t(key);
-              return frenchFindings !== key ? frenchFindings : physicalExamOptions[system as keyof typeof physicalExamOptions];
-            } else {
-              const findings = physicalExamOptions[system as keyof typeof physicalExamOptions];
-              return findings;
-            }
-          });
-          
-          // Add intubation parameters for respiratory section
-          const intubationFindings: string[] = [];
-          if ((sectionName === "RESPIRATORY" || sectionName === "RESPIRATOIRE") && Object.keys(intubationValues).length > 0) {
-            const ventParams: string[] = [];
-            Object.entries(intubationValues).forEach(([paramKey, paramData]) => {
-              if (paramData.current && paramData.current.trim() !== "") {
-                const paramInfo = intubationParameters[paramKey as keyof typeof intubationParameters];
-                if (paramInfo) {
-                  const translatedParamName = getTranslatedIntubationParameterName(paramInfo.name);
-                  let ventEntry = `${translatedParamName}: ${paramData.current}`;
-                  
-                  // Add trending data if available
-                  const pastValues = paramData.past.filter(val => val && val.trim() !== "");
-                  if (pastValues.length > 0) {
-                    ventEntry += ` (${pastValues.join(", ")})`;
-                  }
-                  
-                  ventParams.push(ventEntry);
-                }
-              }
-            });
-            
-            if (ventParams.length > 0) {
-              const ventSettingsLabel = language === 'fr' ? 'Paramètres ventilatoires' : 'Ventilator settings';
-              intubationFindings.push(`${ventSettingsLabel}: ${ventParams.join(", ")}`);
-            }
-          }
-          
-          // Add relevant lab results with trending
-          const sectionLabFindings: string[] = [];
-          
-          // Handle specific lab tests first
-          if (config.labTests) {
-            // Group blood gas results for single line display
-            const bloodGasResults: string[] = [];
-            const otherLabResults: string[] = [];
-            
-            config.labTests.forEach(testPath => {
-              const [categoryName, testKey] = testPath.split(':');
-              if (labValues[categoryName] && labValues[categoryName][testKey]) {
-                const testData = labValues[categoryName][testKey];
-                if (testData.current && testData.current.trim() !== "") {
-                  const categoryData = labCategories[categoryName as keyof typeof labCategories];
-                  const testInfo = categoryData.tests[testKey as keyof typeof categoryData.tests];
-                  
-                  if (categoryName === "Blood Gases") {
-                    // For blood gases, collect values for single line display
-                    if (testKey === "Lactate") {
-                      let labEntry = `Lactate ${testData.current}`;
-                      const pastValues = testData.past.filter(val => val && val.trim() !== "");
-                      if (pastValues.length > 0) {
-                        labEntry += ` [${pastValues.join(", ")}]`;
-                      }
-                      otherLabResults.push(labEntry);
-                    } else {
-                      // Collect blood gas values for single line
-                      let gasValue = `${testInfo?.name || testKey} ${testData.current}`;
-                      const pastValues = testData.past.filter(val => val && val.trim() !== "");
-                      if (pastValues.length > 0) {
-                        gasValue += ` (${pastValues.join(", ")})`;
-                      }
-                      bloodGasResults.push(gasValue);
-                    }
-                  } else {
-                    let labEntry = testInfo ? `${testInfo.name} ${testData.current}` : testData.current;
-                    
-                    const pastValues = testData.past.filter(val => val && val.trim() !== "");
-                    if (pastValues.length > 0) {
-                      labEntry += ` [${pastValues.join(", ")}]`;
-                    }
-                    
-                    otherLabResults.push(labEntry);
-                  }
-                }
-              }
-            });
-            
-            // Add grouped blood gas results as single line
-            if (bloodGasResults.length > 0) {
-              const gasType = bloodGasTypes["Blood Gases"] ? `${bloodGasTypes["Blood Gases"]} blood gas` : "ABG";
-              sectionLabFindings.push(`${gasType}: ${bloodGasResults.join(", ")}`);
-            }
-            
-            // Add other lab results
-            sectionLabFindings.push(...otherLabResults);
-          }
-          
-          // Handle general lab categories (excluding specific tests already handled)
-          config.labCategories.forEach(labCategory => {
-            if (labValues[labCategory]) {
-              const categoryData = labCategories[labCategory as keyof typeof labCategories];
-              Object.entries(labValues[labCategory]).forEach(([testKey, testData]) => {
-                // Skip if this test is already handled by specific test routing
-                const isSpecificTest = config.labTests?.some(testPath => testPath === `${labCategory}:${testKey}`);
-                if (isSpecificTest) return;
-                
-                if (testData.current && testData.current.trim() !== "") {
-                  // Check if it's a "normal" entry
-                  if (testKey.endsWith('_normal')) {
-                    sectionLabFindings.push(testData.current);
-                  } else {
-                    // Get the test name from categoryData
-                    const testInfo = categoryData.tests[testKey as keyof typeof categoryData.tests];
-                    let labEntry = testInfo ? `${testInfo.name} ${testData.current}` : testData.current;
-                    
-                    // Add blood gas type if applicable
-                    if (labCategory === "Blood Gases" && bloodGasTypes[labCategory]) {
-                      labEntry = `${bloodGasTypes[labCategory]} ${labEntry}`;
-                    }
-                    
-                    // Add trending data if available
-                    const pastValues = testData.past.filter(val => val && val.trim() !== "");
-                    if (pastValues.length > 0) {
-                      labEntry += ` [${pastValues.join(", ")}]`;
-                    }
-                    
-                    sectionLabFindings.push(labEntry);
-                  }
-                }
-              });
-            }
-          });
-          
-          // Add relevant imaging results
-          const sectionImagingFindings: string[] = [];
-          if (config.imagingRegions) {
-            config.imagingRegions.forEach(regionKey => {
-              const selectedModality = selectedImagingModalities[regionKey];
-              if (selectedModality) {
-                const resultKey = `${selectedModality}_${regionKey}`;
-                const currentResult = imagingResults[resultKey];
-                const findingKey = resultKey as keyof typeof imagingFindings;
-                const findings = imagingFindings[findingKey];
-                
-                if (currentResult) {
-                  // Create a proper imaging study name based on modality and region
-                  let studyName = "";
-                  const regionName = getTranslatedImagingRegionName(regionKey);
-                  
-                  if (selectedModality === "X-Ray") {
-                    if (regionKey === "Chest" || regionKey === "Thorax") {
-                      studyName = language === 'fr' ? 'Radiographie pulmonaire' : 'Chest X-ray';
-                    } else if (regionKey === "Abdomen") {
-                      studyName = language === 'fr' ? 'Radiographie abdominale' : 'Abdominal X-ray';
-                    } else {
-                      studyName = language === 'fr' ? `Radiographie ${regionName}` : `${regionName} X-ray`;
-                    }
-                  } else if (selectedModality === "CT") {
-                    if (regionKey === "CNS") {
-                      studyName = language === 'fr' ? 'TDM cérébrale' : 'CT head';
-                    } else if (regionKey === "Chest" || regionKey === "Thorax") {
-                      studyName = language === 'fr' ? 'TDM thoracique' : 'CT chest';
-                    } else if (regionKey === "Abdomen") {
-                      studyName = language === 'fr' ? 'TDM abdominale' : 'CT abdomen';
-                    } else {
-                      studyName = language === 'fr' ? `TDM ${regionName}` : `CT ${regionName}`;
-                    }
-                  } else if (selectedModality === "MRI") {
-                    if (regionKey === "CNS") {
-                      studyName = language === 'fr' ? 'IRM cérébrale' : 'MRI brain';
-                    } else {
-                      studyName = language === 'fr' ? `IRM ${regionName}` : `MRI ${regionName}`;
-                    }
-                  } else {
-                    // Fallback for other modalities
-                    const modalityName = getTranslatedImagingModality(selectedModality);
-                    studyName = `${modalityName} ${regionName}`;
-                  }
-                  
-                  let imagingEntry = `${studyName}: `;
-                  
-                  if (currentResult.normal && findings) {
-                    const mode = currentResult.mode || "concise";
-                    // Use French text if language is French and available
-                    const textKey = language === 'fr' ? `${mode}_fr` : mode;
-                    const findingsText = findings[textKey as keyof typeof findings] || findings[mode];
-                    // Extract just the findings text after the colon to avoid redundancy
-                    const colonIndex = findingsText.indexOf(': ');
-                    const cleanFindings = colonIndex !== -1 ? findingsText.substring(colonIndex + 2) : findingsText;
-                    imagingEntry += cleanFindings;
-                  } else if (currentResult.customResult && currentResult.customResult.trim() !== "") {
-                    imagingEntry += currentResult.customResult;
-                  } else {
-                    imagingEntry += language === 'fr' ? 'En attente' : 'Pending';
-                  }
-                  
-                  sectionImagingFindings.push(imagingEntry);
-                }
-              }
-            });
-          }
-          
-          const allFindings = [...sectionPeFindings, ...sectionLabFindings, ...intubationFindings, ...sectionImagingFindings];
-          
-          if (allFindings.length > 0) {
-            noteText += `\n${allFindings.join("\n")}`;
-          } else {
-            noteText += `\n[Enter ${sectionName.toLowerCase()} findings]`;
-          }
-        });
-        
-        noteText += `\n\nCLINICAL IMPRESSION:\n[Enter clinical impressions]\n\n`;
-        noteText += `PLAN:\n[Enter treatment plan]`;
-      }
-    } else if (noteType === "progress") {
-      if (progressType === "general") {
-        noteText = language === 'fr' ? `HISTOIRE DE LA MALADIE ACTUELLE:\n[Entrer le statut actuel et l'historique de l'intervalle]` : `HISTORY OF PRESENTING ILLNESS:\n[Enter current status and interval history]`;
-        
-        if (rosText) {
-          noteText += `\n\n${rosText}`;
-        }
-        
-        noteText += language === 'fr' ? `\n\nEXAMEN PHYSIQUE:` : `\n\nPHYSICAL EXAMINATION:`;
-        if (peText) {
-          noteText += `\n${peText}`;
-        } else {
-          noteText += language === 'fr' ? `\n[Entrer les résultats de l'examen physique]` : `\n[Enter physical examination findings]`;
-        }
-        
-        noteText += language === 'fr' ? `\n\nRÉSULTATS DE LABORATOIRE:` : `\n\nLABORATORY RESULTS:`;
-        if (labText) {
-          noteText += `\n${labText}\n\n`;
-        } else {
-          noteText += language === 'fr' ? `\n[Entrer les résultats de laboratoire]\n\n` : `\n[Enter laboratory results]\n\n`;
-        }
-        
-        const imagingTextProgress = generateImagingText();
-        noteText += language === 'fr' ? `IMAGERIE:\n` : `IMAGING:\n`;
-        if (imagingTextProgress) {
-          noteText += `${imagingTextProgress}\n\n`;
-        } else {
-          noteText += language === 'fr' ? `[Entrer les résultats d'imagerie]\n\n` : `[Enter imaging results]\n\n`;
-        }
-        
-        noteText += language === 'fr' ? `IMPRESSION CLINIQUE:\n[Entrer les impressions cliniques]\n\n` : `CLINICAL IMPRESSION:\n[Enter clinical impressions]\n\n`;
-        noteText += language === 'fr' ? `PLAN:\n[Entrer le plan de traitement]` : `PLAN:\n[Enter treatment plan]`;
-      } else if (progressType === "icu") {
-        // ICU progress note
-        noteText = language === 'fr' ? `HISTOIRE DE LA MALADIE ACTUELLE:\n[Entrer le statut actuel et l'historique de l'intervalle]` : `HISTORY OF PRESENTING ILLNESS:\n[Enter current status and interval history]`;
-        
-        if (rosText) {
-          noteText += `\n\n${rosText}`;
-        }
-        
-        // Map PE findings and lab results to ICU system sections
-        const icuProgressSections = language === 'fr' ? {
-          "NEUROLOGIQUE": {
-            peFindings: ["General", "Neurological"],
-            labCategories: [],
-            labTests: [],
-            imagingRegions: ["CNS", "HEENT"]
-          },
-          "HÉMODYNAMIQUE": {
-            peFindings: ["Cardiovascular", "Vital"],
-            labCategories: ["Cardiac"],
-            labTests: ["Blood Gases:Lactate"],
-            imagingRegions: []
-          },
-          "RESPIRATOIRE": {
-            peFindings: ["Respiratory"],
-            labCategories: [],
-            labTests: ["Blood Gases:pH", "Blood Gases:pCO2", "Blood Gases:pO2", "Blood Gases:HCO3", "Blood Gases:Base_Excess", "Blood Gases:O2_Sat"],
-            imagingRegions: ["Thorax"]
-          },
-          "GASTRO-INTESTINAL": {
-            peFindings: ["Gastrointestinal"],
-            labCategories: ["LFTs"],
-            labTests: [],
-            imagingRegions: ["Abdomen"]
-          },
-          "NÉPHRO-MÉTABOLIQUE": {
-            peFindings: ["Genitourinary"],
-            labCategories: ["BMP"],
-            labTests: [],
-            imagingRegions: ["GU"]
-          },
-          "HÉMATO-INFECTIEUX": {
-            peFindings: ["Skin", "Extremities"],
-            labCategories: ["CBC", "Inflammatory", "Coagulation"],
-            labTests: [],
-            imagingRegions: ["Lower_Limbs"]
-          }
-        } : {
-          "NEUROLOGICAL": {
-            peFindings: ["General", "Neurological"],
-            labCategories: [],
-            labTests: [],
-            imagingRegions: ["CNS", "HEENT"]
-          },
-          "HEMODYNAMIC": {
-            peFindings: ["Cardiovascular", "Vital"],
-            labCategories: ["Cardiac"],
-            labTests: ["Blood Gases:Lactate"],
-            imagingRegions: []
-          },
-          "RESPIRATORY": {
-            peFindings: ["Respiratory"],
-            labCategories: [],
-            labTests: ["Blood Gases:pH", "Blood Gases:pCO2", "Blood Gases:pO2", "Blood Gases:HCO3", "Blood Gases:Base_Excess", "Blood Gases:O2_Sat"],
-            imagingRegions: ["Thorax"]
-          },
-          "GASTROINTESTINAL": {
-            peFindings: ["Gastrointestinal"],
-            labCategories: ["LFTs"],
-            labTests: [],
-            imagingRegions: ["Abdomen"]
-          },
-          "NEPHRO-METABOLIC": {
-            peFindings: ["Genitourinary"],
-            labCategories: ["BMP"],
-            labTests: [],
-            imagingRegions: ["GU"]
-          },
-          "HEMATO-INFECTIOUS": {
-            peFindings: ["Skin", "Extremities"],
-            labCategories: ["CBC", "Inflammatory", "Coagulation"],
-            labTests: [],
-            imagingRegions: ["Lower_Limbs"]
-          }
+        // UI state is now defined at component top level
+
+        // --- Add study handler ---
+        const handleAddStudy = () => {
+          if (!expandedSystem || !selectedModality) return;
+          setImageryStudies([
+            ...imageryStudies,
+            { system: expandedSystem, modality: selectedModality, result: resultInput }
+          ]);
+          setExpandedSystem(null);
+          setSelectedModality("");
+          setResultInput("");
         };
-        
-        Object.entries(icuProgressSections).forEach(([sectionName, config]) => {
-          noteText += `\n\n${sectionName}:`;
-          
+        // --- Remove study handler (already defined above) ---
 
-          
-
-          
-          // Add PE findings with proper French translation
-          const sectionPeFindings = config.peFindings.filter(system => 
-            peSystems.size > 0 && Array.from(peSystems).includes(system)
-          ).map(system => {
-            if (language === 'fr') {
-              const key = `pe.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}`;
-              const frenchFindings = t(key);
-              return frenchFindings !== key ? frenchFindings : physicalExamOptions[system as keyof typeof physicalExamOptions];
-            } else {
-              const findings = physicalExamOptions[system as keyof typeof physicalExamOptions];
-              return findings;
-            }
-          });
-          
-          // Add intubation parameters for respiratory section
-          const intubationFindings: string[] = [];
-          if ((sectionName === "RESPIRATORY" || sectionName === "RESPIRATOIRE") && Object.keys(intubationValues).length > 0) {
-            const ventParams: string[] = [];
-            Object.entries(intubationValues).forEach(([paramKey, paramData]) => {
-              if (paramData.current && paramData.current.trim() !== "") {
-                const paramInfo = intubationParameters[paramKey as keyof typeof intubationParameters];
-                if (paramInfo) {
-                  const translatedParamName = getTranslatedIntubationParameterName(paramInfo.name);
-                  let ventEntry = `${translatedParamName}: ${paramData.current}`;
-                  
-                  // Add trending data if available
-                  const pastValues = paramData.past.filter(val => val && val.trim() !== "");
-                  if (pastValues.length > 0) {
-                    ventEntry += ` (${pastValues.join(", ")})`;
-                  }
-                  
-                  ventParams.push(ventEntry);
-                }
-              }
-            });
-            
-            if (ventParams.length > 0) {
-              intubationFindings.push(`Ventilator settings: ${ventParams.join(", ")}`);
-            }
-          }
-          
-          // Add relevant lab results with trending
-          const sectionLabFindings: string[] = [];
-          
-          // Handle specific lab tests first
-          if (config.labTests) {
-            // Group blood gas results for single line display
-            const bloodGasResults: string[] = [];
-            const otherLabResults: string[] = [];
-            
-            config.labTests.forEach(testPath => {
-              const [categoryName, testKey] = testPath.split(':');
-              if (labValues[categoryName] && labValues[categoryName][testKey]) {
-                const testData = labValues[categoryName][testKey];
-                if (testData.current && testData.current.trim() !== "") {
-                  const categoryData = labCategories[categoryName as keyof typeof labCategories];
-                  const testInfo = categoryData.tests[testKey as keyof typeof categoryData.tests];
-                  
-                  if (categoryName === "Blood Gases") {
-                    // For blood gases, collect values for single line display
-                    if (testKey === "Lactate") {
-                      let labEntry = `Lactate ${testData.current}`;
-                      const pastValues = testData.past.filter(val => val && val.trim() !== "");
-                      if (pastValues.length > 0) {
-                        labEntry += ` [${pastValues.join(", ")}]`;
-                      }
-                      otherLabResults.push(labEntry);
-                    } else {
-                      // Collect blood gas values for single line
-                      let gasValue = `${testInfo?.name || testKey} ${testData.current}`;
-                      const pastValues = testData.past.filter(val => val && val.trim() !== "");
-                      if (pastValues.length > 0) {
-                        gasValue += ` (${pastValues.join(", ")})`;
-                      }
-                      bloodGasResults.push(gasValue);
-                    }
-                  } else {
-                    let labEntry = testInfo ? `${testInfo.name} ${testData.current}` : testData.current;
-                    
-                    const pastValues = testData.past.filter(val => val && val.trim() !== "");
-                    if (pastValues.length > 0) {
-                      labEntry += ` [${pastValues.join(", ")}]`;
-                    }
-                    
-                    otherLabResults.push(labEntry);
-                  }
-                }
-              }
-            });
-            
-            // Add grouped blood gas results as single line
-            if (bloodGasResults.length > 0) {
-              const gasType = bloodGasTypes["Blood Gases"] ? `${bloodGasTypes["Blood Gases"]} blood gas` : "ABG";
-              sectionLabFindings.push(`${gasType}: ${bloodGasResults.join(", ")}`);
-            }
-            
-            // Add other lab results
-            sectionLabFindings.push(...otherLabResults);
-          }
-          
-          // Handle general lab categories (excluding specific tests already handled)
-          config.labCategories.forEach(labCategory => {
-            if (labValues[labCategory]) {
-              const categoryData = labCategories[labCategory as keyof typeof labCategories];
-              Object.entries(labValues[labCategory]).forEach(([testKey, testData]) => {
-                // Skip if this test is already handled by specific test routing
-                const isSpecificTest = config.labTests?.some(testPath => testPath === `${labCategory}:${testKey}`);
-                if (isSpecificTest) return;
-                
-                if (testData.current && testData.current.trim() !== "") {
-                  // Check if it's a "normal" entry
-                  if (testKey.endsWith('_normal')) {
-                    sectionLabFindings.push(testData.current);
-                  } else {
-                    // Get the test name from categoryData
-                    const testInfo = categoryData.tests[testKey as keyof typeof categoryData.tests];
-                    let labEntry = testInfo ? `${testInfo.name} ${testData.current}` : testData.current;
-                    
-                    // Add blood gas type if applicable
-                    if (labCategory === "Blood Gases" && bloodGasTypes[labCategory]) {
-                      labEntry = `${bloodGasTypes[labCategory]} ${labEntry}`;
-                    }
-                    
-                    // Add trending data if available
-                    const pastValues = testData.past.filter(val => val && val.trim() !== "");
-                    if (pastValues.length > 0) {
-                      labEntry += ` [${pastValues.join(", ")}]`;
-                    }
-                    
-                    sectionLabFindings.push(labEntry);
-                  }
-                }
-              });
-            }
-          });
-          
-          // Add relevant imaging results
-          const sectionImagingFindings: string[] = [];
-          if (config.imagingRegions) {
-            config.imagingRegions.forEach(regionKey => {
-              const selectedModality = selectedImagingModalities[regionKey];
-              if (selectedModality) {
-                const resultKey = `${selectedModality}_${regionKey}`;
-                const currentResult = imagingResults[resultKey];
-                const findingKey = resultKey as keyof typeof imagingFindings;
-                const findings = imagingFindings[findingKey];
-                
-                if (currentResult) {
-                  // Create a proper imaging study name based on modality and region
-                  let studyName = "";
-                  const regionName = getTranslatedImagingRegionName(regionKey);
-                  
-                  if (selectedModality === "X-Ray") {
-                    if (regionKey === "Chest" || regionKey === "Thorax") {
-                      studyName = language === 'fr' ? 'Radiographie pulmonaire' : 'Chest X-ray';
-                    } else if (regionKey === "Abdomen") {
-                      studyName = language === 'fr' ? 'Radiographie abdominale' : 'Abdominal X-ray';
-                    } else {
-                      studyName = language === 'fr' ? `Radiographie ${regionName}` : `${regionName} X-ray`;
-                    }
-                  } else if (selectedModality === "CT") {
-                    if (regionKey === "CNS") {
-                      studyName = language === 'fr' ? 'TDM cérébrale' : 'CT head';
-                    } else if (regionKey === "Chest" || regionKey === "Thorax") {
-                      studyName = language === 'fr' ? 'TDM thoracique' : 'CT chest';
-                    } else if (regionKey === "Abdomen") {
-                      studyName = language === 'fr' ? 'TDM abdominale' : 'CT abdomen';
-                    } else {
-                      studyName = language === 'fr' ? `TDM ${regionName}` : `CT ${regionName}`;
-                    }
-                  } else if (selectedModality === "MRI") {
-                    if (regionKey === "CNS") {
-                      studyName = language === 'fr' ? 'IRM cérébrale' : 'MRI brain';
-                    } else {
-                      studyName = language === 'fr' ? `IRM ${regionName}` : `MRI ${regionName}`;
-                    }
-                  } else {
-                    // Fallback for other modalities
-                    const modalityName = getTranslatedImagingModality(selectedModality);
-                    studyName = `${modalityName} ${regionName}`;
-                  }
-                  
-                  let imagingEntry = `${studyName}: `;
-                  
-                  if (currentResult.normal && findings) {
-                    const mode = currentResult.mode || "concise";
-                    // Use French text if language is French and available
-                    const textKey = language === 'fr' ? `${mode}_fr` : mode;
-                    const findingsText = findings[textKey as keyof typeof findings] || findings[mode];
-                    // Extract just the findings text after the colon to avoid redundancy
-                    const colonIndex = findingsText.indexOf(': ');
-                    const cleanFindings = colonIndex !== -1 ? findingsText.substring(colonIndex + 2) : findingsText;
-                    imagingEntry += cleanFindings;
-                  } else if (currentResult.customResult && currentResult.customResult.trim() !== "") {
-                    imagingEntry += currentResult.customResult;
-                  } else {
-                    imagingEntry += language === 'fr' ? 'En attente' : 'Pending';
-                  }
-                  
-                  sectionImagingFindings.push(imagingEntry);
-                }
-              }
-            });
-          }
-          
-          const allFindings = [...sectionPeFindings, ...sectionLabFindings, ...intubationFindings, ...sectionImagingFindings];
-          
-          if (allFindings.length > 0) {
-            noteText += `\n${allFindings.join("\n")}`;
-          } else {
-            noteText += `\n[Enter ${sectionName.toLowerCase()} findings]`;
-          }
-        });
-        
-        const clinicalImpressionHeader = language === 'fr' ? 'IMPRESSION CLINIQUE' : 'CLINICAL IMPRESSION';
-        const clinicalImpressionText = language === 'fr' ? '[Entrer les impressions cliniques]' : '[Enter clinical impressions]';
-        const planHeader = language === 'fr' ? 'PLAN' : 'PLAN';
-        const planText = language === 'fr' ? '[Entrer le plan de traitement]' : '[Enter treatment plan]';
-        noteText += `\n\n${clinicalImpressionHeader}:\n${clinicalImpressionText}\n\n`;
-        noteText += `${planHeader}:\n${planText}`;
-      }
-    } else if (noteType === "consultation") {
-      if (language === 'fr') {
-        noteText = `RAISON DE CONSULTATION :\n${generateChiefComplaintText(chiefComplaintData, true)}\n\n`;
-        noteText += `${generateAllergiesAndSocialHistory(allergiesData, socialHistoryData, true)}\n\n`;
-        noteText += `MÉDICATIONS À DOMICILE:\n${medicationsData.homeMedications.length > 0 ? formatMedicationsForNote(medicationsData.homeMedications, language) : '[Entrer les médications à domicile]'}\n\n`;
-        noteText += `MÉDICATIONS À L'HÔPITAL:\n${medicationsData.hospitalMedications.length > 0 ? formatMedicationsForNote(medicationsData.hospitalMedications, language) : '[Entrer les médications hospitalières]'}\n\n`;
-        noteText += `HISTOIRE DE LA MALADIE ACTUELLE:\n[Entrer l'histoire de la maladie actuelle]`;
-      } else {
-        noteText = `REASON FOR CONSULTATION:\n${generateChiefComplaintText(chiefComplaintData, false)}\n\n`;
-        noteText += `${generateAllergiesAndSocialHistory(allergiesData, socialHistoryData, false)}\n\n`;
-        noteText += `HOME MEDICATIONS:\n${medicationsData.homeMedications.length > 0 ? formatMedicationsForNote(medicationsData.homeMedications, language) : '[Enter home medications]'}\n\n`;
-        noteText += `HOSPITAL MEDICATIONS:\n${medicationsData.hospitalMedications.length > 0 ? formatMedicationsForNote(medicationsData.hospitalMedications, language) : '[Enter hospital medications]'}\n\n`;
-        noteText += `HISTORY OF PRESENTING ILLNESS:\n[Enter history of presenting illness]`;
-      }
-      
-      if (rosText) {
-        noteText += `\n\n${rosText}`;
-      }
-      
-      if (peText) {
-        noteText += `\n\n${language === 'fr' ? 'EXAMEN PHYSIQUE:' : 'PHYSICAL EXAMINATION:'}\n${peText}`;
-      }
-      
-      if (labText) {
-        noteText += `\n\n${language === 'fr' ? 'INVESTIGATIONS:' : 'INVESTIGATIONS:'}\n${labText}`;
-      }
-      
-      noteText += language === 'fr' ? `\n\nIMPRESSION CLINIQUE:\n[Entrer les impressions cliniques]\n\n` : `\n\nCLINICAL IMPRESSION:\n[Enter clinical impressions]\n\n`;
-      noteText += language === 'fr' ? `RECOMMANDATIONS:\n[Entrer les recommandations]` : `RECOMMENDATIONS:\n[Enter recommendations]`;
-    }
-    
-    // Apply complete French translations to the entire note text
-    if (language === 'fr') {
-      // Fix any remaining English laboratory test names
-      noteText = noteText.replace(/White Blood Cells/g, 'Globules blancs');
-      noteText = noteText.replace(/Red Blood Cells/g, 'Globules rouges');
-      noteText = noteText.replace(/Hemoglobin/g, 'Hémoglobine');
-      noteText = noteText.replace(/Hematocrit/g, 'Hématocrite');
-      noteText = noteText.replace(/Platelets/g, 'Plaquettes');
-      noteText = noteText.replace(/Sodium/g, 'Sodium');
-      noteText = noteText.replace(/Potassium/g, 'Potassium');
-      noteText = noteText.replace(/Chloride/g, 'Chlorure');
-      noteText = noteText.replace(/Bicarbonate/g, 'Bicarbonate');
-      noteText = noteText.replace(/Glucose/g, 'Glucose');
-      noteText = noteText.replace(/Creatinine/g, 'Créatinine');
-      noteText = noteText.replace(/BUN/g, 'Urée');
-      noteText = noteText.replace(/Urea/g, 'Urée');
-      noteText = noteText.replace(/Alkaline Phosphatase/g, 'Phosphatase alkaline');
-      noteText = noteText.replace(/Total Bilirubin/g, 'Bilirubine totale');
-      noteText = noteText.replace(/Albumin/g, 'Albumine');
-      noteText = noteText.replace(/Prothrombin Time/g, 'PT');
-      noteText = noteText.replace(/Partial Thromboplastin Time/g, 'PTT');
-      noteText = noteText.replace(/C-Reactive Protein/g, 'CRP');
-      noteText = noteText.replace(/ESR/g, 'VS');
-      noteText = noteText.replace(/Procalcitonin/g, 'Procalcitonine');
-      noteText = noteText.replace(/Base Excess/g, 'Excédent de base');
-      noteText = noteText.replace(/Lactate/g, 'Lactate');
-      
-      // Fix any remaining English section headers
-      noteText = noteText.replace(/CLINICAL IMPRESSION:/g, 'IMPRESSION CLINIQUE:');
-      noteText = noteText.replace(/PLAN:/g, 'PLAN:');
-      noteText = noteText.replace(/ABG:/g, 'GAZ:');
-      noteText = noteText.replace(/Ventilator settings:/g, 'Paramètres ventilatoires:');
-      
-      // Fix any remaining English physical exam findings
-      noteText = noteText.replace(/No acute distress/g, 'Aucune détresse aiguë');
-      noteText = noteText.replace(/Alert and oriented/g, 'Alerte et orienté');
-      noteText = noteText.replace(/Regular rate and rhythm/g, 'Rythme et fréquence réguliers');
-      noteText = noteText.replace(/Clear to auscultation bilaterally/g, 'Clair à l\'auscultation bilatérale');
-      noteText = noteText.replace(/Soft, non-tender, non-distended/g, 'Souple, non sensible, non distendu');
-      noteText = noteText.replace(/No pedal edema/g, 'Aucun œdème des membres inférieurs');
-      noteText = noteText.replace(/Warm and well-perfused/g, 'Chaud et bien perfusé');
-      noteText = noteText.replace(/No rash or lesions/g, 'Aucune éruption cutanée ou lésion');
-      
-      // Fix any remaining English placeholder text
-      noteText = noteText.replace(/\[Enter neurologique findings\]/g, '[Entrer les constatations neurologiques]');
-      noteText = noteText.replace(/\[Enter hémodynamique findings\]/g, '[Entrer les constatations hémodynamiques]');
-      noteText = noteText.replace(/\[Enter respiratoire findings\]/g, '[Entrer les constatations respiratoires]');
-      noteText = noteText.replace(/\[Enter gastro-intestinal findings\]/g, '[Entrer les constatations gastro-intestinales]');
-      noteText = noteText.replace(/\[Enter néphro-métabolique findings\]/g, '[Entrer les constatations néphro-métaboliques]');
-      noteText = noteText.replace(/\[Enter hémato-infectieux findings\]/g, '[Entrer les constatations hémato-infectieuses]');
-      noteText = noteText.replace(/\[Enter (.+?) findings\]/g, '[Entrer les constatations $1]');
-      
-      // Fix specific placeholder texts for clinical impression and plan
-      noteText = noteText.replace(/\[Enter clinical impressions\]/g, '[Entrer les impressions cliniques]');
-      noteText = noteText.replace(/\[Enter treatment plan\]/g, '[Entrer le plan de traitement]');
-    }
-    
-    setNote(noteText);
-  };
-
-  const copyNote = async () => {
-    try {
-      await navigator.clipboard.writeText(note);
-      toast({
-        title: "Note Copied",
-        description: "ROS note copied to clipboard",
-      });
-    } catch (err) {
-      toast({
-        title: "Copy Failed",
-        description: "Unable to copy note to clipboard",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const totalRosSystems = Object.keys(rosOptions).length;
-  const totalPeSystems = Object.keys(physicalExamOptions).length;
-  const totalSystems = totalRosSystems + totalPeSystems;
-  const documentedSystems = selectedRosSystems.size + selectedPeSystems.size;
-  const completionPercentage = Math.round((documentedSystems / totalSystems) * 100);
-
-  const renderRosSection = () => (
-    <Card id="ros" className="overflow-hidden">
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <ClipboardList className="text-white w-5 h-5" />
-            <h3 className="text-lg font-semibold text-white">{language === 'fr' ? 'Revue des systèmes' : 'Review of systems'}</h3>
-            <span className="text-white/80 text-sm">({selectedRosSystems.size}/{Object.keys(rosOptions).length})</span>
-          </div>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                selectAllRosSystems();
-              }}
-              className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors"
-            >
-              {language === 'fr' ? t('button.selectAll') : 'Select All'}
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedRosSystems(new Set());
-                setRosSystemModes({});
-                updateNote(new Set(), selectedPeSystems, {}, medications, allergies, socialHistory, chiefComplaint);
-              }}
-              className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors"
-            >
-              {language === 'fr' ? t('button.clear') : 'Clear'}
-            </button>
-
-          </div>
-        </div>
-      </div>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.entries(rosOptions).map(([system, findings]) => {
-              const IconComponent = systemIcons[system as keyof typeof systemIcons];
-              const colorClass = systemColors[system as keyof typeof systemColors];
-              const isSelected = selectedRosSystems.has(system);
-              const selectedMode = rosSystemModes[system];
-              
-              return (
-                <div key={system} className="group relative">
-                  <Card 
-                    className={`transition-all duration-200 hover:shadow-lg ${
-                      isSelected ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:bg-gray-50'
-                    }`}
+        return (
+          <SectionWrapper title={sectionTitle["imagery"]} sectionKey="imagery">
+            <div className="space-y-4">
+              <div className="text-sm text-gray-600 mb-2">Select the system, exam type, and enter the result for each imaging study. All entries will be included in your note.</div>
+              {/* Organ system cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-2">
+                {imagerySystems.map(sys => (
+                  <div
+                    key={sys.key}
+                    className={`flex flex-col items-center justify-center p-3 rounded-xl border shadow cursor-pointer transition-all hover:bg-blue-50 ${expandedSystem === sys.key ? 'ring-2 ring-blue-400 bg-blue-50' : ''}`}
+                    onClick={() => {
+                      setExpandedSystem(expandedSystem === sys.key ? null : sys.key);
+                      setSelectedModality("");
+                      setResultInput("");
+                    }}
                   >
-                    <CardContent className="p-4 relative overflow-hidden">
-                      {/* Normal view */}
-                      <div className="group-hover:opacity-0 transition-opacity duration-200">
-                        <div className="flex items-start space-x-3">
-                          <div className={`${colorClass} p-2 rounded-lg flex-shrink-0`}>
-                            <IconComponent className="text-white w-4 h-4" />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-1">
-                              <h4 className="font-semibold text-gray-900 text-sm">{getTranslatedSystemName(system, 'ros')}</h4>
-                              {isSelected && (
-                                <div className="flex items-center space-x-1">
-                                  <span className="text-xs text-gray-500 capitalize">{selectedMode}</span>
-                                  <CheckCircle className="text-green-500 w-4 h-4" />
-                                </div>
-                              )}
-                            </div>
-                            <p className="text-xs text-gray-600 leading-relaxed">
-                              {isSelected ? findings[selectedMode] : (language === 'fr' ? "Survoler pour sélectionner détaillé ou concis" : "Hover to select detailed or concise")}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Hover split view */}
-                      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white">
-                        <div className="h-full flex">
-                          {/* Detailed half */}
-                          <div 
-                            className={`w-1/2 p-3 cursor-pointer transition-colors duration-200 hover:bg-blue-50 border-r border-gray-200 ${
-                              selectedMode === "detailed" ? "bg-blue-100" : ""
-                            }`}
-                            onClick={() => toggleRosSystem(system, "detailed")}
-                          >
-                            <div className="flex items-start space-x-2">
-                              <div className={`${colorClass} p-1.5 rounded flex-shrink-0`}>
-                                <IconComponent className="text-white w-3 h-3" />
-                              </div>
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between mb-1">
-                                  <h5 className="font-medium text-gray-900 text-xs">{language === 'fr' ? t('ros.mode.detailed') : 'Detailed'}</h5>
-                                  {selectedMode === "detailed" && (
-                                    <CheckCircle className="text-green-500 w-3 h-3" />
-                                  )}
-                                </div>
-                                <p className="text-xs text-gray-600 leading-tight">
-                                  {language === 'fr' ? 
-                                    t(`ros.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}.detailed`) || findings.detailed 
-                                    : findings.detailed}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {/* Concise half */}
-                          <div 
-                            className={`w-1/2 p-3 cursor-pointer transition-colors duration-200 hover:bg-purple-50 ${
-                              selectedMode === "concise" ? "bg-purple-100" : ""
-                            }`}
-                            onClick={() => toggleRosSystem(system, "concise")}
-                          >
-                            <div className="flex items-start space-x-2">
-                              <div className={`${colorClass} p-1.5 rounded flex-shrink-0`}>
-                                <IconComponent className="text-white w-3 h-3" />
-                              </div>
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between mb-1">
-                                  <h5 className="font-medium text-gray-900 text-xs">{language === 'fr' ? t('ros.mode.concise') : 'Concise'}</h5>
-                                  {selectedMode === "concise" && (
-                                    <CheckCircle className="text-green-500 w-3 h-3" />
-                                  )}
-                                </div>
-                                <p className="text-xs text-gray-600 leading-tight">
-                                  {language === 'fr' ? 
-                                    t(`ros.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}.concise`) || findings.concise 
-                                    : findings.concise}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-
-    </Card>
-  );
-
-
-
-  const renderPeSection = () => (
-    <Card id="pe" className="overflow-hidden">
-      <div className="bg-gradient-to-r from-green-600 to-green-700 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <Search className="text-white w-5 h-5" />
-            <h3 className="text-lg font-semibold text-white">{language === 'fr' ? 'Examen physique' : 'Physical Exam'}</h3>
-            <span className="text-white/80 text-sm">({selectedPeSystems.size}/{Object.keys(physicalExamOptions).length})</span>
-          </div>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                selectAllPeSystems();
-              }}
-              className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors"
-            >
-              {language === 'fr' ? t('button.selectAll') : 'Select All'}
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedPeSystems(new Set());
-                updateNote(selectedRosSystems, new Set(), rosSystemModes, medications, allergies, socialHistory, chiefComplaint);
-              }}
-              className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors"
-            >
-              {language === 'fr' ? t('button.clear') : 'Clear'}
-            </button>
-            
-              <ChevronUp className="text-white w-5 h-5" />
-            ) : (
-              <ChevronDown className="text-white w-5 h-5" />
-
-          </div>
-        </div>
-      </div>
-      
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.entries(physicalExamOptions).map(([system, findings]) => {
-              const IconComponent = systemIcons[system as keyof typeof systemIcons];
-              const colorClass = systemColors[system as keyof typeof systemColors];
-              const isSelected = selectedPeSystems.has(system);
-              
-              return (
-                <Card 
-                  key={system} 
-                  className={`cursor-pointer transition-all duration-200 hover:shadow-lg ${
-                    isSelected ? 'ring-2 ring-green-500 bg-green-50' : 'hover:bg-gray-50'
-                  }`}
-                  onClick={() => togglePeSystem(system)}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-start space-x-3">
-                      <div className={`${colorClass} p-2 rounded-lg flex-shrink-0`}>
-                        <IconComponent className="text-white w-4 h-4" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-1">
-                          <h4 className="font-semibold text-gray-900 text-sm">{getTranslatedSystemName(system, 'pe')}</h4>
-                          {isSelected && (
-                            <CheckCircle className="text-green-500 w-4 h-4" />
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-600 leading-relaxed">
-                          {language === 'fr' ? 
-                            t(`pe.findings.${system.toLowerCase().replace(/[^a-z]/g, '')}`) || findings 
-                            : findings}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </CardContent>
-    </Card>
-  );
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <Stethoscope className="text-white w-4 h-4" />
+                    {systemIcons[sys.key]}
+                    <span className="mt-2 text-sm font-medium text-gray-900">{sys.label}</span>
+                  </div>
+                ))}
               </div>
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">Arinote</h1>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <Languages className="w-4 h-4 text-gray-500" />
-              <div className="flex border rounded-lg">
-                <button
-                  className={`px-3 py-1 text-sm font-medium rounded-l-lg transition-colors ${
-                    language === 'en' 
-                      ? 'bg-blue-500 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                  onClick={() => setLanguage('en')}
-                >
-                  EN
-                </button>
-                <button
-                  className={`px-3 py-1 text-sm font-medium rounded-r-lg transition-colors ${
-                    language === 'fr' 
-                      ? 'bg-blue-500 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                  onClick={() => setLanguage('fr')}
-                >
-                  FR
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex h-[calc(100vh-12rem)] gap-6">
-          
-          {/* Left Section Display */}
-          <div className="w-1/2 flex flex-col">
-            <Card className="flex-1 flex flex-col">
-              <CardContent className="p-4 flex-1 flex flex-col">
-                {/* Section Navigation Header */}
-                <div className="flex items-center justify-between bg-white border rounded-lg p-4 mb-4">
-                  {/* Section Navigation Boxes */}
-                  <div className="flex flex-wrap gap-2">
-                    {sections.map((section, index) => (
+              {/* Modalities and result input for expanded system */}
+              {expandedSystem && (
+                <div className="bg-gray-50 border rounded-xl p-4 flex flex-col gap-2 max-w-xl mx-auto">
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {imagerySystems.find(s => s.key === expandedSystem)?.modalities.map(mod => (
                       <button
-                        key={section.id}
-                        onClick={() => setCurrentSection(index)}
-                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                          currentSection === index
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-                        }`}
+                        key={mod}
+                        className={`px-3 py-1 rounded-full border text-sm font-medium transition-all ${selectedModality === mod ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'}`}
+                        onClick={() => setSelectedModality(mod)}
+                        type="button"
                       >
-                        {section.name}
+                        {mod}
                       </button>
                     ))}
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <span className="text-sm text-gray-500">
-                      {currentSection + 1} of {sections.length}
-                    </span>
+                  {selectedModality && (
+                    <div className="flex gap-2 items-end">
+                      <input
+                        className="border rounded px-2 py-1 text-sm flex-1"
+                        type="text"
+                        placeholder="Type result or impression..."
+                        value={resultInput}
+                        onChange={e => setResultInput(e.target.value)}
+                      />
+                      <button
+                        className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50"
+                        onClick={handleAddStudy}
+                        disabled={!resultInput.trim()}
+                        type="button"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* List of added studies */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {Array.isArray(imageryStudies) && imageryStudies.map((study: { system: string; modality: string; result: string }, idx: number) => (
+                  <div key={idx} className="bg-gray-50 border rounded-lg p-3 flex flex-col gap-1 relative">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      {systemIcons[study.system]}
+                      <span className="text-gray-700">{imagerySystems.find(s => s.key === study.system)?.label}</span>
+                      <span className="text-gray-400">/</span>
+                      <span className="text-gray-700">{study.modality}</span>
+                    </div>
+                    <div className="text-xs text-gray-600">{study.result || <span className="italic text-gray-400">No result entered</span>}</div>
+                    <button
+                      className="absolute top-2 right-2 text-xs text-red-500 hover:text-red-700"
+                      onClick={() => handleRemoveStudy(idx)}
+                      type="button"
+                    >
+                      Remove
+                    </button>
                   </div>
-                </div>
-
-                {/* Navigation Arrows */}
-                <div className="flex items-center space-x-2 mb-4">
-                  <button
-                    onClick={prevSection}
-                    disabled={currentSection === 0}
-                    className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronLeft className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={nextSection}
-                    disabled={currentSection === sections.length - 1}
-                    className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* Current Section Content */}
-                <div className="flex-1 overflow-y-auto">
-                  {renderCurrentSection()}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right Panel - Live Preview */}
-          <div className="w-1/2 flex flex-col">
-            <Card className="flex-1 flex flex-col overflow-hidden">
-              <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <FileText className="text-white w-5 h-5" />
-                    <h3 className="text-lg font-semibold text-white">{language === 'fr' ? 'Aperçu en temps réel' : 'Live Preview'}</h3>
-                    <span className="text-white/80 text-sm">({documentedSystems}/{totalSystems})</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="ghost" size="icon" onClick={copyNote} className="text-white/80 hover:text-white h-8 w-8">
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={resetForm} className="text-white/80 hover:text-white h-8 w-8">
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-                <p className="text-sm text-white/70 mt-1">{language === 'fr' ? 'La note se met à jour automatiquement' : 'Note updates automatically as you make selections'}</p>
+                ))}
+                {imageryStudies.length === 0 && (
+                  <div className="text-xs text-gray-400 italic">No imaging studies added yet.</div>
+                )}
               </div>
-              <CardContent className="p-6 flex-1 overflow-hidden">
-                <div
-                  className="w-full h-full text-sm leading-relaxed border-0 focus:ring-0 bg-gray-50 dark:bg-gray-900"
-                  style={{ whiteSpace: 'pre-line', fontFamily: 'monospace', minHeight: '400px' }}
-                >
-                  {note}
-                </div>
-              </CardContent>
-              <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Characters: {note.length}</span>
-                  <span className="text-gray-500">Systems: {documentedSystems}/{totalSystems}</span>
+            </div>
+          </SectionWrapper>
+        );
+      } // <-- This fixes your syntax error!
+      case "impression": 
+        return (
+          <SectionWrapper title={sectionTitle["impression"]} sectionKey="impression">
+            <SmartImpressionSection 
+              value={impressionText} 
+              onChange={setImpressionText}
+              defaultContent={getSectionDefaultContent("impression")}
+            />
+          </SectionWrapper>
+        );
+      case "ventilation":
+        return (
+          <SectionWrapper title={sectionTitle["ventilation"]} sectionKey="ventilation">
+            {/* Ventilation Parameters UI will go here */}
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">Configure ventilation parameters for ICU notes.</p>
+            </div>
+          </SectionWrapper>
+        );
+      default:
+        if (selectedMenu === "dot-phrases") {
+          return (
+            <div className="medical-section-wrapper">
+              <div className="medical-card-header">
+                <h2 className="medical-section-title flex items-center gap-2">
+                  <ClipboardList className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" />
+                  Dot Phrases
+                </h2>
+              </div>
+              <div className="medical-section-content">
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600">Dot phrases functionality will be implemented here.</p>
                 </div>
               </div>
-            </Card>
+            </div>
+          );
+        }
+        return null;
+    }
+  };
+
+  // Collect all note data for template preview
+  const getNoteData = () => {
+    const noteData: Record<string, string> = {};
+    
+    try {
+      // Note type section
+      if (noteType) {
+        noteData['note-type'] = `Note Type: ${noteType.charAt(0).toUpperCase() + noteType.slice(1)}`;
+      }
+      
+      // PMH section
+      if (pmhText && pmhText.trim()) {
+        noteData['pmh'] = pmhText;
+      }
+      
+      // Medications section
+      if (medications && Array.isArray(medications.homeMedications) && Array.isArray(medications.hospitalMedications)) {
+        const allMeds = [...medications.homeMedications, ...medications.hospitalMedications];
+        if (allMeds.length > 0) {
+          noteData['meds'] = formatMedicationsForNote(medications);
+        }
+      }
+      
+      // Allergies section  
+      const currentAllergies = allergiesRef.current;
+      if (currentAllergies && currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+        noteData['allergies-social'] = `Allergies: ${currentAllergies.allergiesList.join(', ')}`;
+      }
+      
+      // HPI section
+      if (chiefComplaint || hpiText) {
+        const hpiContent = [
+          chiefComplaint?.customComplaint?.trim() || '',
+          hpiText?.trim() || ''
+        ].filter(Boolean).join('\n');
+        if (hpiContent) {
+          noteData['hpi'] = hpiContent;
+        }
+      }
+      
+      // Physical exam
+      if (selectedPeSystems && selectedPeSystems.size > 0) {
+        const peEntries = Array.from(selectedPeSystems).map(system => {
+          const findings = physicalExamOptions[system as keyof typeof physicalExamOptions] || 'Normal';
+          return `${system}: ${findings}`;
+        });
+        noteData['physical-exam'] = peEntries.join("\n");
+      }
+      
+      // Labs
+      if (processedLabValues && Array.isArray(processedLabValues) && processedLabValues.length > 0) {
+        noteData['labs'] = formatLabValuesForNote(processedLabValues);
+      }
+      
+      // Imagery studies
+      if (imageryStudies && Array.isArray(imageryStudies) && imageryStudies.length > 0) {
+        const imageryText = imageryStudies.map(study => 
+          `${study.system} ${study.modality}: ${study.result}`
+        ).join('\n');
+        noteData['imagery'] = imageryText;
+      }
+      
+      // Impression
+      if (impressionText && impressionText.trim()) {
+        noteData['impression'] = impressionText;
+      }
+      
+      // ROS section
+      if (selectedSymptoms && Object.keys(selectedSymptoms).length > 0) {
+        const rosEntries = Object.entries(selectedSymptoms)
+          .filter(([, symptoms]) => symptoms && symptoms.size > 0)
+          .map(([system, symptoms]) => {
+            const symptomList = Array.from(symptoms);
+            return `${system}: ${symptomList.join(', ')}`;
+          });
+        if (rosEntries.length > 0) {
+          noteData['ros'] = rosEntries.join('\n');
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error generating note data:', error);
+    }
+    
+    return noteData;
+  };
+
+  // Render the live preview panel content with template awareness
+  const renderLivePreview = () => {
+    // Safely format note data with fallbacks
+    const safeNoteData = {
+      'note-type': noteType || '',
+      'pmh': pmhText || '',
+      'meds': medications ? formatMedicationsForNote(medications) : '',
+      'allergies-social': (() => {
+        try {
+          const currentAllergies = allergiesRef.current;
+          const currentSocialHistory = socialHistoryRef.current;
+          
+          const allergiesText = currentAllergies?.hasAllergies 
+            ? 'Allergies: ' + (currentAllergies.allergiesList || []).join(', ') 
+            : 'No known allergies';
+          
+          const socialText = [
+            currentSocialHistory?.smoking?.status 
+              ? `Smoking: ${currentSocialHistory.smoking.details || 'Yes'}` 
+              : 'Non-smoker',
+            currentSocialHistory?.alcohol?.status 
+              ? `Alcohol: ${currentSocialHistory.alcohol.details || 'Yes'}` 
+              : 'No alcohol use',
+            currentSocialHistory?.drugs?.status 
+              ? `Drugs: ${currentSocialHistory.drugs.details || 'Yes'}` 
+              : 'No drug use'
+          ].join('\n');
+          
+          return `${allergiesText}\n\nSocial History:\n${socialText}`;
+        } catch (error) {
+          console.error('Error formatting allergies/social data:', error);
+          return 'No known allergies\n\nSocial History:\nNon-smoker\nNo alcohol use\nNo drug use';
+        }
+      })(),
+      'hpi': hpiText || '',
+      'physical-exam': selectedPeSystems && selectedPeSystems.size > 0 ? Array.from(selectedPeSystems).map(system => `${system}: ${physicalExamOptions[system as keyof typeof physicalExamOptions] || 'Normal'}`).join('\n') : '',
+      'labs': processedLabValues && processedLabValues.length > 0 ? formatLabValuesForNote(processedLabValues) : '',
+      'imagery': imageryStudies && imageryStudies.length > 0 ? imageryStudies.map(study => `${study.system} ${study.modality}: ${study.result}`).join('\n') : '',
+      'impression': impressionText || ''
+    };
+
+    return (
+      <TemplateAwareLivePreview
+        noteData={safeNoteData}
+        note={note || ''}
+        onNoteChange={handleNoteChange}
+        onCopyNote={copyToClipboard}
+        onResetNote={isManuallyEdited ? resetToGenerated : undefined}
+        documentedSystems={documentedSystems || 0}
+        totalSystems={totalSystems || 0}
+        generatedNote={note || ''}
+        className="h-full"
+      />
+    );
+  };
+
+  return (
+    <MainLayout
+      selectedMenu={selectedMenu}
+      setSelectedMenu={setSelectedMenu}
+      selectedSubOption={selectedSubOption}
+      setSelectedSubOption={setSelectedSubOption}
+      livePreview={renderLivePreview()}
+      isICU={
+        (noteType === "admission" && admissionType === "icu") ||
+        (noteType === "progress" && progressType === "icu")
+      }
+    >
+      <div className="flex flex-1 h-full min-h-[600px] bg-gray-50">
+        <div className="flex-1 min-w-0 flex flex-col p-0">
+          <div className="w-full h-full min-h-[600px] flex flex-col rounded-none shadow-none bg-white border-0">
+            <div className="flex-1 overflow-y-auto px-6 py-4 text-base text-gray-800">
+              {renderMainContent() || (
+                <div className="text-center text-gray-400 py-12">
+                  Please select a section from the sidebar to begin.
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </main>
-    </div>
+        {/* Divider for desktop */}
+        <div className="hidden lg:block w-px bg-gray-200 h-full mx-0" />
+      </div>
+    </MainLayout>
   );
 }
 

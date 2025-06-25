@@ -68,6 +68,7 @@ import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
 import HpiSection from '@/components/HpiSection';
 import { TemplateAwareLivePreview } from '@/components/TemplateAwareLivePreview';
 import { type Template, type NoteType, type NoteSubtype } from '@shared/schema';
+import { type TemplateContent } from '@/lib/sectionLibrary';
 
 // Import is correct; RosSymptomAccordion is used inside HpiSection
 
@@ -221,6 +222,14 @@ function ReviewOfSystems() {
     drugs: { status: false, details: "" }
   });
   
+  // Use refs to store current values for note generation without triggering re-renders
+  const allergiesRef = useRef(allergies);
+  const socialHistoryRef = useRef(socialHistory);
+  
+  // Update refs when values change - ensure refs are always current
+  allergiesRef.current = allergies;
+  socialHistoryRef.current = socialHistory;
+  
   const [chiefComplaint, setChiefComplaint] = useState<ChiefComplaintData>({
     selectedTemplate: "",
     customComplaint: "",
@@ -332,13 +341,45 @@ function ReviewOfSystems() {
 
   // Get default content for a section from selected template
   const getSectionDefaultContent = useCallback((sectionId: string): string => {
-    if (!selectedTemplate) return '';
+    if (!selectedTemplate || !selectedTemplate.content) return '';
     
     try {
-      const sectionDefaults = selectedTemplate.sectionDefaults as Record<string, string> || {};
-      return sectionDefaults[sectionId] || '';
+      let templateContent: TemplateContent;
+      
+      // Handle object content
+      if (typeof selectedTemplate.content === 'object' && selectedTemplate.content !== null) {
+        templateContent = selectedTemplate.content as TemplateContent;
+      } 
+      // Handle string content
+      else if (typeof selectedTemplate.content === 'string' && selectedTemplate.content.trim()) {
+        const parsed = JSON.parse(selectedTemplate.content);
+        // Validate parsed content has expected structure
+        if (!parsed || typeof parsed !== 'object') {
+          console.warn('Invalid template content structure:', parsed);
+          return '';
+        }
+        templateContent = parsed as TemplateContent;
+      } 
+      // Handle other types
+      else {
+        console.warn('Unsupported template content type:', typeof selectedTemplate.content);
+        return '';
+      }
+      
+      // Validate templateContent structure
+      if (!templateContent || !Array.isArray(templateContent.sections)) {
+        console.warn('Template content missing sections array:', templateContent);
+        return '';
+      }
+      
+      // Find the section in the template
+      const section = templateContent.sections.find(s => s && s.sectionId === sectionId);
+      const content = section?.customContent;
+      
+      // Return content if it's a string, empty string otherwise
+      return typeof content === 'string' ? content : '';
     } catch (error) {
-      console.error('Error accessing section defaults:', error);
+      console.error('Error accessing section defaults for sectionId:', sectionId, error);
       return '';
     }
   }, [selectedTemplate]);
@@ -513,7 +554,7 @@ function ReviewOfSystems() {
 
     // Fallback to default note generation
     return generateDefaultNote();
-  }, [noteType, selectedTemplate, language, allergies, socialHistory, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, admissionType, progressType]);
+  }, [noteType, selectedTemplate, language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, admissionType, progressType]);
 
   // Template-based note generation
   const generateTemplateBasedNote = useCallback((templateContent: any) => {
@@ -550,7 +591,7 @@ function ReviewOfSystems() {
         'Erreur lors de la génération de la note avec le modèle. Veuillez réessayer.' :
         'Error generating note with template. Please try again.';
     }
-  }, [language, allergies, socialHistory, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, noteType, admissionType, progressType]);
+  }, [language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, noteType, admissionType, progressType]);
 
   // Generate content for a specific section with template custom content
   const generateSectionContent = useCallback((sectionId: string, customContent?: string) => {
@@ -627,15 +668,18 @@ function ReviewOfSystems() {
           
           // Generate allergies text
           let allergiesText = '';
-          if (language === 'fr') {
-            if (allergies.hasAllergies && allergies.allergiesList.length > 0) {
-              allergiesText = `ALLERGIES :\n${allergies.allergiesList.join(', ')}`;
+          const currentAllergies = allergiesRef.current;
+          if (!currentAllergies) {
+            allergiesText = language === 'fr' ? 'ALLERGIES :\nAucune allergie connue' : 'ALLERGIES:\nNKDA (No Known Drug Allergies)';
+          } else if (language === 'fr') {
+            if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+              allergiesText = `ALLERGIES :\n${currentAllergies.allergiesList.join(', ')}`;
             } else {
               allergiesText = `ALLERGIES :\nAucune allergie connue`;
             }
           } else {
-            if (allergies.hasAllergies && allergies.allergiesList.length > 0) {
-              allergiesText = `ALLERGIES:\n${allergies.allergiesList.join(', ')}`;
+            if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+              allergiesText = `ALLERGIES:\n${currentAllergies.allergiesList.join(', ')}`;
             } else {
               allergiesText = `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
             }
@@ -646,30 +690,38 @@ function ReviewOfSystems() {
           const socialItems = [];
           
           // Always include smoking status
-          if (socialHistory.smoking.status) {
-            socialItems.push(language === 'fr' 
-              ? `Tabagisme: ${socialHistory.smoking.details}`
-              : `Smoking: ${socialHistory.smoking.details}`);
-          } else {
+          const currentSocialHistory = socialHistoryRef.current;
+          if (!currentSocialHistory) {
             socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
-          }
-          
-          // Always include alcohol status
-          if (socialHistory.alcohol.status) {
-            socialItems.push(language === 'fr' 
-              ? `Alcool: ${socialHistory.alcohol.details}`
-              : `Alcohol: ${socialHistory.alcohol.details}`);
-          } else {
             socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
-          }
-          
-          // Always include drugs status
-          if (socialHistory.drugs.status) {
-            socialItems.push(language === 'fr' 
-              ? `Drogues: ${socialHistory.drugs.details}`
-              : `Drugs: ${socialHistory.drugs.details}`);
-          } else {
             socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+          } else {
+            // Smoking status
+            if (currentSocialHistory.smoking?.status) {
+              socialItems.push(language === 'fr' 
+                ? `Tabagisme: ${currentSocialHistory.smoking.details || ''}`
+                : `Smoking: ${currentSocialHistory.smoking.details || ''}`);
+            } else {
+              socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+            }
+            
+            // Alcohol status
+            if (currentSocialHistory.alcohol?.status) {
+              socialItems.push(language === 'fr' 
+                ? `Alcool: ${currentSocialHistory.alcohol.details || ''}`
+                : `Alcohol: ${currentSocialHistory.alcohol.details || ''}`);
+            } else {
+              socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+            }
+            
+            // Drugs status
+            if (currentSocialHistory.drugs?.status) {
+              socialItems.push(language === 'fr' 
+                ? `Drogues: ${currentSocialHistory.drugs.details || ''}`
+                : `Drugs: ${currentSocialHistory.drugs.details || ''}`);
+            } else {
+              socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+            }
           }
           
           socialText += socialItems.join('\n');
@@ -870,7 +922,7 @@ function ReviewOfSystems() {
       const header = sectionId.toUpperCase();
       return `${header}:\n[Error: ${sectionId}]`;
     }
-  }, [language, pmhText, allergies, socialHistory, medications, selectedPeSystems, processedLabValues, hpiText, impressionText, intubationValues, noteType, selectedSymptoms, imageryStudies]);
+  }, [language, pmhText, medications, selectedPeSystems, processedLabValues, hpiText, impressionText, intubationValues, noteType, selectedSymptoms, imageryStudies]);
 
   // Default note generation (existing logic)
   const generateDefaultNote = useCallback(() => {
@@ -878,15 +930,20 @@ function ReviewOfSystems() {
     
     // Generate allergies text
     const generateAllergiesText = () => {
+      const currentAllergies = allergiesRef.current;
+      if (!currentAllergies) {
+        return language === 'fr' ? 'ALLERGIES :\nAucune allergie connue' : 'ALLERGIES:\nNKDA (No Known Drug Allergies)';
+      }
+      
       if (language === 'fr') {
-        if (allergies.hasAllergies && allergies.allergiesList.length > 0) {
-          return `ALLERGIES :\n${allergies.allergiesList.join(', ')}`;
+        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+          return `ALLERGIES :\n${currentAllergies.allergiesList.join(', ')}`;
         } else {
           return `ALLERGIES :\nAucune allergie connue`;
         }
       } else {
-        if (allergies.hasAllergies && allergies.allergiesList.length > 0) {
-          return `ALLERGIES:\n${allergies.allergiesList.join(', ')}`;
+        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+          return `ALLERGIES:\n${currentAllergies.allergiesList.join(', ')}`;
         } else {
           return `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
         }
@@ -965,32 +1022,39 @@ function ReviewOfSystems() {
     const generateSocialHistoryText = () => {
       let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
       const socialItems = [];
+      const currentSocialHistory = socialHistoryRef.current;
       
-      // Always include smoking status
-      if (socialHistory.smoking.status) {
+      if (!currentSocialHistory) {
+        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+        socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+        socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+      } else {
+        // Always include smoking status
+        if (currentSocialHistory.smoking?.status) {
         socialItems.push(language === 'fr' 
-          ? `Tabagisme: ${socialHistory.smoking.details}`
-          : `Smoking: ${socialHistory.smoking.details}`);
+          ? `Tabagisme: ${currentSocialHistory.smoking.details}`
+          : `Smoking: ${currentSocialHistory.smoking.details}`);
       } else {
         socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
       }
       
-      // Always include alcohol status
-      if (socialHistory.alcohol.status) {
-        socialItems.push(language === 'fr' 
-          ? `Alcool: ${socialHistory.alcohol.details}`
-          : `Alcohol: ${socialHistory.alcohol.details}`);
-      } else {
-        socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
-      }
-      
-      // Always include drugs status
-      if (socialHistory.drugs.status) {
-        socialItems.push(language === 'fr' 
-          ? `Drogues: ${socialHistory.drugs.details}`
-          : `Drugs: ${socialHistory.drugs.details}`);
-      } else {
-        socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+        // Always include alcohol status
+        if (currentSocialHistory.alcohol?.status) {
+          socialItems.push(language === 'fr' 
+            ? `Alcool: ${currentSocialHistory.alcohol.details || ''}`
+            : `Alcohol: ${currentSocialHistory.alcohol.details || ''}`);
+        } else {
+          socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+        }
+        
+        // Always include drugs status
+        if (currentSocialHistory.drugs?.status) {
+          socialItems.push(language === 'fr' 
+            ? `Drogues: ${currentSocialHistory.drugs.details || ''}`
+            : `Drugs: ${currentSocialHistory.drugs.details || ''}`);
+        } else {
+          socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+        }
       }
       
       socialText += socialItems.join('\n');
@@ -1323,7 +1387,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
 
     return sections.filter(section => section.trim()).join('\n\n');
-  }, [noteType, admissionType, progressType, language, allergies, socialHistory, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms]);
+  }, [noteType, admissionType, progressType, language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms]);
 
   // Additional helper functions for template sections
   const generateAllergiesSocialText = useCallback((customContent?: string) => {
@@ -1333,15 +1397,20 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     
     // Generate allergies text
     const generateAllergiesText = () => {
+      const currentAllergies = allergiesRef.current;
+      if (!currentAllergies) {
+        return language === 'fr' ? 'ALLERGIES :\nAucune allergie connue' : 'ALLERGIES:\nNKDA (No Known Drug Allergies)';
+      }
+      
       if (language === 'fr') {
-        if (allergies.hasAllergies && allergies.allergiesList.length > 0) {
-          return `ALLERGIES :\n${allergies.allergiesList.join(', ')}`;
+        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+          return `ALLERGIES :\n${currentAllergies.allergiesList.join(', ')}`;
         } else {
           return `ALLERGIES :\nAucune allergie connue`;
         }
       } else {
-        if (allergies.hasAllergies && allergies.allergiesList.length > 0) {
-          return `ALLERGIES:\n${allergies.allergiesList.join(', ')}`;
+        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+          return `ALLERGIES:\n${currentAllergies.allergiesList.join(', ')}`;
         } else {
           return `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
         }
@@ -1352,32 +1421,39 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     const generateSocialHistoryText = () => {
       let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
       const socialItems = [];
+      const currentSocialHistory = socialHistoryRef.current;
       
-      // Always include smoking status
-      if (socialHistory.smoking.status) {
+      if (!currentSocialHistory) {
+        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+        socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+        socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+      } else {
+        // Always include smoking status
+        if (currentSocialHistory.smoking?.status) {
         socialItems.push(language === 'fr' 
-          ? `Tabagisme: ${socialHistory.smoking.details}`
-          : `Smoking: ${socialHistory.smoking.details}`);
+          ? `Tabagisme: ${currentSocialHistory.smoking.details}`
+          : `Smoking: ${currentSocialHistory.smoking.details}`);
       } else {
         socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
       }
       
-      // Always include alcohol status
-      if (socialHistory.alcohol.status) {
-        socialItems.push(language === 'fr' 
-          ? `Alcool: ${socialHistory.alcohol.details}`
-          : `Alcohol: ${socialHistory.alcohol.details}`);
-      } else {
-        socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
-      }
-      
-      // Always include drugs status
-      if (socialHistory.drugs.status) {
-        socialItems.push(language === 'fr' 
-          ? `Drogues: ${socialHistory.drugs.details}`
-          : `Drugs: ${socialHistory.drugs.details}`);
-      } else {
-        socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+        // Always include alcohol status
+        if (currentSocialHistory.alcohol?.status) {
+          socialItems.push(language === 'fr' 
+            ? `Alcool: ${currentSocialHistory.alcohol.details || ''}`
+            : `Alcohol: ${currentSocialHistory.alcohol.details || ''}`);
+        } else {
+          socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+        }
+        
+        // Always include drugs status
+        if (currentSocialHistory.drugs?.status) {
+          socialItems.push(language === 'fr' 
+            ? `Drogues: ${currentSocialHistory.drugs.details || ''}`
+            : `Drugs: ${currentSocialHistory.drugs.details || ''}`);
+        } else {
+          socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+        }
       }
       
       socialText += socialItems.join('\n');
@@ -1387,7 +1463,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     const allergiesText = generateAllergiesText();
     const socialText = generateSocialHistoryText();
     return `${allergiesText}\n\n${socialText}`;
-  }, [allergies, socialHistory, language]);
+  }, [language]);
 
   const generateHPIText = useCallback((customContent?: string) => {
     if (customContent && customContent.trim()) {
@@ -1626,13 +1702,31 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
   }, [pmhText]);
 
   // Update note on blur for allergies and social history to prevent focus issues
+  const timeoutRef = useRef<NodeJS.Timeout[]>([]);
+  
   const handleAllergiesBlur = useCallback(() => {
-    handleOptionChange();
+    try {
+      handleOptionChange();
+    } catch (error) {
+      console.error('Error in handleAllergiesBlur:', error);
+    }
   }, [handleOptionChange]);
 
   const handleSocialHistoryBlur = useCallback(() => {
-    handleOptionChange();
+    try {
+      handleOptionChange();
+    } catch (error) {
+      console.error('Error in handleSocialHistoryBlur:', error);
+    }
   }, [handleOptionChange]);
+  
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      timeoutRef.current.forEach(timeout => clearTimeout(timeout));
+      timeoutRef.current = [];
+    };
+  }, []);
 
   // Additional effect to ensure ROS and HPI changes trigger note updates
   useEffect(() => {
@@ -2095,10 +2189,15 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                 <div className="flex items-center gap-3 mb-4">
                   <span className="text-sm text-gray-600">{language === 'fr' ? 'Patient a des allergies' : 'Patient has allergies'}</span>
                   <button
-                    onClick={() => setAllergies({
-                      hasAllergies: !allergies.hasAllergies,
-                      allergiesList: allergies.hasAllergies ? [] : allergies.allergiesList
-                    })}
+                    onClick={() => {
+                      setAllergies({
+                        hasAllergies: !allergies.hasAllergies,
+                        allergiesList: allergies.hasAllergies ? [] : allergies.allergiesList
+                      });
+                      // Trigger note update immediately for toggle actions
+                      const timeout = setTimeout(handleAllergiesBlur, 0);
+                      timeoutRef.current.push(timeout);
+                    }}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
                       allergies.hasAllergies ? 'bg-orange-500' : 'bg-gray-200'
                     }`}
@@ -2174,7 +2273,11 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                   <div className="flex items-center justify-between">
                     <span className="text-sm">{language === 'fr' ? 'Tabagisme' : 'Smoking'}</span>
                     <button
-                      onClick={() => setSocialHistory(prev => ({ ...prev, smoking: { status: !prev.smoking.status, details: prev.smoking.status ? '' : prev.smoking.details } }))}
+                      onClick={() => {
+                        setSocialHistory(prev => ({ ...prev, smoking: { status: !prev.smoking.status, details: prev.smoking.status ? '' : prev.smoking.details } }));
+                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
+                        timeoutRef.current.push(timeout);
+                      }}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
                         socialHistory.smoking.status ? 'bg-pink-500' : 'bg-gray-200'
                       }`}
@@ -2198,7 +2301,11 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                   <div className="flex items-center justify-between">
                     <span className="text-sm">{language === 'fr' ? 'Alcool' : 'Alcohol'}</span>
                     <button
-                      onClick={() => setSocialHistory(prev => ({ ...prev, alcohol: { status: !prev.alcohol.status, details: prev.alcohol.status ? '' : prev.alcohol.details } }))}
+                      onClick={() => {
+                        setSocialHistory(prev => ({ ...prev, alcohol: { status: !prev.alcohol.status, details: prev.alcohol.status ? '' : prev.alcohol.details } }));
+                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
+                        timeoutRef.current.push(timeout);
+                      }}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
                         socialHistory.alcohol.status ? 'bg-pink-500' : 'bg-gray-200'
                       }`}
@@ -2222,7 +2329,11 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                   <div className="flex items-center justify-between">
                     <span className="text-sm">{language === 'fr' ? 'Drogues' : 'Drugs'}</span>
                     <button
-                      onClick={() => setSocialHistory(prev => ({ ...prev, drugs: { status: !prev.drugs.status, details: prev.drugs.status ? '' : prev.drugs.details } }))}
+                      onClick={() => {
+                        setSocialHistory(prev => ({ ...prev, drugs: { status: !prev.drugs.status, details: prev.drugs.status ? '' : prev.drugs.details } }));
+                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
+                        timeoutRef.current.push(timeout);
+                      }}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
                         socialHistory.drugs.status ? 'bg-pink-500' : 'bg-gray-200'
                       }`}
@@ -2424,8 +2535,9 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       }
       
       // Allergies section  
-      if (allergies && allergies.hasAllergies && Array.isArray(allergies.allergiesList) && allergies.allergiesList.length > 0) {
-        noteData['allergies-social'] = `Allergies: ${allergies.allergiesList.join(', ')}`;
+      const currentAllergies = allergiesRef.current;
+      if (currentAllergies && currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+        noteData['allergies-social'] = `Allergies: ${currentAllergies.allergiesList.join(', ')}`;
       }
       
       // HPI section
@@ -2495,19 +2607,22 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       'meds': medications ? formatMedicationsForNote(medications) : '',
       'allergies-social': (() => {
         try {
-          const allergiesText = allergies?.hasAllergies 
-            ? 'Allergies: ' + (allergies.allergiesList || []).join(', ') 
+          const currentAllergies = allergiesRef.current;
+          const currentSocialHistory = socialHistoryRef.current;
+          
+          const allergiesText = currentAllergies?.hasAllergies 
+            ? 'Allergies: ' + (currentAllergies.allergiesList || []).join(', ') 
             : 'No known allergies';
           
           const socialText = [
-            socialHistory?.smoking?.status 
-              ? `Smoking: ${socialHistory.smoking.details || 'Yes'}` 
+            currentSocialHistory?.smoking?.status 
+              ? `Smoking: ${currentSocialHistory.smoking.details || 'Yes'}` 
               : 'Non-smoker',
-            socialHistory?.alcohol?.status 
-              ? `Alcohol: ${socialHistory.alcohol.details || 'Yes'}` 
+            currentSocialHistory?.alcohol?.status 
+              ? `Alcohol: ${currentSocialHistory.alcohol.details || 'Yes'}` 
               : 'No alcohol use',
-            socialHistory?.drugs?.status 
-              ? `Drugs: ${socialHistory.drugs.details || 'Yes'}` 
+            currentSocialHistory?.drugs?.status 
+              ? `Drugs: ${currentSocialHistory.drugs.details || 'Yes'}` 
               : 'No drug use'
           ].join('\n');
           

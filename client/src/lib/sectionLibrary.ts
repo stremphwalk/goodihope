@@ -21,7 +21,7 @@ export interface SectionDefinition {
   icon: React.ComponentType<any>;
   category: 'patient-info' | 'history' | 'examination' | 'results' | 'assessment' | 'plan';
   component: string; // Component name to render
-  defaultContent?: any; // Default content structure
+  defaultContent?: string | any; // Default content structure - preferably string for PMH/Impressions
   isRequired?: boolean;
   isExpandable?: boolean;
   hasSmartOptions?: boolean;
@@ -49,7 +49,16 @@ export const SECTION_LIBRARY: SectionDefinition[] = [
     category: 'history',
     component: 'PastMedicalHistorySection',
     isExpandable: true,
-    hasSmartOptions: true
+    hasSmartOptions: true,
+    defaultContent: `Diabetes mellitus type 2
+- Well controlled on metformin
+- Last HbA1c 7.2%
+
+Hypertension
+- Well controlled  
+- On lisinopril 10mg daily
+
+Instructions: New line = auto-numbered, Tab = add sub-point`
   },
   
   {
@@ -135,7 +144,15 @@ export const SECTION_LIBRARY: SectionDefinition[] = [
     category: 'assessment',
     component: 'ImpressionSection',
     isRequired: true,
-    hasSmartOptions: true
+    hasSmartOptions: true,
+    defaultContent: `Diabetes mellitus type 2, poorly controlled
+- Adjust medications
+- Lifestyle counseling
+
+Hypertension, uncontrolled
+- Increase antihypertensive
+
+Instructions: New line = auto-numbered, Tab = add sub-point`
   },
   
   {
