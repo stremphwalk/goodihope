@@ -7,6 +7,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { getSectionById } from '@/lib/sectionLibrary';
 import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
 import { formatSmartText } from '@/utils/textFormatting';
+import { applyMedicalStandards } from '@/utils/noteFormatting';
 
 interface TemplateAwareLivePreviewProps {
   noteData?: Record<string, any>;

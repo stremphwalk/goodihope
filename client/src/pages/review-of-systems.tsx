@@ -68,7 +68,7 @@ import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
 import HpiSection from '@/components/HpiSection';
 import { TemplateAwareLivePreview } from '@/components/TemplateAwareLivePreview';
 import { type Template, type NoteType, type NoteSubtype } from '@shared/schema';
-import { type TemplateContent } from '@/lib/sectionLibrary';
+import { type TemplateContent, getSectionById } from '@/lib/sectionLibrary';
 
 // Import is correct; RosSymptomAccordion is used inside HpiSection
 
@@ -179,7 +179,15 @@ const physicalExamOptions = {
   "Skin": "Warm, dry, intact, no rashes or lesions"
 };
 
-import { formatSmartText } from '@/utils/textFormatting';
+import { 
+  formatSmartText, 
+  formatImpressionText, 
+  formatPMHText, 
+  formatPlanText, 
+  formatHPIText,
+  shouldFormatSection 
+} from '@/utils/textFormatting';
+import { formatMedicalNote, applyMedicalStandards } from '@/utils/noteFormatting';
 
 function ReviewOfSystems() {
   // Note state with diff-patch-merge tracking
@@ -570,22 +578,54 @@ function ReviewOfSystems() {
       }
 
       const enabledSections = templateContent.sections
-        .filter((section: any) => section && section.sectionId && section.isEnabled !== false)
-        .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+        .filter((section: any) => {
+          // More robust filtering with validation
+          return section && 
+                 section.sectionId && 
+                 section.isEnabled !== false &&
+                 getSectionById(section.sectionId); // Ensure section exists in library
+        })
+        .sort((a: any, b: any) => {
+          // More robust ordering with fallbacks
+          const orderA = typeof a.order === 'number' ? a.order : 999;
+          const orderB = typeof b.order === 'number' ? b.order : 999;
+          
+          // If orders are equal, sort by section ID for consistency
+          if (orderA === orderB) {
+            return a.sectionId.localeCompare(b.sectionId);
+          }
+          
+          return orderA - orderB;
+        });
 
-      enabledSections.forEach((templateSection: any) => {
+      // Log section ordering for debugging
+      console.log('Template sections order:', enabledSections.map((s: any) => `${s.order}: ${s.sectionId}`));
+
+      enabledSections.forEach((templateSection: any, index: number) => {
         try {
           const sectionContent = generateSectionContent(templateSection.sectionId, templateSection.customContent);
+          
+          // Validate generated content
           if (sectionContent && sectionContent.trim()) {
             sections.push(sectionContent);
+          } else {
+            console.warn(`Section ${templateSection.sectionId} at position ${index + 1} generated empty content`);
           }
         } catch (error) {
           console.error(`Error generating section content for ${templateSection.sectionId}:`, error);
-          // Continue with other sections instead of failing completely
+          // Add placeholder rather than skipping completely
+          try {
+            const header = getSectionHeader(templateSection.sectionId);
+            sections.push(`${header}:\n[Error generating ${templateSection.sectionId}]`);
+          } catch (headerError) {
+            console.error(`Error generating header for ${templateSection.sectionId}:`, headerError);
+          }
         }
       });
 
-      return sections.filter(section => section && section.trim()).join('\n\n');
+      // Apply medical note formatting standards
+      const validSections = sections.filter(section => section && section.trim());
+      return formatMedicalNote(validSections);
     } catch (error) {
       console.error('Error in generateTemplateBasedNote:', error);
       // Return a simple fallback without circular dependency
@@ -596,25 +636,55 @@ function ReviewOfSystems() {
   }, [language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, noteType, admissionType, progressType]);
 
   // Generate content for a specific section with template custom content
-  // Helper function to get section header (moved outside for reuse)
+  // Standardized content priority logic
+  const getContentWithPriority = useCallback((
+    userContent: string | undefined,
+    customContent: string | undefined,
+    placeholderEn: string,
+    placeholderFr: string
+  ): string => {
+    if (userContent && userContent.trim()) {
+      return userContent;
+    } else if (customContent && customContent.trim()) {
+      return customContent;
+    } else {
+      return language === 'fr' ? placeholderFr : placeholderEn;
+    }
+  }, [language]);
+
+  // Dynamic section header generation based on section library
   const getSectionHeader = useCallback((sectionId: string): string => {
-    const headers: Record<string, { en: string; fr: string }> = {
-      'note-type': { en: 'NOTE TYPE', fr: 'TYPE DE NOTE' },
-      'pmh': { en: 'PAST MEDICAL HISTORY', fr: 'ANTÉCÉDENTS MÉDICAUX' },
-      'allergies-social': { en: 'ALLERGIES & SOCIAL HISTORY', fr: 'ALLERGIES & HISTOIRE SOCIALE' },
-      'meds': { en: 'MEDICATIONS', fr: 'MÉDICAMENTS' },
-      'hpi': { en: 'HISTORY OF PRESENT ILLNESS', fr: 'HISTOIRE DE LA MALADIE ACTUELLE' },
-      'physical-exam': { en: 'PHYSICAL EXAMINATION', fr: 'EXAMEN PHYSIQUE' },
-      'labs': { en: 'LABORATORY RESULTS', fr: 'RÉSULTATS DE LABORATOIRE' },
-      'imagery': { en: 'IMAGING', fr: 'IMAGERIE' },
-      'impression': { en: 'CLINICAL IMPRESSION', fr: 'IMPRESSION CLINIQUE' },
-      'ventilation': { en: 'VENTILATION PARAMETERS', fr: 'PARAMÈTRES DE VENTILATION' },
-      'plan': { en: 'PLAN', fr: 'PLAN' }
-    };
+    // First try to get from section library
+    const sectionDef = getSectionById(sectionId);
+    if (sectionDef) {
+      // Convert section name to header format based on language
+      const baseHeader = sectionDef.name.toUpperCase();
+      
+      // Language-specific translations for common sections
+      const translations: Record<string, { en: string; fr: string }> = {
+        'NOTE TYPE': { en: 'NOTE TYPE', fr: 'TYPE DE NOTE' },
+        'PAST MEDICAL HISTORY': { en: 'PAST MEDICAL HISTORY', fr: 'ANTÉCÉDENTS MÉDICAUX' },
+        'ALLERGIES & SOCIAL HISTORY': { en: 'ALLERGIES & SOCIAL HISTORY', fr: 'ALLERGIES & HISTOIRE SOCIALE' },
+        'MEDICATIONS': { en: 'MEDICATIONS', fr: 'MÉDICAMENTS' },
+        'HISTORY OF PRESENT ILLNESS': { en: 'HISTORY OF PRESENT ILLNESS', fr: 'HISTOIRE DE LA MALADIE ACTUELLE' },
+        'PHYSICAL EXAMINATION': { en: 'PHYSICAL EXAMINATION', fr: 'EXAMEN PHYSIQUE' },
+        'LABORATORY RESULTS': { en: 'LABORATORY RESULTS', fr: 'RÉSULTATS DE LABORATOIRE' },
+        'IMAGING STUDIES': { en: 'IMAGING STUDIES', fr: 'IMAGERIE' },
+        'IMPRESSION/ASSESSMENT': { en: 'CLINICAL IMPRESSION', fr: 'IMPRESSION CLINIQUE' },
+        'VENTILATION': { en: 'VENTILATION PARAMETERS', fr: 'PARAMÈTRES DE VENTILATION' },
+        'TREATMENT PLAN': { en: 'TREATMENT PLAN', fr: 'PLAN DE TRAITEMENT' }
+      };
+      
+      const translation = translations[baseHeader];
+      if (translation) {
+        return language === 'fr' ? translation.fr : translation.en;
+      }
+      
+      return baseHeader;
+    }
     
-    const header = headers[sectionId];
-    if (!header) return sectionId.toUpperCase();
-    return language === 'fr' ? header.fr : header.en;
+    // Fallback for unknown sections
+    return sectionId.toUpperCase().replace(/-/g, ' ');
   }, [language]);
 
   // Generate plain section content without formatting
@@ -632,18 +702,12 @@ function ReviewOfSystems() {
         }
         
         case 'pmh': {
-          let contentToFormat = pmhText;
-          if (!pmhText.trim() && customContent && customContent.trim()) {
-            contentToFormat = customContent;
-          } else if (pmhText.trim() && customContent && customContent.trim()) {
-            // Combine if needed, as before
-            // ...
-          }
-          if (!contentToFormat.trim()) {
-            return language === 'fr' ? '[Entrer les antécédents médicaux]' : '[Enter past medical history]';
-          }
-          // Return plain content without formatting
-          return contentToFormat;
+          return getContentWithPriority(
+            pmhText,
+            customContent,
+            '[Enter past medical history]',
+            '[Entrer les antécédents médicaux]'
+          );
         }
         
         case 'ventilation': {
@@ -663,7 +727,12 @@ function ReviewOfSystems() {
         }
         
         case 'plan': {
-          return language === 'fr' ? '[Entrer le plan de traitement]' : '[Enter treatment plan]';
+          return getContentWithPriority(
+            undefined, // No user plan content captured yet
+            customContent,
+            '[Enter treatment plan]',
+            '[Entrer le plan de traitement]'
+          );
         }
         
         case 'allergies-social': {
@@ -849,18 +918,12 @@ function ReviewOfSystems() {
         }
         
         case 'impression': {
-          let contentToFormat = impressionText;
-          if (!impressionText.trim() && customContent && customContent.trim()) {
-            contentToFormat = customContent;
-          } else if (impressionText.trim() && customContent && customContent.trim()) {
-            // Prefer user data over custom template content
-            contentToFormat = impressionText;
-          }
-          if (!contentToFormat.trim()) {
-            return language === 'fr' ? '[Entrer les impressions cliniques]' : '[Enter clinical impressions]';
-          }
-          // Return plain content without formatting (formatting will be applied later)
-          return contentToFormat;
+          return getContentWithPriority(
+            impressionText,
+            customContent,
+            '[Enter clinical impressions]',
+            '[Entrer les impressions cliniques]'
+          );
         }
         
         default: {
@@ -879,13 +942,37 @@ function ReviewOfSystems() {
       // Pass 1: Generate plain content
       const plainContent = generatePlainSectionContent(sectionId, customContent);
       
-      // Pass 2: Add header and apply formatting
+      // Pass 2: Add header and apply section-specific formatting
       const header = getSectionHeader(sectionId);
       
-      // Apply smart text formatting only to sections that need it
-      const needsFormatting = ['pmh', 'impression'].includes(sectionId);
-      const formattedContent = needsFormatting ? formatSmartText(plainContent) : plainContent;
+      // Apply section-specific formatting
+      let formattedContent = plainContent;
       
+      if (shouldFormatSection(sectionId)) {
+        switch (sectionId) {
+          case 'pmh':
+            formattedContent = formatPMHText(plainContent);
+            break;
+          case 'impression':
+            formattedContent = formatImpressionText(plainContent);
+            break;
+          case 'plan':
+            formattedContent = formatPlanText(plainContent);
+            break;
+          case 'hpi':
+            formattedContent = formatHPIText(plainContent);
+            break;
+          case 'physical-exam':
+            // Physical exam might need different formatting
+            formattedContent = formatSmartText(plainContent, { 
+              sectionType: 'physical-exam',
+              preserveFormatting: true 
+            });
+            break;
+          default:
+            formattedContent = plainContent;
+        }
+      }
       
       return `${header}:\n${formattedContent}`;
     } catch (error) {
@@ -1357,7 +1444,9 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       sections.push(`CONSULTATION NOTE:\n[Consultation sections to be defined]`);
     }
 
-    return sections.filter(section => section.trim()).join('\n\n');
+    // Apply consistent medical note formatting
+    const validSections = sections.filter(section => section.trim());
+    return formatMedicalNote(validSections);
   }, [noteType, admissionType, progressType, language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms]);
 
   // Additional helper functions for template sections
