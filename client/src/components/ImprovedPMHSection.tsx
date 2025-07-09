@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { FileText, Plus, X, ChevronDown, ChevronUp, Expand, Minimize, Trash2, GripVertical } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { FocusStableInput } from './FocusStableInput';
+import { DotPhraseTextarea } from './DotPhraseTextarea';
 import { useScrollPreservation } from '@/hooks/useScrollPreservation';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -67,6 +67,11 @@ export function ImprovedPMHSection({ data, onChange }: ImprovedPMHSectionProps) 
   const { preserveScrollPosition, restoreScrollPosition, setContainer } = useScrollPreservation();
 
   const sensors = useSensors(useSensor(PointerSensor));
+
+  const expandCollapseIcon = allExpanded ? <Minimize className="w-3 h-3" /> : <Expand className="w-3 h-3" />;
+  const expandCollapseText = allExpanded
+    ? (language === 'fr' ? 'Réduire' : 'Collapse')
+    : (language === 'fr' ? 'Étendre' : 'Expand');
 
   // Initialize with empty entries if needed
   useEffect(() => {
@@ -142,7 +147,7 @@ export function ImprovedPMHSection({ data, onChange }: ImprovedPMHSectionProps) 
     onChange({ entries: newEntries });
     
     // Expand the new entry
-    setExpandedEntries(prev => new Set([...prev, newEntry.id]));
+    setExpandedEntries(prev => new Set([...Array.from(prev), newEntry.id]));
     restoreScrollPosition();
   }, [data.entries, onChange, preserveScrollPosition, restoreScrollPosition]);
 
@@ -257,8 +262,8 @@ export function ImprovedPMHSection({ data, onChange }: ImprovedPMHSectionProps) 
               onClick={toggleAllEntries}
               className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors flex items-center space-x-1"
             >
-              {allExpanded ? <Minimize className="w-3 h-3" /> : <Expand className="w-3 h-3" />}
-              <span>{allExpanded ? (language === 'fr' ? 'Réduire' : 'Collapse') : (language === 'fr' ? 'Étendre' : 'Expand')}</span>
+              {expandCollapseIcon}
+              <span>{expandCollapseText}</span>
             </Button>
             <Button
               variant="ghost"
@@ -298,11 +303,12 @@ export function ImprovedPMHSection({ data, onChange }: ImprovedPMHSectionProps) 
                       }`}>
                         {entryIndex + 1}
                       </div>
-                      <FocusStableInput
+                      <DotPhraseTextarea
                         value={entry.mainCondition}
                         onChange={(value) => updateMainCondition(entry.id, value)}
-                        placeholder={language === 'fr' ? 'Entrer l\'antécédent médical principal...' : 'Enter main medical condition...'}
+                        placeholder={language === 'fr' ? "Entrer l'antécédent médical principal..." : 'Enter main medical condition...'}
                         className="flex-1 font-medium px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        rows={1}
                       />
                       <div className="flex items-center space-x-1">
                         <Button
@@ -335,11 +341,12 @@ export function ImprovedPMHSection({ data, onChange }: ImprovedPMHSectionProps) 
                         {entry.subEntries.map((subEntry, subIndex) => (
                           <div key={`${entry.id}-${subIndex}`} className="flex items-center space-x-2">
                             <div className="w-2 h-2 bg-indigo-400 rounded-full flex-shrink-0 mt-2"></div>
-                            <FocusStableInput
+                            <DotPhraseTextarea
                               value={subEntry}
                               onChange={(value) => updateSubEntry(entry.id, subIndex, value)}
                               placeholder={language === 'fr' ? 'Ajouter des détails...' : 'Add details...'}
                               className="flex-1 text-sm px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              rows={1}
                             />
                             {entry.subEntries.length > 3 && subIndex >= 3 && (
                               <Button

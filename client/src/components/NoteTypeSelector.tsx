@@ -92,31 +92,10 @@ export function NoteTypeSelector({ onSelect, selectedType }: NoteTypeSelectorPro
     { id: 'custom', name: language === 'fr' ? 'Personnalisés' : 'Custom' }
   ];
 
-  // Fetch user templates
+  // Templates functionality removed - using only built-in types
   useEffect(() => {
-    if (auth.user?.id_token) {
-      fetchTemplates();
-    }
-  }, [auth.user?.id_token]);
-
-  const fetchTemplates = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/templates', {
-        headers: {
-          'Authorization': `Bearer ${auth.user!.id_token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setTemplates(data);
-      }
-    } catch (error) {
-      console.error('Error fetching templates:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // Template API removed, no need to fetch
+  }, []);
 
   // Filter note types based on category
   const filteredBuiltInTypes = builtInTypes.filter(type => 

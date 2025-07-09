@@ -5,9 +5,10 @@ import { searchMedications, getCommonDosages } from "./parseCSVMedications";
 import { extractLabValuesFromImage, extractMedicationsFromImage } from "./vision";
 import { sanitizeString, validateBase64Image, SECURITY_CONFIG } from "./security";
 import { db } from "./database";
-import { dotPhrases, users, templates, templateUsage } from "../shared/schema";
+import { dotPhrases, users } from "../shared/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { checkJwt } from './auth';
+import { generateUniqueShareCode, isValidShareCode, normalizeShareCode } from './shareCodeUtils';
 
 // Extend the Express Request type to include the auth payload
 interface AuthenticatedRequest extends Request {
@@ -33,6 +34,35 @@ const getOrCreateUser = async (cognitoSub: string) => {
   }
   return user[0];
 };
+
+// Helper function to calculate medication confidence
+function calculateMedicationConfidence(medication: any): number {
+  let confidence = 0.5; // Base confidence
+  
+  // Higher confidence for medications with dosage information
+  if (medication.dosage && medication.dosage.trim().length > 0) {
+    confidence += 0.2;
+  }
+  
+  // Higher confidence for medications with frequency information
+  if (medication.frequency && medication.frequency.trim().length > 0) {
+    confidence += 0.2;
+  }
+  
+  // Higher confidence for well-known medication names
+  const commonMeds = ['tylenol', 'advil', 'aspirin', 'metformin', 'lipitor', 'lisinopril'];
+  if (commonMeds.some(med => medication.name.toLowerCase().includes(med))) {
+    confidence += 0.1;
+  }
+  
+  // Lower confidence for very short names or unusual patterns
+  if (medication.name.length < 4) {
+    confidence -= 0.2;
+  }
+  
+  // Cap between 0 and 1
+  return Math.max(0, Math.min(1, confidence));
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   try {
@@ -175,16 +205,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
 
     // DELETE /api/dot-phrases/:id - Delete a custom dot phrase
-    app.delete("/api/dot-phrases/:id", checkJwt, async (req, res) => {
+    app.delete("/api/dot-phrases/:id", checkJwt, async (req: AuthenticatedRequest, res) => {
       try {
         const { id } = req.params;
         
-        // Get userId from authenticated user
-        const userId = req.auth?.sub ? parseInt(req.auth.sub) : 1;
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
         
         const deletedDotPhrase = await db
           .delete(dotPhrases)
-          .where(and(eq(dotPhrases.id, parseInt(id)), eq(dotPhrases.userId, userId)))
+          .where(and(eq(dotPhrases.id, parseInt(id)), eq(dotPhrases.userId, user.id)))
           .returning();
         
         if (deletedDotPhrase.length === 0) {
@@ -198,188 +231,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    // Template API endpoints
+    // Dot Phrase Sharing API endpoints
     
-    // GET /api/templates - Get all templates for the current user
-    app.get("/api/templates", checkJwt, async (req: AuthenticatedRequest, res) => {
-      try {
-        if (!req.auth?.sub) {
-          console.error('Template fetch failed: No user identifier in token');
-          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
-        }
-        
-        const user = await getOrCreateUser(req.auth.sub);
-        const { category, specialty, search } = req.query;
-        
-        console.log('Fetching templates for user:', { 
-          userId: user.id, 
-          filters: { category, specialty, search } 
-        });
-        
-        // Build conditions array
-        const conditions = [eq(templates.userId, user.id)];
-        
-        if (category && category !== 'all') {
-          conditions.push(eq(templates.category, category as string));
-        }
-        
-        if (specialty && specialty !== 'all') {
-          conditions.push(eq(templates.specialty, specialty as string));
-        }
-        
-        // Apply search filter (placeholder for now)
-        if (search) {
-          // TODO: Implement search functionality
-          // conditions.push(like(templates.name, `%${search}%`));
-          console.log('Search functionality not yet implemented, ignoring search term:', search);
-        }
-        
-        const userTemplates = await db
-          .select()
-          .from(templates)
-          .where(and(...conditions))
-          .orderBy(templates.updatedAt);
-        
-        console.log('Templates fetched successfully:', { 
-          count: userTemplates.length,
-          userId: user.id 
-        });
-        
-        // Ensure content is properly structured
-        const processedTemplates = userTemplates.map(template => {
-          let parsedContent = template.content;
-          if (typeof template.content === 'string') {
-            try {
-              parsedContent = JSON.parse(template.content);
-            } catch (parseError) {
-              console.error('Failed to parse template content for template', template.id, parseError);
-              parsedContent = { sections: [], metadata: {} }; // Fallback to empty structure
-            }
-          }
-          return {
-            ...template,
-            content: parsedContent
-          };
-        });
-        
-        res.json(processedTemplates);
-      } catch (error) {
-        console.error('Error fetching templates:', error);
-        if (error instanceof Error) {
-          console.error('Error stack:', error.stack);
-        }
-        res.status(500).json({ 
-          error: 'Failed to fetch templates',
-          details: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    });
-
-    // POST /api/templates - Create a new template
-    app.post("/api/templates", checkJwt, async (req: AuthenticatedRequest, res) => {
-      try {
-        const { 
-          name, 
-          description, 
-          category, 
-          specialty, 
-          content, 
-          isPublic,
-          compatibleNoteTypes,
-          compatibleSubtypes,
-          sectionDefaults
-        } = req.body;
-        
-        if (!req.auth?.sub) {
-          console.error('Template creation failed: No user identifier in token');
-          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
-        }
-        
-        const user = await getOrCreateUser(req.auth.sub);
-        
-        // Enhanced validation
-        if (!name || !name.trim()) {
-          console.error('Template creation failed: Missing or empty name');
-          return res.status(400).json({ error: 'Template name is required and cannot be empty' });
-        }
-        
-        if (!category || !category.trim()) {
-          console.error('Template creation failed: Missing or empty category');
-          return res.status(400).json({ error: 'Category is required and cannot be empty' });
-        }
-        
-        if (!content) {
-          console.error('Template creation failed: Missing content');
-          return res.status(400).json({ error: 'Template content is required' });
-        }
-        
-        // Validate content structure
-        if (typeof content !== 'object' || !content.sections || !Array.isArray(content.sections)) {
-          console.error('Template creation failed: Invalid content structure', { content });
-          return res.status(400).json({ error: 'Template content must have a valid sections array' });
-        }
-        
-        if (!content.metadata || typeof content.metadata !== 'object') {
-          console.error('Template creation failed: Invalid metadata structure', { metadata: content.metadata });
-          return res.status(400).json({ error: 'Template content must have valid metadata' });
-        }
-        
-        // Check for duplicate names for this user
-        const existing = await db
-          .select()
-          .from(templates)
-          .where(and(eq(templates.userId, user.id), eq(templates.name, name.trim())));
-        
-        if (existing.length > 0) {
-          console.error('Template creation failed: Duplicate name', { name: name.trim(), userId: user.id });
-          return res.status(409).json({ error: 'A template with this name already exists' });
-        }
-        
-        console.log('Creating template:', { 
-          name: name.trim(), 
-          category, 
-          userId: user.id,
-          sectionsCount: content.sections.length 
-        });
-        
-        const newTemplate = await db
-          .insert(templates)
-          .values({
-            userId: user.id,
-            name: name.trim(),
-            description: description?.trim() || null,
-            category: category.trim(),
-            specialty: specialty?.trim() || null,
-            content,
-            compatibleNoteTypes: compatibleNoteTypes || ['admission'],
-            compatibleSubtypes: compatibleSubtypes || ['general'],
-            sectionDefaults: sectionDefaults || {},
-            isPublic: isPublic || false,
-            version: 1,
-            lastUsed: new Date(),
-            isFavorite: false
-          })
-          .returning();
-        
-        console.log('Template created successfully:', { id: newTemplate[0].id, name: newTemplate[0].name });
-        res.status(201).json(newTemplate[0]);
-      } catch (error) {
-        console.error('Error creating template:', error);
-        if (error instanceof Error) {
-          console.error('Error stack:', error.stack);
-        }
-        res.status(500).json({ 
-          error: 'Failed to create template',
-          details: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    });
-
-    // PUT /api/templates/:id - Update an existing template
-    app.put("/api/templates/:id", checkJwt, async (req: AuthenticatedRequest, res) => {
+    // POST /api/dot-phrases/:id/share - Generate or retrieve share code for a dot phrase
+    app.post("/api/dot-phrases/:id/share", checkJwt, async (req: AuthenticatedRequest, res) => {
       try {
         const { id } = req.params;
-        const { name, description, category, specialty, content, isPublic } = req.body;
         
         if (!req.auth?.sub) {
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
@@ -387,142 +244,267 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const user = await getOrCreateUser(req.auth.sub);
         
-        // Validate template ID
-        const templateId = parseInt(id);
-        if (isNaN(templateId) || templateId <= 0) {
-          return res.status(400).json({ error: 'Invalid template ID' });
-        }
-        
-        if (!name || !category || !content) {
-          return res.status(400).json({ error: 'Name, category, and content are required' });
-        }
-        
-        // Check if the template exists and belongs to the user
+        // Check if the dot phrase exists and belongs to the user
         const existing = await db
           .select()
-          .from(templates)
-          .where(and(eq(templates.id, templateId), eq(templates.userId, user.id)));
+          .from(dotPhrases)
+          .where(and(eq(dotPhrases.id, parseInt(id)), eq(dotPhrases.userId, user.id)));
         
         if (existing.length === 0) {
-          return res.status(404).json({ error: 'Template not found' });
+          return res.status(404).json({ error: 'Dot phrase not found' });
         }
         
-        // Check for duplicate names (excluding current template)
-        const duplicate = await db
-          .select()
-          .from(templates)
-          .where(and(
-            eq(templates.userId, user.id), 
-            eq(templates.name, name.trim()),
-            ne(templates.id, templateId)
-          ));
+        const dotPhrase = existing[0];
         
-        if (duplicate.length > 0) {
-          return res.status(409).json({ error: 'A template with this name already exists' });
+        // If already has a share code, return it
+        if (dotPhrase.shareCode) {
+          res.json({ 
+            shareCode: dotPhrase.shareCode,
+            isPublic: dotPhrase.isPublic,
+            sharedAt: dotPhrase.sharedAt,
+            importCount: dotPhrase.importCount || 0
+          });
+          return;
         }
         
-        const updatedTemplate = await db
-          .update(templates)
+        // Generate new unique share code
+        const checkCodeExists = async (code: string) => {
+          const result = await db
+            .select()
+            .from(dotPhrases)
+            .where(eq(dotPhrases.shareCode, code))
+            .limit(1);
+          return result.length > 0;
+        };
+        
+        const shareCode = await generateUniqueShareCode(checkCodeExists);
+        
+        // Update the dot phrase with the share code
+        const updatedDotPhrase = await db
+          .update(dotPhrases)
           .set({
-            name: name.trim(),
-            description: description?.trim() || null,
-            category: category.trim(),
-            specialty: specialty?.trim() || null,
-            content,
-            isPublic: isPublic || false,
+            shareCode,
+            isPublic: true,
+            sharedAt: new Date(),
             updatedAt: new Date()
           })
-          .where(and(eq(templates.id, templateId), eq(templates.userId, user.id)))
+          .where(and(eq(dotPhrases.id, parseInt(id)), eq(dotPhrases.userId, user.id)))
           .returning();
         
-        if (updatedTemplate.length === 0) {
-          return res.status(404).json({ error: 'Template not found' });
+        if (updatedDotPhrase.length === 0) {
+          return res.status(404).json({ error: 'Dot phrase not found' });
         }
         
-        res.json(updatedTemplate[0]);
+        res.json({ 
+          shareCode,
+          isPublic: true,
+          sharedAt: updatedDotPhrase[0].sharedAt,
+          importCount: 0
+        });
       } catch (error) {
-        console.error('Error updating template:', error);
-        res.status(500).json({ error: 'Failed to update template' });
+        console.error('Error sharing dot phrase:', error);
+        res.status(500).json({ error: 'Failed to share dot phrase' });
       }
     });
 
-    // DELETE /api/templates/:id - Delete a template
-    app.delete("/api/templates/:id", checkJwt, async (req: AuthenticatedRequest, res) => {
+    // GET /api/dot-phrases/shared/:shareCode - Get shared dot phrase by code
+    app.get("/api/dot-phrases/shared/:shareCode", async (req, res) => {
       try {
-        const { id } = req.params;
+        const { shareCode } = req.params;
         
-        if (!req.auth?.sub) {
-          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        if (!shareCode || !isValidShareCode(shareCode)) {
+          return res.status(400).json({ error: 'Invalid share code format' });
         }
         
-        const user = await getOrCreateUser(req.auth.sub);
+        const normalizedCode = normalizeShareCode(shareCode);
         
-        // Validate template ID
-        const templateId = parseInt(id);
-        if (isNaN(templateId) || templateId <= 0) {
-          return res.status(400).json({ error: 'Invalid template ID' });
-        }
-        
-        const deletedTemplate = await db
-          .delete(templates)
-          .where(and(eq(templates.id, templateId), eq(templates.userId, user.id)))
-          .returning();
-        
-        if (deletedTemplate.length === 0) {
-          return res.status(404).json({ error: 'Template not found' });
-        }
-        
-        res.json({ message: 'Template deleted successfully' });
-      } catch (error) {
-        console.error('Error deleting template:', error);
-        res.status(500).json({ error: 'Failed to delete template' });
-      }
-    });
-
-    // POST /api/templates/:id/use - Record template usage
-    app.post("/api/templates/:id/use", checkJwt, async (req: AuthenticatedRequest, res) => {
-      try {
-        const { id } = req.params;
-        const { patientContext } = req.body;
-        
-        if (!req.auth?.sub) {
-          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
-        }
-        
-        const user = await getOrCreateUser(req.auth.sub);
-        
-        // Validate template ID
-        const templateId = parseInt(id);
-        if (isNaN(templateId) || templateId <= 0) {
-          return res.status(400).json({ error: 'Invalid template ID' });
-        }
-        
-        // Check if template exists
-        const template = await db
-          .select()
-          .from(templates)
-          .where(eq(templates.id, templateId))
+        const sharedDotPhrase = await db
+          .select({
+            id: dotPhrases.id,
+            trigger: dotPhrases.trigger,
+            content: dotPhrases.content,
+            description: dotPhrases.description,
+            category: dotPhrases.category,
+            shareCode: dotPhrases.shareCode,
+            importCount: dotPhrases.importCount,
+            sharedAt: dotPhrases.sharedAt,
+            createdAt: dotPhrases.createdAt
+          })
+          .from(dotPhrases)
+          .where(and(
+            eq(dotPhrases.shareCode, normalizedCode),
+            eq(dotPhrases.isPublic, true)
+          ))
           .limit(1);
         
-        if (template.length === 0) {
-          return res.status(404).json({ error: 'Template not found' });
+        if (sharedDotPhrase.length === 0) {
+          return res.status(404).json({ error: 'Shared dot phrase not found' });
         }
         
-        // Record usage
-        await db
-          .insert(templateUsage)
-          .values({
-            templateId: templateId,
-            userId: user.id,
-            patientContext: patientContext || null
-          });
-        
-        res.json({ message: 'Template usage recorded' });
+        res.json(sharedDotPhrase[0]);
       } catch (error) {
-        console.error('Error recording template usage:', error);
-        res.status(500).json({ error: 'Failed to record template usage' });
+        console.error('Error fetching shared dot phrase:', error);
+        res.status(500).json({ error: 'Failed to fetch shared dot phrase' });
       }
     });
+
+    // POST /api/dot-phrases/import/:shareCode - Import dot phrase from share code
+    app.post("/api/dot-phrases/import/:shareCode", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        const { shareCode } = req.params;
+        const { customTrigger } = req.body; // Optional custom trigger if user wants to rename
+        
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        if (!shareCode || !isValidShareCode(shareCode)) {
+          return res.status(400).json({ error: 'Invalid share code format' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        const normalizedCode = normalizeShareCode(shareCode);
+        
+        // Get the shared dot phrase
+        const sharedDotPhrase = await db
+          .select()
+          .from(dotPhrases)
+          .where(and(
+            eq(dotPhrases.shareCode, normalizedCode),
+            eq(dotPhrases.isPublic, true)
+          ))
+          .limit(1);
+        
+        if (sharedDotPhrase.length === 0) {
+          return res.status(404).json({ error: 'Shared dot phrase not found' });
+        }
+        
+        const originalPhrase = sharedDotPhrase[0];
+        
+        // Check if user is trying to import their own phrase
+        if (originalPhrase.userId === user.id) {
+          return res.status(400).json({ error: 'Cannot import your own dot phrase' });
+        }
+        
+        // Determine the trigger to use
+        let finalTrigger = customTrigger || originalPhrase.trigger;
+        
+        if (!finalTrigger.startsWith('/')) {
+          finalTrigger = '/' + finalTrigger.replace(/^\/+/, '');
+        }
+        
+        // Check for existing trigger conflict
+        const existingTrigger = await db
+          .select()
+          .from(dotPhrases)
+          .where(and(eq(dotPhrases.userId, user.id), eq(dotPhrases.trigger, finalTrigger)))
+          .limit(1);
+        
+        if (existingTrigger.length > 0) {
+          // Suggest alternative trigger
+          let counter = 1;
+          let suggestedTrigger = `${finalTrigger}${counter}`;
+          
+          while (true) {
+            const checkSuggestion = await db
+              .select()
+              .from(dotPhrases)
+              .where(and(eq(dotPhrases.userId, user.id), eq(dotPhrases.trigger, suggestedTrigger)))
+              .limit(1);
+            
+            if (checkSuggestion.length === 0) break;
+            counter++;
+            suggestedTrigger = `${finalTrigger}${counter}`;
+          }
+          
+          return res.status(409).json({ 
+            error: 'Trigger already exists', 
+            suggestedTrigger,
+            originalTrigger: finalTrigger
+          });
+        }
+        
+        // Create the imported dot phrase
+        const importedDotPhrase = await db
+          .insert(dotPhrases)
+          .values({
+            userId: user.id,
+            trigger: finalTrigger,
+            content: originalPhrase.content,
+            description: originalPhrase.description,
+            category: originalPhrase.category
+          })
+          .returning();
+        
+        // Increment import count on original phrase
+        await db
+          .update(dotPhrases)
+          .set({
+            importCount: (originalPhrase.importCount || 0) + 1,
+            updatedAt: new Date()
+          })
+          .where(eq(dotPhrases.id, originalPhrase.id));
+        
+        res.status(201).json({
+          dotPhrase: importedDotPhrase[0],
+          importedFrom: {
+            shareCode: originalPhrase.shareCode,
+            originalTrigger: originalPhrase.trigger
+          }
+        });
+      } catch (error) {
+        console.error('Error importing dot phrase:', error);
+        res.status(500).json({ error: 'Failed to import dot phrase' });
+      }
+    });
+
+    // GET /api/dot-phrases/shared/popular - Get most imported shared phrases (optional)
+    app.get("/api/dot-phrases/shared/popular", async (req, res) => {
+      try {
+        const limitParam = req.query.limit as string;
+        const limit = Math.min(Math.max(parseInt(limitParam) || 10, 1), 50);
+        
+        const popularPhrases = await db
+          .select({
+            id: dotPhrases.id,
+            trigger: dotPhrases.trigger,
+            content: dotPhrases.content,
+            description: dotPhrases.description,
+            category: dotPhrases.category,
+            shareCode: dotPhrases.shareCode,
+            importCount: dotPhrases.importCount,
+            sharedAt: dotPhrases.sharedAt
+          })
+          .from(dotPhrases)
+          .where(and(
+            eq(dotPhrases.isPublic, true),
+            ne(dotPhrases.shareCode, '')
+          ))
+          .orderBy(dotPhrases.importCount)
+          .limit(limit);
+        
+        res.json(popularPhrases);
+      } catch (error) {
+        console.error('Error fetching popular shared phrases:', error);
+        res.status(500).json({ error: 'Failed to fetch popular shared phrases' });
+      }
+    });
+
+    // Template API endpoints removed - focusing on dot phrases
+
+    // Fallback medication data for when search fails
+    const fallbackMedications = [
+      { id: 'acetaminophen', brandName: 'Tylenol', genericName: 'Acetaminophen', strength: '', dosageForm: 'tablet' },
+      { id: 'ibuprofen', brandName: 'Advil', genericName: 'Ibuprofen', strength: '', dosageForm: 'tablet' },
+      { id: 'aspirin', brandName: 'Aspirin', genericName: 'Acetylsalicylic acid', strength: '', dosageForm: 'tablet' },
+      { id: 'metformin', brandName: 'Glucophage', genericName: 'Metformin', strength: '', dosageForm: 'tablet' },
+      { id: 'lisinopril', brandName: 'Prinivil', genericName: 'Lisinopril', strength: '', dosageForm: 'tablet' },
+      { id: 'atorvastatin', brandName: 'Lipitor', genericName: 'Atorvastatin', strength: '', dosageForm: 'tablet' },
+      { id: 'amlodipine', brandName: 'Norvasc', genericName: 'Amlodipine', strength: '', dosageForm: 'tablet' },
+      { id: 'omeprazole', brandName: 'Prilosec', genericName: 'Omeprazole', strength: '', dosageForm: 'capsule' },
+      { id: 'levothyroxine', brandName: 'Synthroid', genericName: 'Levothyroxine', strength: '', dosageForm: 'tablet' },
+      { id: 'hydrochlorothiazide', brandName: 'Microzide', genericName: 'Hydrochlorothiazide', strength: '', dosageForm: 'tablet' }
+    ];
 
     // Medication search endpoint using authentic oral medication data
     app.get("/api/medications/search", async (req, res) => {
@@ -532,8 +514,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const limit = Math.min(Math.max(parseInt(limitParam) || 10, 1), 50); // Limit between 1-50
 
         if (!query || query.length < SECURITY_CONFIG.VALIDATION.MIN_QUERY_LENGTH) {
+          console.log(`Medication search: Empty or too short query: "${query}"`);
           return res.json([]);
         }
+
+        console.log(`Medication search request: query="${query}", limit=${limit}`);
 
         // Search medications using authentic oral medication data
         const results = searchMedications(query, limit);
@@ -547,9 +532,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
           dosageForm: med.dosageForm
         }));
 
+        console.log(`Medication search: Found ${medications.length} results for "${query}"`);
+
+        // If no results from main search, try fallback search
+        if (medications.length === 0) {
+          console.log(`No main results for "${query}", attempting fallback search`);
+          const fallbackResults = fallbackMedications.filter(med => 
+            med.brandName.toLowerCase().includes(query.toLowerCase()) ||
+            med.genericName.toLowerCase().includes(query.toLowerCase())
+          ).slice(0, limit);
+          
+          if (fallbackResults.length > 0) {
+            console.log(`Fallback search: Found ${fallbackResults.length} results for "${query}"`);
+            return res.json(fallbackResults);
+          }
+        }
+
         res.json(medications);
       } catch (error) {
         console.error('Medication search error:', error);
+        console.error('Error details:', {
+          query: req.query.q,
+          limit: req.query.limit,
+          stack: error instanceof Error ? error.stack : 'Unknown error'
+        });
+        
+        // Return fallback results even on error
+        try {
+          const query = sanitizeString(req.query.q as string, 50);
+          if (query && query.length >= SECURITY_CONFIG.VALIDATION.MIN_QUERY_LENGTH) {
+            const fallbackResults = fallbackMedications.filter(med => 
+              med.brandName.toLowerCase().includes(query.toLowerCase()) ||
+              med.genericName.toLowerCase().includes(query.toLowerCase())
+            );
+            
+            if (fallbackResults.length > 0) {
+              console.log(`Error fallback: Returning ${fallbackResults.length} fallback results`);
+              return res.json(fallbackResults);
+            }
+          }
+        } catch (fallbackError) {
+          console.error('Fallback search also failed:', fallbackError);
+        }
+        
         res.status(500).json({ error: 'Failed to search medications' });
       }
     });
@@ -605,7 +630,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const imageData = validateBase64Image(image);
         if (!imageData) {
-          return res.status(400).json({ error: "Invalid image data" });
+          return res.status(400).json({ 
+            error: "Invalid image data",
+            details: "Please ensure the image is in a supported format (JPEG, PNG, WebP) and properly encoded"
+          });
         }
 
         const { data: base64Data, type: imageTypeParam } = imageData;
@@ -616,10 +644,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         console.log(`Extracted ${medications.length} medications`);
         
-        res.json(medications);
+        if (medications.length === 0) {
+          // Return helpful guidance instead of just empty array
+          return res.json({
+            medications: [],
+            suggestions: [
+              "Ensure the image contains clear, readable text",
+              "Check that medication names and dosages are visible", 
+              "Try taking a photo with better lighting",
+              "Make sure the image shows prescription labels or medication lists",
+              "Verify the image is not too blurry or low resolution"
+            ],
+            debug: "No medications were detected in the image. This could be due to image quality, unclear text, or the image not containing medication information.",
+            success: false
+          });
+        }
+        
+        // Add confidence scoring to results
+        const enhancedMedications = medications.map(med => ({
+          ...med,
+          confidence: calculateMedicationConfidence(med),
+          source: med.notes?.includes('regex') ? 'fallback' : 'ai'
+        }));
+        
+        res.json({
+          medications: enhancedMedications,
+          totalFound: medications.length,
+          extractionMethod: enhancedMedications.some(m => m.source === 'ai') ? 'AI + Fallback' : 'Pattern Matching',
+          success: true
+        });
       } catch (error: any) {
         console.error("Error processing medication image:", error);
-        res.status(500).json({ error: "Failed to process medication image" });
+        
+        // Provide more helpful error messages
+        let errorMessage = "Failed to process medication image";
+        let suggestions: string[] = [];
+        
+        if (error.message?.includes('Vision API unavailable')) {
+          errorMessage = "Image text recognition service is temporarily unavailable";
+          suggestions = ["Please try again in a few moments", "Check your internet connection"];
+        } else if (error.message?.includes('Failed to extract medications')) {
+          errorMessage = "Unable to extract medication information from image";
+          suggestions = [
+            "Ensure the image shows medication labels or prescription information",
+            "Try improving image quality (lighting, focus, resolution)",
+            "Make sure text is clearly visible and not obscured"
+          ];
+        }
+        
+        res.status(500).json({ 
+          error: errorMessage,
+          suggestions,
+          technical: error.message,
+          success: false
+        });
       }
     });
 

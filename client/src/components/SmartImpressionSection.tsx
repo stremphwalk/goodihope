@@ -5,10 +5,11 @@ import { useLanguage } from '@/contexts/LanguageContext';
 interface SmartImpressionSectionProps {
   value: string;
   onChange: (value: string) => void;
+  onBlur?: () => void;
   defaultContent?: string | null; // Template default content
 }
 
-export function SmartImpressionSection({ value, onChange, defaultContent }: SmartImpressionSectionProps) {
+export function SmartImpressionSection({ value, onChange, onBlur, defaultContent }: SmartImpressionSectionProps) {
   const { language } = useLanguage();
   const onChangeRef = useRef(onChange);
   
@@ -81,6 +82,7 @@ Tab at start: convert to sub-point`;
       placeholder={placeholder}
       value={value}
       onChange={onChange}
+      onBlur={onBlur}
     />
   );
 }

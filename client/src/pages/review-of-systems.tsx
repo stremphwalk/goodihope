@@ -54,7 +54,26 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "react-oidc-context";
-import { useTemplate } from "@/contexts/TemplateContext";
+// Template context removed - using direct template management
+
+// Type definitions for templates
+interface Template {
+  id: number;
+  title: string;
+  name: string;
+  description: string;
+  specialty: string;
+  category: string;
+  content: any;
+  noteType: string;
+  noteSubtype: string;
+  compatibleNoteTypes: string[];
+  compatibleSubtypes: string[];
+  isFavorite: boolean;
+}
+
+type NoteType = 'admission' | 'progress' | 'consultation' | null;
+type NoteSubtype = 'general' | 'icu' | 'er' | 'clinic';
 import { SmartPMHSection } from "@/components/SmartPMHSection";
 import { SmartImpressionSection } from "@/components/SmartImpressionSection";
 import { MedicationSection } from "@/components/MedicationSectionNew";
@@ -67,7 +86,7 @@ import * as DiffMatchPatch from 'diff-match-patch';
 import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
 import HpiSection from '@/components/HpiSection';
 import { TemplateAwareLivePreview } from '@/components/TemplateAwareLivePreview';
-import { type Template, type NoteType, type NoteSubtype } from '@shared/schema';
+
 import { type TemplateContent, getSectionById } from '@/lib/sectionLibrary';
 
 // Import is correct; RosSymptomAccordion is used inside HpiSection
@@ -202,7 +221,9 @@ function ReviewOfSystems() {
   const [progressType, setProgressType] = useState<"general" | "icu">("general");
   
   // Template context
-  const { selectedTemplate, setSelectedTemplate, isTemplateActive } = useTemplate();
+  // Template state management
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const isTemplateActive = selectedTemplate !== null;
   
   // Template-related state (keeping local for loading/error states)
   const [availableTemplates, setAvailableTemplates] = useState<Template[]>([]);
@@ -231,6 +252,18 @@ function ReviewOfSystems() {
     alcohol: { status: false, details: "" },
     drugs: { status: false, details: "" }
   });
+
+  // Local state for social history details to prevent focus loss during typing
+  const [smokingDetails, setSmokingDetails] = useState("");
+  const [alcoholDetails, setAlcoholDetails] = useState("");
+  const [drugsDetails, setDrugsDetails] = useState("");
+
+  // Sync local state with main state when social history changes externally
+  useEffect(() => {
+    setSmokingDetails(socialHistory.smoking.details);
+    setAlcoholDetails(socialHistory.alcohol.details);
+    setDrugsDetails(socialHistory.drugs.details);
+  }, [socialHistory.smoking.details, socialHistory.alcohol.details, socialHistory.drugs.details]);
   
   // Use refs to store current values for note generation without triggering re-renders
   const allergiesRef = useRef(allergies);
@@ -1447,7 +1480,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     // Apply consistent medical note formatting
     const validSections = sections.filter(section => section.trim());
     return formatMedicalNote(validSections);
-  }, [noteType, admissionType, progressType, language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms]);
+  }, [noteType, admissionType, progressType, language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, socialHistory, allergies]);
 
   // Additional helper functions for template sections
   const generateAllergiesSocialText = useCallback((customContent?: string) => {
@@ -1739,44 +1772,32 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   }, [noteType, admissionType, progressType, loadTemplatesForNoteType]);
 
-  // Update note when options change
+  // Update note when options change - removed infinite loop useEffect
+
+
+
+  // Controlled effect to trigger note updates for major changes
   useEffect(() => {
     handleOptionChange();
-  }, [handleOptionChange]);
-
-
-
-  // Additional effect to ensure medication changes trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [medications]);
-
-  // Additional effect to ensure lab value changes trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [processedLabValues]);
-
-  // Additional effect to ensure PMH changes trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [pmhText]);
+  }, [medications, processedLabValues, pmhText, noteType, admissionType, progressType, chiefComplaint, selectedPeSystems, intubationValues, impressionText, selectedSymptoms, selectedTemplate]);
 
   // Update note on blur for allergies and social history to prevent focus issues
   const timeoutRef = useRef<NodeJS.Timeout[]>([]);
   
-  const handleAllergiesBlur = useCallback(() => {
+  // Add confirmation handlers that only update the note when explicitly called
+  const handleAllergiesConfirm = useCallback(() => {
     try {
       handleOptionChange();
     } catch (error) {
-      console.error('Error in handleAllergiesBlur:', error);
+      console.error('Error in handleAllergiesConfirm:', error);
     }
   }, [handleOptionChange]);
 
-  const handleSocialHistoryBlur = useCallback(() => {
+  const handleSocialHistoryConfirm = useCallback(() => {
     try {
       handleOptionChange();
     } catch (error) {
-      console.error('Error in handleSocialHistoryBlur:', error);
+      console.error('Error in handleSocialHistoryConfirm:', error);
     }
   }, [handleOptionChange]);
   
@@ -1788,35 +1809,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     };
   }, []);
 
-  // Additional effect to ensure ROS and HPI changes trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [selectedSystem, selectedSymptoms, hpiText]);
-
-  // Additional effect to ensure note type and subtype changes trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [noteType, admissionType, progressType]);
-
-  // Additional effect to ensure chief complaint changes trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [chiefComplaint]);
-
-  // Additional effect to ensure physical exam changes trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [selectedPeSystems]);
-
-  // Additional effect to ensure ventilation parameters trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [intubationValues]);
-
-  // Additional effect to ensure impression changes trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [impressionText]);
+  // Removed redundant useEffect hooks that were causing re-renders
 
   // Template state persistence
   useEffect(() => {
@@ -1839,10 +1832,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   }, [selectedTemplate]);
 
-  // Update note when template changes
-  useEffect(() => {
-    handleOptionChange();
-  }, [selectedTemplate, handleOptionChange]);
+  // Template changes are now handled by the main useEffect
 
   // Keyboard navigation for tabs
   useEffect(() => {
@@ -2254,9 +2244,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                         hasAllergies: !allergies.hasAllergies,
                         allergiesList: allergies.hasAllergies ? [] : allergies.allergiesList
                       });
-                      // Trigger note update immediately for toggle actions
-                      const timeout = setTimeout(handleAllergiesBlur, 0);
-                      timeoutRef.current.push(timeout);
                     }}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
                       allergies.hasAllergies ? 'bg-orange-500' : 'bg-gray-200'
@@ -2283,10 +2270,8 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                           }));
                         }
                         setNewAllergy('');
-                        handleAllergiesBlur();
                       }
                     }}
-                    onBlur={handleAllergiesBlur}
                     className="flex-1"
                   />
                   <Button
@@ -2297,6 +2282,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                           allergiesList: [...prev.allergiesList, newAllergy.trim()]
                         }));
                         setNewAllergy('');
+                        handleAllergiesConfirm();
                       }
                     }}
                     size="sm"
@@ -2306,19 +2292,29 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                   </Button>
                 </div>
                 {allergies.hasAllergies && allergies.allergiesList.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {allergies.allergiesList.map((allergy, index) => (
-                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                        {allergy}
-                        <X
-                          className="w-3 h-3 cursor-pointer hover:text-red-600"
-                          onClick={() => setAllergies(prev => ({
-                            hasAllergies: true,
-                            allergiesList: prev.allergiesList.filter((_, i) => i !== index)
-                          }))}
-                        />
-                      </Badge>
-                    ))}
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      {allergies.allergiesList.map((allergy, index) => (
+                        <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                          {allergy}
+                          <X
+                            className="w-3 h-3 cursor-pointer hover:text-red-600"
+                            onClick={() => setAllergies(prev => ({
+                              hasAllergies: true,
+                              allergiesList: prev.allergiesList.filter((_, i) => i !== index)
+                            }))}
+                          />
+                        </Badge>
+                      ))}
+                    </div>
+                    <Button
+                      onClick={handleAllergiesConfirm}
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                    >
+                      {language === 'fr' ? 'Confirmer les allergies' : 'Confirm Allergies'}
+                    </Button>
                   </div>
                 )}
               </div>
@@ -2334,9 +2330,15 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                     <span className="text-sm">{language === 'fr' ? 'Tabagisme' : 'Smoking'}</span>
                     <button
                       onClick={() => {
-                        setSocialHistory(prev => ({ ...prev, smoking: { status: !prev.smoking.status, details: prev.smoking.status ? '' : prev.smoking.details } }));
-                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
-                        timeoutRef.current.push(timeout);
+                        const newStatus = !socialHistory.smoking.status;
+                        setSocialHistory(prev => ({ ...prev, smoking: { status: newStatus, details: newStatus ? prev.smoking.details : '' } }));
+                        if (newStatus) {
+                          // When enabling, sync local state with saved state
+                          setSmokingDetails(socialHistory.smoking.details);
+                        } else {
+                          // When disabling, clear local state
+                          setSmokingDetails('');
+                        }
                       }}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
                         socialHistory.smoking.status ? 'bg-pink-500' : 'bg-gray-200'
@@ -2350,21 +2352,45 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                     </button>
                   </div>
                   {socialHistory.smoking.status && (
-                    <Input
-                      placeholder={language === 'fr' ? 'Détails du tabagisme...' : 'Smoking details...'}
-                      value={socialHistory.smoking.details}
-                      onChange={(e) => setSocialHistory(prev => ({ ...prev, smoking: { ...prev.smoking, details: e.target.value } }))}
-                      onBlur={handleSocialHistoryBlur}
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder={language === 'fr' ? 'Détails du tabagisme...' : 'Smoking details...'}
+                        value={smokingDetails}
+                        onChange={(e) => setSmokingDetails(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            setSocialHistory(prev => ({ ...prev, smoking: { ...prev.smoking, details: smokingDetails } }));
+                            handleSocialHistoryConfirm();
+                          }
+                        }}
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={() => {
+                          setSocialHistory(prev => ({ ...prev, smoking: { ...prev.smoking, details: smokingDetails } }));
+                          handleSocialHistoryConfirm();
+                        }}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {language === 'fr' ? 'Confirmer' : 'Confirm'}
+                      </Button>
+                    </div>
                   )}
                   
                   <div className="flex items-center justify-between">
                     <span className="text-sm">{language === 'fr' ? 'Alcool' : 'Alcohol'}</span>
                     <button
                       onClick={() => {
-                        setSocialHistory(prev => ({ ...prev, alcohol: { status: !prev.alcohol.status, details: prev.alcohol.status ? '' : prev.alcohol.details } }));
-                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
-                        timeoutRef.current.push(timeout);
+                        const newStatus = !socialHistory.alcohol.status;
+                        setSocialHistory(prev => ({ ...prev, alcohol: { status: newStatus, details: newStatus ? prev.alcohol.details : '' } }));
+                        if (newStatus) {
+                          // When enabling, sync local state with saved state
+                          setAlcoholDetails(socialHistory.alcohol.details);
+                        } else {
+                          // When disabling, clear local state
+                          setAlcoholDetails('');
+                        }
                       }}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
                         socialHistory.alcohol.status ? 'bg-pink-500' : 'bg-gray-200'
@@ -2378,21 +2404,45 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                     </button>
                   </div>
                   {socialHistory.alcohol.status && (
-                    <Input
-                      placeholder={language === 'fr' ? 'Détails de l\'alcool...' : 'Alcohol details...'}
-                      value={socialHistory.alcohol.details}
-                      onChange={(e) => setSocialHistory(prev => ({ ...prev, alcohol: { ...prev.alcohol, details: e.target.value } }))}
-                      onBlur={handleSocialHistoryBlur}
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder={language === 'fr' ? 'Détails de l\'alcool...' : 'Alcohol details...'}
+                        value={alcoholDetails}
+                        onChange={(e) => setAlcoholDetails(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            setSocialHistory(prev => ({ ...prev, alcohol: { ...prev.alcohol, details: alcoholDetails } }));
+                            handleSocialHistoryConfirm();
+                          }
+                        }}
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={() => {
+                          setSocialHistory(prev => ({ ...prev, alcohol: { ...prev.alcohol, details: alcoholDetails } }));
+                          handleSocialHistoryConfirm();
+                        }}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {language === 'fr' ? 'Confirmer' : 'Confirm'}
+                      </Button>
+                    </div>
                   )}
                   
                   <div className="flex items-center justify-between">
                     <span className="text-sm">{language === 'fr' ? 'Drogues' : 'Drugs'}</span>
                     <button
                       onClick={() => {
-                        setSocialHistory(prev => ({ ...prev, drugs: { status: !prev.drugs.status, details: prev.drugs.status ? '' : prev.drugs.details } }));
-                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
-                        timeoutRef.current.push(timeout);
+                        const newStatus = !socialHistory.drugs.status;
+                        setSocialHistory(prev => ({ ...prev, drugs: { status: newStatus, details: newStatus ? prev.drugs.details : '' } }));
+                        if (newStatus) {
+                          // When enabling, sync local state with saved state
+                          setDrugsDetails(socialHistory.drugs.details);
+                        } else {
+                          // When disabling, clear local state
+                          setDrugsDetails('');
+                        }
                       }}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
                         socialHistory.drugs.status ? 'bg-pink-500' : 'bg-gray-200'
@@ -2406,12 +2456,30 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                     </button>
                   </div>
                   {socialHistory.drugs.status && (
-                    <Input
-                      placeholder={language === 'fr' ? 'Détails des drogues...' : 'Drug details...'}
-                      value={socialHistory.drugs.details}
-                      onChange={(e) => setSocialHistory(prev => ({ ...prev, drugs: { ...prev.drugs, details: e.target.value } }))}
-                      onBlur={handleSocialHistoryBlur}
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder={language === 'fr' ? 'Détails des drogues...' : 'Drug details...'}
+                        value={drugsDetails}
+                        onChange={(e) => setDrugsDetails(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            setSocialHistory(prev => ({ ...prev, drugs: { ...prev.drugs, details: drugsDetails } }));
+                            handleSocialHistoryConfirm();
+                          }
+                        }}
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={() => {
+                          setSocialHistory(prev => ({ ...prev, drugs: { ...prev.drugs, details: drugsDetails } }));
+                          handleSocialHistoryConfirm();
+                        }}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {language === 'fr' ? 'Confirmer' : 'Confirm'}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -2658,6 +2726,53 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     return noteData;
   };
 
+  // Handler to sync labs from note text on blur
+  const handleNoteBlur = useCallback(() => {
+    // Parse the note for lab values section
+    // Example: LABORATORY RESULTS:\nWBC 5.2 (5.0, 5.1)\nHemoglobin 13.2\n...
+    const labSectionMatch = note.match(/LABORATORY RESULTS:\n([\s\S]*?)(\n\w+:|$)/i);
+    if (!labSectionMatch) return;
+    const labLines = labSectionMatch[1].split('\n').map(l => l.trim()).filter(Boolean);
+    // Parse each lab line: e.g., "WBC 5.2 (5.0, 5.1)"
+    const newLabs: LabValue[] = [];
+    labLines.forEach(line => {
+      const match = line.match(/^(\w[\w\s\-\/]+)\s+([\d\.]+)(?:\s*\(([^)]+)\))?/);
+      if (match) {
+        const testName = match[1].trim();
+        const mainValue = match[2];
+        const trended = match[3] ? match[3].split(',').map(v => v.trim()) : [];
+        // Add main value
+        newLabs.push({
+          testName,
+          value: mainValue,
+          unit: '',
+          category: '',
+          timestamp: new Date().toISOString(),
+          referenceRange: '',
+        });
+        // Add trended values
+        trended.forEach(val => {
+          newLabs.push({
+            testName,
+            value: val,
+            unit: '',
+            category: '',
+            timestamp: new Date().toISOString(),
+            referenceRange: '',
+          });
+        });
+      }
+    });
+    // If parsed labs differ from current, update processedLabValues
+    if (newLabs.length > 0) {
+      const processedLabs = newLabs.map(lab => ({
+        ...lab,
+        id: `${lab.testName}-${Date.now()}` // Add a unique ID
+      }));
+      setProcessedLabValues(processedLabs);
+    }
+  }, [note, setProcessedLabValues]);
+
   // Render the live preview panel content with template awareness
   const renderLivePreview = () => {
     // Safely format note data with fallbacks
@@ -2707,6 +2822,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
         totalSystems={totalSystems || 0}
         generatedNote={note || ''}
         className="h-full"
+        onBlur={handleNoteBlur} // FIXED PROP NAME
       />
     );
   };

@@ -1,20 +1,17 @@
 // Mock AWS services for free local development
-import { anthropic } from './anthropic';
 import { generateWithGemini } from './gemini';
 
 export const mockBedrock = {
   async invokeModel(params: any) {
-    // Use existing Anthropic API during development
+    // Use Gemini API for development instead of Anthropic
     const messages = JSON.parse(params.body).messages;
-    const response = await anthropic.messages.create({
-      model: "claude-3-sonnet-20240229",
-      max_tokens: 4000,
-      messages: messages
-    });
+    const userMessage = messages.find((m: any) => m.role === 'user')?.content || '';
+    
+    const response = await generateWithGemini(userMessage);
     
     return {
       body: new TextEncoder().encode(JSON.stringify({
-        content: [{ text: response.content[0].text }]
+        content: [{ text: response }]
       }))
     };
   }

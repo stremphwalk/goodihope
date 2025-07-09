@@ -54,21 +54,20 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "react-oidc-context";
-import { useTemplate } from "@/contexts/TemplateContext";
 import { SmartPMHSection } from "@/components/SmartPMHSection";
 import { SmartImpressionSection } from "@/components/SmartImpressionSection";
 import { MedicationSection } from "@/components/MedicationSectionNew";
 import { ChiefComplaintSection, type ChiefComplaintData } from "@/components/ChiefComplaintSection";
-import { type MedicationData, formatMedicationsForNote } from "@/lib/medicationUtils";
+import { type MedicationData, formatMedicationsForNote, SelectedMedication } from "@/lib/medicationUtils";
 import { LabImageUpload } from "@/components/LabImageUpload";
 import { LabValuesDisplay } from "@/components/LabValuesDisplay";
-import { processLabValues, formatLabValuesForNote, type LabValue, type ProcessedLabValue } from "@/lib/labUtils";
+import { LabValueAutoComplete } from "@/components/LabValueAutoComplete";
+import { ImprovedLabInterface } from "@/components/ImprovedLabInterface";
+import { processLabValues, formatLabValuesForNote as formatLabs, type LabValue, type ProcessedLabValue } from "@/lib/labUtils";
 import * as DiffMatchPatch from 'diff-match-patch';
 import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
 import HpiSection from '@/components/HpiSection';
-import { TemplateAwareLivePreview } from '@/components/TemplateAwareLivePreview';
-import { type Template, type NoteType, type NoteSubtype } from '@shared/schema';
-import { type TemplateContent } from '@/lib/sectionLibrary';
+import { SimpleLivePreview } from '@/components/SimpleLivePreview';
 
 // Import is correct; RosSymptomAccordion is used inside HpiSection
 
@@ -191,11 +190,9 @@ function ReviewOfSystems() {
   const [admissionType, setAdmissionType] = useState<"general" | "icu">("general");
   const [progressType, setProgressType] = useState<"general" | "icu">("general");
   
-  // Template context
-  const { selectedTemplate, setSelectedTemplate, isTemplateActive } = useTemplate();
-  
-  // Template-related state (keeping local for loading/error states)
-  const [availableTemplates, setAvailableTemplates] = useState<Template[]>([]);
+  // Template functionality removed - focusing on dot phrases
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   
@@ -208,9 +205,9 @@ function ReviewOfSystems() {
   // ICU intubation parameters
   const [intubationValues, setIntubationValues] = useState<Record<string, { current: string; past: string[] }>>({});
   
-  const [medications, setMedications] = useState<MedicationData>({ 
-    homeMedications: [], 
-    hospitalMedications: [] 
+  const [medications, setMedications] = useState<MedicationData>({
+    homeMedications: [],
+    hospitalMedications: []
   });
   
   const [allergies, setAllergies] = useState<AllergiesData>({ hasAllergies: false, allergiesList: [] });
@@ -250,6 +247,7 @@ function ReviewOfSystems() {
   const [labValues, setLabValues] = useState<LabValue[]>([]);
   const [processedLabValues, setProcessedLabValues] = useState<ProcessedLabValue[]>([]);
   const [selectedLabTests, setSelectedLabTests] = useState<Set<string>>(new Set());
+  const [selectedPanel, setSelectedPanel] = useState('bmp');
   
   // Active tab state for keyboard navigation
   const [activeTab, setActiveTab] = useState("note-type");
@@ -290,7 +288,7 @@ function ReviewOfSystems() {
     'Authorization': `Bearer ${id_token}`,
   }), []);
 
-  const loadTemplatesForNoteType = useCallback(async (noteType: NoteType | null, subtype: NoteSubtype) => {
+  const loadTemplatesForNoteType = useCallback(async (noteType: any, subtype: any) => {
     if (!auth.user?.id_token || !noteType) {
       setAvailableTemplates([]);
       return;
@@ -305,31 +303,8 @@ function ReviewOfSystems() {
       params.append('compatible_note_type', noteType);
       params.append('compatible_subtype', subtype);
       
-      const response = await fetch(`/api/templates?${params.toString()}`, {
-        headers: getApiHeaders(auth.user.id_token),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to load templates');
-      }
-      
-      const data = await response.json();
-      const templates = data.map((template: any) => ({
-        ...template,
-        createdAt: new Date(template.createdAt),
-        updatedAt: new Date(template.updatedAt)
-      }));
-      
-      // Filter templates based on compatibility
-      const compatibleTemplates = templates.filter((template: Template) => {
-        const noteTypes = template.compatibleNoteTypes as string[] || [];
-        const subtypes = template.compatibleSubtypes as string[] || [];
-        
-        return noteTypes.includes(noteType) && 
-               (subtypes.length === 0 || subtypes.includes(subtype));
-      });
-      
-      setAvailableTemplates(compatibleTemplates);
+      // Template API removed - no templates to load
+      setAvailableTemplates([]);
     } catch (error) {
       console.error('Failed to load templates:', error);
       setTemplateError(error instanceof Error ? error.message : 'Failed to load templates');
@@ -339,77 +314,16 @@ function ReviewOfSystems() {
     }
   }, [auth.user?.id_token, getApiHeaders]);
 
-  // Get default content for a section from selected template
-  const getSectionDefaultContent = useCallback((sectionId: string): string => {
-    if (!selectedTemplate || !selectedTemplate.content) return '';
-    
-    try {
-      let templateContent: TemplateContent;
-      
-      // Handle object content
-      if (typeof selectedTemplate.content === 'object' && selectedTemplate.content !== null) {
-        templateContent = selectedTemplate.content as TemplateContent;
-      } 
-      // Handle string content
-      else if (typeof selectedTemplate.content === 'string' && selectedTemplate.content.trim()) {
-        const parsed = JSON.parse(selectedTemplate.content);
-        // Validate parsed content has expected structure
-        if (!parsed || typeof parsed !== 'object') {
-          console.warn('Invalid template content structure:', parsed);
-          return '';
-        }
-        templateContent = parsed as TemplateContent;
-      } 
-      // Handle other types
-      else {
-        console.warn('Unsupported template content type:', typeof selectedTemplate.content);
-        return '';
-      }
-      
-      // Validate templateContent structure
-      if (!templateContent || !Array.isArray(templateContent.sections)) {
-        console.warn('Template content missing sections array:', templateContent);
-        return '';
-      }
-      
-      // Find the section in the template
-      const section = templateContent.sections.find(s => s && s.sectionId === sectionId);
-      const content = section?.customContent;
-      
-      // Return content if it's a string, empty string otherwise
-      return typeof content === 'string' ? content : '';
-    } catch (error) {
-      console.error('Error accessing section defaults for sectionId:', sectionId, error);
-      return '';
-    }
-  }, [selectedTemplate]);
+  // Template functionality removed - focusing on dot phrases
 
-  // Track template usage
-  const trackTemplateUsage = useCallback(async (template: Template) => {
-    if (!auth.user?.id_token) return;
-    
-    try {
-      await fetch('/api/template-usage', {
-        method: 'POST',
-        headers: getApiHeaders(auth.user.id_token),
-        body: JSON.stringify({
-          templateId: template.id,
-          patientContext: {
-            noteType,
-            admissionType,
-            progressType,
-            timestamp: new Date().toISOString()
-          }
-        }),
-      });
-    } catch (error) {
-      console.error('Failed to track template usage:', error);
-      // Don't throw error as this is not critical for functionality
-    }
-  }, [auth.user?.id_token, getApiHeaders, noteType, admissionType, progressType]);
+  // Template functionality disabled - focusing on dot phrases
+  // Template usage tracking removed - API endpoint no longer exists
+  const trackTemplateUsage = useCallback(async (template: any) => {
+    // Template functionality disabled
+  }, []);
 
   // Handle template selection with usage tracking
-  const handleTemplateSelection = useCallback((template: Template | null) => {
+  const handleTemplateSelection = useCallback((template: any) => {
     setSelectedTemplate(template);
     if (template) {
       trackTemplateUsage(template);
@@ -502,16 +416,44 @@ function ReviewOfSystems() {
 
   // Handle lab values extraction
   const handleLabValuesExtracted = useCallback((newLabValues: LabValue[]) => {
+    console.log('🔬 handleLabValuesExtracted called with:', newLabValues);
+    console.log('🔬 Number of lab values received:', newLabValues?.length || 0);
     // This is the fix: It REPLACES the old data with the new data
     setLabValues(newLabValues);
   }, []);
 
+  // Handle manual lab value addition
+  const handleManualLabAdd = useCallback((newLabValues: LabValue[]) => {
+    if (!Array.isArray(newLabValues) || newLabValues.length === 0) {
+      console.warn('Invalid lab values provided to handleManualLabAdd:', newLabValues);
+      return;
+    }
+    setLabValues(prev => [...prev, ...newLabValues]);
+  }, []);
+
+  // Handle lab value removal
+  const handleLabRemove = useCallback((testName: string) => {
+    if (!testName) {
+      console.warn('Invalid test name provided to handleLabRemove:', testName);
+      return;
+    }
+    setLabValues(prev => prev.filter(lab => 
+      lab.testName.toLowerCase() !== testName.toLowerCase()
+    ));
+  }, []);
+
   // Update processed lab values when labValues changes
   useEffect(() => {
+    console.log('🔬 Lab values state changed:', labValues);
+    console.log('🔬 Lab values length:', labValues?.length || 0);
     if (labValues && labValues.length > 0) {
+      console.log('🔬 Processing lab values...');
       const processed = processLabValues(labValues);
+      console.log('🔬 Processed lab values result:', processed);
+      console.log('🔬 Processed lab values length:', processed?.length || 0);
       setProcessedLabValues(processed);
     } else {
+      console.log('🔬 No lab values to process, clearing display');
       // This makes sure the display clears if there are no labs
       setProcessedLabValues([]);
     }
@@ -837,7 +779,7 @@ function ReviewOfSystems() {
             return `${header}:\n${placeholder}`;
           }
           
-          const labText = formatLabValuesForNote(processedLabValues);
+          const labText = formatLabs(processedLabValues);
           return `${header}:\n${labText}`;
         }
         
@@ -1172,7 +1114,7 @@ function ReviewOfSystems() {
     const generateLabValuesText = () => {
       if (processedLabValues.length === 0) return "";
       
-      const labText = formatLabValuesForNote(processedLabValues);
+      const labText = formatLabs(processedLabValues);
       return labText ? (language === 'fr' ? `RÉSULTATS DE LABORATOIRE:\n${labText}` : `LABORATORY RESULTS:\n${labText}`) : "";
     };
 
@@ -1192,8 +1134,7 @@ function ReviewOfSystems() {
           let hpiWithRosFr = hpiText || "[Entrer l'HMA]";
           const rosText = generateRosText();
           if (rosText) hpiWithRosFr = hpiWithRosFr.trim().endsWith('.') ? hpiWithRosFr + ' ' + rosText : hpiWithRosFr + '. ' + rosText;
-          sections.push(`HISTOIRE DE LA MALADIE ACTUELLE :
-${hpiWithRosFr}`); // ROS now integrated into HPI section; no separate ROS section.;
+          sections.push(`HISTOIRE DE LA MALADIE ACTUELLE :\n${hpiWithRosFr}`); // ROS now integrated into HPI section; no separate ROS section.;
           
           const peText = generatePhysicalExamText();
           if (peText) sections.push(peText);
@@ -1224,8 +1165,7 @@ ${hpiWithRosFr}`); // ROS now integrated into HPI section; no separate ROS secti
           let hpiWithRos = hpiText || "[Enter HPI]";
           const rosText = generateRosText();
           if (rosText) hpiWithRos = hpiWithRos.trim().endsWith('.') ? hpiWithRos + ' ' + rosText : hpiWithRos + '. ' + rosText;
-          sections.push(`HISTORY OF PRESENTING ILLNESS:
-${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section.
+          sections.push(`HISTORY OF PRESENTING ILLNESS:\n${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section.
           
           const peText = generatePhysicalExamText();
           if (peText) sections.push(peText);
@@ -1696,10 +1636,14 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     handleOptionChange();
   }, [processedLabValues]);
 
-  // Additional effect to ensure PMH changes trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [pmhText]);
+  // PMH blur handler to prevent focus issues during typing
+  const handlePMHBlur = useCallback(() => {
+    try {
+      handleOptionChange();
+    } catch (error) {
+      console.error('Error in handlePMHBlur:', error);
+    }
+  }, [handleOptionChange]);
 
   // Update note on blur for allergies and social history to prevent focus issues
   const timeoutRef = useRef<NodeJS.Timeout[]>([]);
@@ -1753,10 +1697,14 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     handleOptionChange();
   }, [intubationValues]);
 
-  // Additional effect to ensure impression changes trigger note updates
-  useEffect(() => {
-    handleOptionChange();
-  }, [impressionText]);
+  // Impression blur handler to prevent focus issues during typing
+  const handleImpressionBlur = useCallback(() => {
+    try {
+      handleOptionChange();
+    } catch (error) {
+      console.error('Error in handleImpressionBlur:', error);
+    }
+  }, [handleOptionChange]);
 
   // Template state persistence
   useEffect(() => {
@@ -2050,70 +1998,21 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                         key={template.id}
                         className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
                           selectedTemplate?.id === template.id
-                            ? "border-purple-500 bg-purple-50"
+                            ? "border-blue-500 bg-blue-50"
                             : "border-gray-200 hover:border-gray-300"
                         }`}
                         onClick={() => handleTemplateSelection(template)}
                       >
                         <div className="flex items-center space-x-3">
-                          <div className={`w-3 h-3 rounded-full ${
-                            selectedTemplate?.id === template.id ? "bg-purple-500" : "bg-gray-300"
-                          }`} />
+                          <div className={`w-3 h-3 rounded-full ${selectedTemplate?.id === template.id ? "bg-blue-500" : "bg-gray-300"}`} />
                           <div className="flex items-center space-x-2">
-                            <ClipboardList className="w-4 h-4 text-purple-600" />
+                            <FileText className="w-4 h-4 text-gray-600" />
                             <span className="font-medium text-gray-900">{template.name}</span>
-                            {template.specialty && (
-                              <Badge variant="outline" className="text-xs">
-                                {template.specialty}
-                              </Badge>
-                            )}
                           </div>
                         </div>
-                        {template.description && (
-                          <p className="text-sm text-gray-500 ml-6 mt-1">{template.description}</p>
-                        )}
-                        <div className="flex items-center space-x-4 ml-6 mt-2 text-xs text-gray-400">
-                          <span>Category: {template.category}</span>
-                          {template.isFavorite && (
-                            <span className="flex items-center space-x-1">
-                              <span className="text-yellow-500">★</span>
-                              <span>Favorite</span>
-                            </span>
-                          )}
-                        </div>
+                        <p className="text-sm text-gray-500 ml-6">{template.description}</p>
                       </div>
                     ))}
-
-                    {/* No Templates Message */}
-                    {!loadingTemplates && !templateError && availableTemplates.length === 0 && (
-                      <div className="p-3 border border-dashed rounded-lg bg-gray-50">
-                        <div className="text-center">
-                          <ClipboardList className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                          <p className="text-sm text-gray-600 mb-1">No templates available for this note type</p>
-                          <p className="text-xs text-gray-500">Create templates in Smart Functions → Templates</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Browse All Templates Link */}
-                    {!loadingTemplates && availableTemplates.length > 0 && (
-                      <div className="text-center pt-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-blue-600 hover:text-blue-700"
-                          onClick={() => {
-                            // This would typically navigate to template manager
-                            toast({
-                              title: "Template Manager",
-                              description: "Go to Smart Functions → Templates to manage all templates",
-                            });
-                          }}
-                        >
-                          Browse All Templates
-                        </Button>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
@@ -2123,234 +2022,139 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       case "hpi":
         return (
           <SectionWrapper title={sectionTitle["hpi"]} sectionKey="hpi">
-            <HpiSection
-              selectedSymptoms={selectedSymptoms}
-              setSelectedSymptoms={setSelectedSymptoms}
+            <HpiSection 
+              selectedSymptoms={selectedSymptoms} 
+              setSelectedSymptoms={setSelectedSymptoms} 
             />
           </SectionWrapper>
         );
       case "ros":
         return (
           <SectionWrapper title={sectionTitle["ros"]} sectionKey="ros">
-            {/* Review of Systems UI will go here */}
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">Review of systems examination.</p>
-            </div>
+            <p>ROS is now integrated into the HPI section.</p>
           </SectionWrapper>
         );
       case "pmh":
         return (
           <SectionWrapper title={sectionTitle["pmh"]} sectionKey="pmh" controls={pmhControls}>
-            <SmartPMHSection
-              value={pmhText}
-              onChange={setPmhText}
-              defaultContent={getSectionDefaultContent("pmh")}
+            <SmartPMHSection 
+              value={pmhText} 
+              onChange={setPmhText} 
+              onBlur={handlePMHBlur} 
             />
           </SectionWrapper>
         );
       case "meds":
         return (
           <SectionWrapper title={sectionTitle["meds"]} sectionKey="meds">
-            <MedicationSection medications={medications} onMedicationsChange={setMedications} />
+            <MedicationSection 
+              medications={medications} 
+              onMedicationsChange={setMedications} 
+            />
           </SectionWrapper>
         );
       case "labs":
         return (
           <SectionWrapper title={sectionTitle["labs"]} sectionKey="labs">
-            <div className="space-y-4">
-              <LabImageUpload onLabValuesExtracted={handleLabValuesExtracted} />
-              {processedLabValues.length > 0 && (
-                <div className="medical-card">
-                  <div className="medical-card-header">
-                    <div className="flex items-center space-x-2">
-                      <TestTube className="w-5 h-5" />
-                      <span className="medical-section-title">{language === 'fr' ? 'Valeurs de laboratoire' : 'Laboratory Values'}</span>
-                      <span className="medical-badge">{processedLabValues.length}</span>
-                    </div>
-                  </div>
-                  <div className="medical-card-content">
-                    <LabValuesDisplay processedLabs={processedLabValues} onLabsChange={setProcessedLabValues} />
-                  </div>
-                </div>
-              )}
+            <div className="space-y-6">
+              <ImprovedLabInterface
+                processedLabs={processedLabValues}
+                onLabsChange={setProcessedLabValues}
+                onLabAdd={handleManualLabAdd}
+                selectedLabs={Array.from(selectedLabTests)}
+                onLabRemove={handleLabRemove}
+                onLabValuesExtracted={handleLabValuesExtracted}
+                selectedPanel={selectedPanel}
+                setSelectedPanel={setSelectedPanel}
+              />
+              <LabValuesDisplay 
+                processedLabs={processedLabValues} 
+                onLabsChange={setProcessedLabValues} 
+              />
             </div>
           </SectionWrapper>
         );
       case "allergies-social":
         return (
-          <SectionWrapper title={sectionTitle["allergies-social"]} sectionKey="allergies">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <SectionWrapper title={sectionTitle["allergies-social"]} sectionKey="allergies-social">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Allergies Section */}
-              <div className="space-y-4">
-                <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-orange-500" />
-                  {language === 'fr' ? 'Allergies' : 'Allergies'}
-                </h4>
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="text-sm text-gray-600">{language === 'fr' ? 'Patient a des allergies' : 'Patient has allergies'}</span>
-                  <button
-                    onClick={() => {
-                      setAllergies({
-                        hasAllergies: !allergies.hasAllergies,
-                        allergiesList: allergies.hasAllergies ? [] : allergies.allergiesList
-                      });
-                      // Trigger note update immediately for toggle actions
-                      const timeout = setTimeout(handleAllergiesBlur, 0);
-                      timeoutRef.current.push(timeout);
-                    }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
-                      allergies.hasAllergies ? 'bg-orange-500' : 'bg-gray-200'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        allergies.hasAllergies ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    value={newAllergy}
-                    onChange={(e) => setNewAllergy(e.target.value)}
-                    placeholder={language === 'fr' ? 'Ajouter une allergie...' : 'Add allergy...'}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newAllergy.trim()) {
-                        if (!allergies.allergiesList.includes(newAllergy.trim())) {
-                          setAllergies(prev => ({
-                            hasAllergies: true,
-                            allergiesList: [...prev.allergiesList, newAllergy.trim()]
-                          }));
-                        }
-                        setNewAllergy('');
-                        handleAllergiesBlur();
-                      }
-                    }}
-                    onBlur={handleAllergiesBlur}
-                    className="flex-1"
+              <div className="space-y-4 p-4 border rounded-lg">
+                <h3 className="font-medium">Allergies</h3>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="has-allergies" 
+                    checked={allergies.hasAllergies} 
+                    onCheckedChange={(checked) => setAllergies(prev => ({ ...prev, hasAllergies: !!checked }))}
                   />
-                  <Button
-                    onClick={() => {
-                      if (newAllergy.trim() && !allergies.allergiesList.includes(newAllergy.trim())) {
-                        setAllergies(prev => ({
-                          hasAllergies: true,
-                          allergiesList: [...prev.allergiesList, newAllergy.trim()]
-                        }));
-                        setNewAllergy('');
-                      }
-                    }}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </Button>
+                  <Label htmlFor="has-allergies">Patient has allergies</Label>
                 </div>
-                {allergies.hasAllergies && allergies.allergiesList.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {allergies.allergiesList.map((allergy, index) => (
-                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                        {allergy}
-                        <X
-                          className="w-3 h-3 cursor-pointer hover:text-red-600"
-                          onClick={() => setAllergies(prev => ({
-                            hasAllergies: true,
-                            allergiesList: prev.allergiesList.filter((_, i) => i !== index)
-                          }))}
-                        />
-                      </Badge>
-                    ))}
+                {allergies.hasAllergies && (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Input 
+                        value={newAllergy} 
+                        onChange={(e) => setNewAllergy(e.target.value)} 
+                        placeholder="Add allergy..." 
+                        onKeyDown={(e) => e.key === 'Enter' && addAllergy()}
+                      />
+                      <Button onClick={addAllergy}>Add</Button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {allergies.allergiesList.map(allergy => (
+                        <Badge key={allergy} variant="outline" className="flex items-center gap-1">
+                          {allergy}
+                          <button onClick={() => removeAllergy(allergy)}><X className="w-3 h-3" /></button>
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
-              
               {/* Social History Section */}
-              <div className="space-y-4">
-                <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                  <Users className="w-4 h-4 text-pink-500" />
-                  {language === 'fr' ? 'Histoire Sociale' : 'Social History'}
-                </h4>
+              <div className="space-y-4 p-4 border rounded-lg">
+                <h3 className="font-medium">Social History</h3>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm">{language === 'fr' ? 'Tabagisme' : 'Smoking'}</span>
-                    <button
-                      onClick={() => {
-                        setSocialHistory(prev => ({ ...prev, smoking: { status: !prev.smoking.status, details: prev.smoking.status ? '' : prev.smoking.details } }));
-                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
-                        timeoutRef.current.push(timeout);
-                      }}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
-                        socialHistory.smoking.status ? 'bg-pink-500' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          socialHistory.smoking.status ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
+                    <Label>Smoking</Label>
+                    <Checkbox 
+                      checked={socialHistory.smoking.status} 
+                      onCheckedChange={(checked) => setSocialHistory(prev => ({ ...prev, smoking: { ...prev.smoking, status: !!checked } }))}
+                    />
                   </div>
                   {socialHistory.smoking.status && (
-                    <Input
-                      placeholder={language === 'fr' ? 'Détails du tabagisme...' : 'Smoking details...'}
-                      value={socialHistory.smoking.details}
-                      onChange={(e) => setSocialHistory(prev => ({ ...prev, smoking: { ...prev.smoking, details: e.target.value } }))}
-                      onBlur={handleSocialHistoryBlur}
+                    <Input 
+                      value={socialHistory.smoking.details} 
+                      onChange={(e) => setSocialHistory(prev => ({ ...prev, smoking: { ...prev.smoking, details: e.target.value } }))} 
+                      placeholder="Details (e.g., 1 pack/day)"
                     />
                   )}
-                  
                   <div className="flex items-center justify-between">
-                    <span className="text-sm">{language === 'fr' ? 'Alcool' : 'Alcohol'}</span>
-                    <button
-                      onClick={() => {
-                        setSocialHistory(prev => ({ ...prev, alcohol: { status: !prev.alcohol.status, details: prev.alcohol.status ? '' : prev.alcohol.details } }));
-                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
-                        timeoutRef.current.push(timeout);
-                      }}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
-                        socialHistory.alcohol.status ? 'bg-pink-500' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          socialHistory.alcohol.status ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
+                    <Label>Alcohol</Label>
+                    <Checkbox 
+                      checked={socialHistory.alcohol.status} 
+                      onCheckedChange={(checked) => setSocialHistory(prev => ({ ...prev, alcohol: { ...prev.alcohol, status: !!checked } }))}
+                    />
                   </div>
                   {socialHistory.alcohol.status && (
-                    <Input
-                      placeholder={language === 'fr' ? 'Détails de l\'alcool...' : 'Alcohol details...'}
-                      value={socialHistory.alcohol.details}
-                      onChange={(e) => setSocialHistory(prev => ({ ...prev, alcohol: { ...prev.alcohol, details: e.target.value } }))}
-                      onBlur={handleSocialHistoryBlur}
+                    <Input 
+                      value={socialHistory.alcohol.details} 
+                      onChange={(e) => setSocialHistory(prev => ({ ...prev, alcohol: { ...prev.alcohol, details: e.target.value } }))} 
+                      placeholder="Details (e.g., social drinker)"
                     />
                   )}
-                  
                   <div className="flex items-center justify-between">
-                    <span className="text-sm">{language === 'fr' ? 'Drogues' : 'Drugs'}</span>
-                    <button
-                      onClick={() => {
-                        setSocialHistory(prev => ({ ...prev, drugs: { status: !prev.drugs.status, details: prev.drugs.status ? '' : prev.drugs.details } }));
-                        const timeout = setTimeout(handleSocialHistoryBlur, 0);
-                        timeoutRef.current.push(timeout);
-                      }}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
-                        socialHistory.drugs.status ? 'bg-pink-500' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          socialHistory.drugs.status ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
+                    <Label>Illicit Drugs</Label>
+                    <Checkbox 
+                      checked={socialHistory.drugs.status} 
+                      onCheckedChange={(checked) => setSocialHistory(prev => ({ ...prev, drugs: { ...prev.drugs, status: !!checked } }))}
+                    />
                   </div>
                   {socialHistory.drugs.status && (
-                    <Input
-                      placeholder={language === 'fr' ? 'Détails des drogues...' : 'Drug details...'}
-                      value={socialHistory.drugs.details}
-                      onChange={(e) => setSocialHistory(prev => ({ ...prev, drugs: { ...prev.drugs, details: e.target.value } }))}
-                      onBlur={handleSocialHistoryBlur}
+                    <Input 
+                      value={socialHistory.drugs.details} 
+                      onChange={(e) => setSocialHistory(prev => ({ ...prev, drugs: { ...prev.drugs, details: e.target.value } }))} 
+                      placeholder="Details (e.g., marijuana use)"
                     />
                   )}
                 </div>
@@ -2358,328 +2162,72 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
             </div>
           </SectionWrapper>
         );
-
-      case "imagery": {
-        // --- Icons for systems ---
-        const systemIcons: Record<string, React.ReactNode> = {
-          neuro: <Brain className="w-5 h-5 text-indigo-600 bg-indigo-100 rounded-full p-1" />,
-          cardiac: <HeartPulse className="w-5 h-5 text-rose-600 bg-rose-100 rounded-full p-1" />,
-          chest: <Activity className="w-5 h-5 text-cyan-600 bg-cyan-100 rounded-full p-1" />,
-          abdomen: <Apple className="w-5 h-5 text-yellow-600 bg-yellow-100 rounded-full p-1" />,
-          pelvis: <Shield className="w-5 h-5 text-emerald-600 bg-emerald-100 rounded-full p-1" />,
-          spine: <Bone className="w-5 h-5 text-orange-600 bg-orange-100 rounded-full p-1" />,
-          limb: <Activity className="w-5 h-5 text-blue-600 bg-blue-100 rounded-full p-1" />,
-        };
-        // UI state is now defined at component top level
-
-        // --- Add study handler ---
-        const handleAddStudy = () => {
-          if (!expandedSystem || !selectedModality) return;
-          setImageryStudies([
-            ...imageryStudies,
-            { system: expandedSystem, modality: selectedModality, result: resultInput }
-          ]);
-          setExpandedSystem(null);
-          setSelectedModality("");
-          setResultInput("");
-        };
-        // --- Remove study handler (already defined above) ---
-
+      case "imagery":
         return (
           <SectionWrapper title={sectionTitle["imagery"]} sectionKey="imagery">
             <div className="space-y-4">
-              <div className="text-sm text-gray-600 mb-2">Select the system, exam type, and enter the result for each imaging study. All entries will be included in your note.</div>
-              {/* Organ system cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-2">
-                {imagerySystems.map(sys => (
-                  <div
-                    key={sys.key}
-                    className={`flex flex-col items-center justify-center p-3 rounded-xl border shadow cursor-pointer transition-all hover:bg-blue-50 ${expandedSystem === sys.key ? 'ring-2 ring-blue-400 bg-blue-50' : ''}`}
-                    onClick={() => {
-                      setExpandedSystem(expandedSystem === sys.key ? null : sys.key);
-                      setSelectedModality("");
-                      setResultInput("");
-                    }}
-                  >
-                    {systemIcons[sys.key]}
-                    <span className="mt-2 text-sm font-medium text-gray-900">{sys.label}</span>
-                  </div>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Select value={newSystem} onValueChange={setNewSystem}>
+                  <SelectTrigger><SelectValue placeholder="Select System" /></SelectTrigger>
+                  <SelectContent>
+                    {imagerySystems.map(sys => <SelectItem key={sys.key} value={sys.label}>{sys.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={newModality} onValueChange={setNewModality} disabled={!newSystem}>
+                  <SelectTrigger><SelectValue placeholder="Select Modality" /></SelectTrigger>
+                  <SelectContent>
+                    {imagerySystems.find(s => s.label === newSystem)?.modalities.map(mod => <SelectItem key={mod} value={mod}>{mod}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Input value={newResult} onChange={(e) => setNewResult(e.target.value)} placeholder="Result" />
               </div>
-              {/* Modalities and result input for expanded system */}
-              {expandedSystem && (
-                <div className="bg-gray-50 border rounded-xl p-4 flex flex-col gap-2 max-w-xl mx-auto">
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {imagerySystems.find(s => s.key === expandedSystem)?.modalities.map(mod => (
-                      <button
-                        key={mod}
-                        className={`px-3 py-1 rounded-full border text-sm font-medium transition-all ${selectedModality === mod ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'}`}
-                        onClick={() => setSelectedModality(mod)}
-                        type="button"
-                      >
-                        {mod}
-                      </button>
-                    ))}
-                  </div>
-                  {selectedModality && (
-                    <div className="flex gap-2 items-end">
-                      <input
-                        className="border rounded px-2 py-1 text-sm flex-1"
-                        type="text"
-                        placeholder="Type result or impression..."
-                        value={resultInput}
-                        onChange={e => setResultInput(e.target.value)}
-                      />
-                      <button
-                        className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50"
-                        onClick={handleAddStudy}
-                        disabled={!resultInput.trim()}
-                        type="button"
-                      >
-                        Add
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* List of added studies */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {Array.isArray(imageryStudies) && imageryStudies.map((study: { system: string; modality: string; result: string }, idx: number) => (
-                  <div key={idx} className="bg-gray-50 border rounded-lg p-3 flex flex-col gap-1 relative">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      {systemIcons[study.system]}
-                      <span className="text-gray-700">{imagerySystems.find(s => s.key === study.system)?.label}</span>
-                      <span className="text-gray-400">/</span>
-                      <span className="text-gray-700">{study.modality}</span>
-                    </div>
-                    <div className="text-xs text-gray-600">{study.result || <span className="italic text-gray-400">No result entered</span>}</div>
-                    <button
-                      className="absolute top-2 right-2 text-xs text-red-500 hover:text-red-700"
-                      onClick={() => handleRemoveStudy(idx)}
-                      type="button"
-                    >
-                      Remove
-                    </button>
+              <Button onClick={handleAddStudy} disabled={!newSystem || !newModality}>Add Study</Button>
+              <div className="space-y-2">
+                {imageryStudies.map((study, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-2 border rounded-lg">
+                    <span><strong>{study.system} {study.modality}:</strong> {study.result}</span>
+                    <Button variant="ghost" size="sm" onClick={() => handleRemoveStudy(idx)}><Trash2 className="w-4 h-4" /></Button>
                   </div>
                 ))}
-                {imageryStudies.length === 0 && (
-                  <div className="text-xs text-gray-400 italic">No imaging studies added yet.</div>
-                )}
               </div>
             </div>
           </SectionWrapper>
         );
-      } // <-- This fixes your syntax error!
-      case "impression": 
+      case "impression":
         return (
           <SectionWrapper title={sectionTitle["impression"]} sectionKey="impression">
-            <SmartImpressionSection 
-              value={impressionText} 
-              onChange={setImpressionText}
-              defaultContent={getSectionDefaultContent("impression")}
-            />
+            <SmartImpressionSection value={impressionText} onChange={setImpressionText} onBlur={handleImpressionBlur} />
           </SectionWrapper>
         );
       case "ventilation":
         return (
           <SectionWrapper title={sectionTitle["ventilation"]} sectionKey="ventilation">
-            {/* Ventilation Parameters UI will go here */}
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">Configure ventilation parameters for ICU notes.</p>
-            </div>
+            <p>Ventilation parameters section.</p>
           </SectionWrapper>
         );
       default:
-        if (selectedMenu === "dot-phrases") {
-          return (
-            <div className="medical-section-wrapper">
-              <div className="medical-card-header">
-                <h2 className="medical-section-title flex items-center gap-2">
-                  <ClipboardList className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" />
-                  Dot Phrases
-                </h2>
-              </div>
-              <div className="medical-section-content">
-                <div className="space-y-4">
-                  <p className="text-sm text-gray-600">Dot phrases functionality will be implemented here.</p>
-                </div>
-              </div>
-            </div>
-          );
-        }
-        return null;
+        return <p>Select a section</p>;
     }
-  };
-
-  // Collect all note data for template preview
-  const getNoteData = () => {
-    const noteData: Record<string, string> = {};
-    
-    try {
-      // Note type section
-      if (noteType) {
-        noteData['note-type'] = `Note Type: ${noteType.charAt(0).toUpperCase() + noteType.slice(1)}`;
-      }
-      
-      // PMH section
-      if (pmhText && pmhText.trim()) {
-        noteData['pmh'] = pmhText;
-      }
-      
-      // Medications section
-      if (medications && Array.isArray(medications.homeMedications) && Array.isArray(medications.hospitalMedications)) {
-        const allMeds = [...medications.homeMedications, ...medications.hospitalMedications];
-        if (allMeds.length > 0) {
-          noteData['meds'] = formatMedicationsForNote(medications);
-        }
-      }
-      
-      // Allergies section  
-      const currentAllergies = allergiesRef.current;
-      if (currentAllergies && currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
-        noteData['allergies-social'] = `Allergies: ${currentAllergies.allergiesList.join(', ')}`;
-      }
-      
-      // HPI section
-      if (chiefComplaint || hpiText) {
-        const hpiContent = [
-          chiefComplaint?.customComplaint?.trim() || '',
-          hpiText?.trim() || ''
-        ].filter(Boolean).join('\n');
-        if (hpiContent) {
-          noteData['hpi'] = hpiContent;
-        }
-      }
-      
-      // Physical exam
-      if (selectedPeSystems && selectedPeSystems.size > 0) {
-        const peEntries = Array.from(selectedPeSystems).map(system => {
-          const findings = physicalExamOptions[system as keyof typeof physicalExamOptions] || 'Normal';
-          return `${system}: ${findings}`;
-        });
-        noteData['physical-exam'] = peEntries.join("\n");
-      }
-      
-      // Labs
-      if (processedLabValues && Array.isArray(processedLabValues) && processedLabValues.length > 0) {
-        noteData['labs'] = formatLabValuesForNote(processedLabValues);
-      }
-      
-      // Imagery studies
-      if (imageryStudies && Array.isArray(imageryStudies) && imageryStudies.length > 0) {
-        const imageryText = imageryStudies.map(study => 
-          `${study.system} ${study.modality}: ${study.result}`
-        ).join('\n');
-        noteData['imagery'] = imageryText;
-      }
-      
-      // Impression
-      if (impressionText && impressionText.trim()) {
-        noteData['impression'] = impressionText;
-      }
-      
-      // ROS section
-      if (selectedSymptoms && Object.keys(selectedSymptoms).length > 0) {
-        const rosEntries = Object.entries(selectedSymptoms)
-          .filter(([, symptoms]) => symptoms && symptoms.size > 0)
-          .map(([system, symptoms]) => {
-            const symptomList = Array.from(symptoms);
-            return `${system}: ${symptomList.join(', ')}`;
-          });
-        if (rosEntries.length > 0) {
-          noteData['ros'] = rosEntries.join('\n');
-        }
-      }
-      
-    } catch (error) {
-      console.error('Error generating note data:', error);
-    }
-    
-    return noteData;
-  };
-
-  // Render the live preview panel content with template awareness
-  const renderLivePreview = () => {
-    // Safely format note data with fallbacks
-    const safeNoteData = {
-      'note-type': noteType || '',
-      'pmh': pmhText || '',
-      'meds': medications ? formatMedicationsForNote(medications) : '',
-      'allergies-social': (() => {
-        try {
-          const currentAllergies = allergiesRef.current;
-          const currentSocialHistory = socialHistoryRef.current;
-          
-          const allergiesText = currentAllergies?.hasAllergies 
-            ? 'Allergies: ' + (currentAllergies.allergiesList || []).join(', ') 
-            : 'No known allergies';
-          
-          const socialText = [
-            currentSocialHistory?.smoking?.status 
-              ? `Smoking: ${currentSocialHistory.smoking.details || 'Yes'}` 
-              : 'Non-smoker',
-            currentSocialHistory?.alcohol?.status 
-              ? `Alcohol: ${currentSocialHistory.alcohol.details || 'Yes'}` 
-              : 'No alcohol use',
-            currentSocialHistory?.drugs?.status 
-              ? `Drugs: ${currentSocialHistory.drugs.details || 'Yes'}` 
-              : 'No drug use'
-          ].join('\n');
-          
-          return `${allergiesText}\n\nSocial History:\n${socialText}`;
-        } catch (error) {
-          console.error('Error formatting allergies/social data:', error);
-          return 'No known allergies\n\nSocial History:\nNon-smoker\nNo alcohol use\nNo drug use';
-        }
-      })(),
-      'hpi': hpiText || '',
-      'physical-exam': selectedPeSystems && selectedPeSystems.size > 0 ? Array.from(selectedPeSystems).map(system => `${system}: ${physicalExamOptions[system as keyof typeof physicalExamOptions] || 'Normal'}`).join('\n') : '',
-      'labs': processedLabValues && processedLabValues.length > 0 ? formatLabValuesForNote(processedLabValues) : '',
-      'imagery': imageryStudies && imageryStudies.length > 0 ? imageryStudies.map(study => `${study.system} ${study.modality}: ${study.result}`).join('\n') : '',
-      'impression': impressionText || ''
-    };
-
-    return (
-      <TemplateAwareLivePreview
-        noteData={safeNoteData}
-        note={note || ''}
-        onNoteChange={handleNoteChange}
-        onCopyNote={copyToClipboard}
-        onResetNote={isManuallyEdited ? resetToGenerated : undefined}
-        documentedSystems={documentedSystems || 0}
-        totalSystems={totalSystems || 0}
-        generatedNote={note || ''}
-        className="h-full"
-      />
-    );
   };
 
   return (
-    <MainLayout
-      selectedMenu={selectedMenu}
+    <MainLayout 
+      selectedMenu={selectedMenu} 
       setSelectedMenu={setSelectedMenu}
       selectedSubOption={selectedSubOption}
       setSelectedSubOption={setSelectedSubOption}
-      livePreview={renderLivePreview()}
-      isICU={
-        (noteType === "admission" && admissionType === "icu") ||
-        (noteType === "progress" && progressType === "icu")
+      livePreview={
+        <SimpleLivePreview
+          note={note}
+          onNoteChange={handleNoteChange}
+          onCopyNote={copyToClipboard}
+          onResetNote={isManuallyEdited ? resetToGenerated : undefined}
+          className="h-full"
+        />
       }
     >
-      <div className="flex flex-1 h-full min-h-[600px] bg-gray-50">
-        <div className="flex-1 min-w-0 flex flex-col p-0">
-          <div className="w-full h-full min-h-[600px] flex flex-col rounded-none shadow-none bg-white border-0">
-            <div className="flex-1 overflow-y-auto px-6 py-4 text-base text-gray-800">
-              {renderMainContent() || (
-                <div className="text-center text-gray-400 py-12">
-                  Please select a section from the sidebar to begin.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        {/* Divider for desktop */}
-        <div className="hidden lg:block w-px bg-gray-200 h-full mx-0" />
+      <div className="p-6 overflow-y-auto">
+        {renderMainContent()}
       </div>
     </MainLayout>
   );

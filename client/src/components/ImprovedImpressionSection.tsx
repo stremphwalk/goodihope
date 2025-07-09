@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { FileText, Plus, X, ChevronDown, ChevronUp, Expand, Minimize, Trash2, GripVertical } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { FocusStableInput } from './FocusStableInput';
+import { DotPhraseTextarea } from './DotPhraseTextarea';
 import { useScrollPreservation } from '@/hooks/useScrollPreservation';
 import { wrapText } from '@/lib/textFormatting';
 import {
@@ -88,6 +88,11 @@ export function ImprovedImpressionSection({ data, onChange }: ImprovedImpression
 
   const sensors = useSensors(useSensor(PointerSensor));
 
+  const expandCollapseIcon = allExpanded ? <Minimize className="w-3 h-3" /> : <Expand className="w-3 h-3" />;
+  const expandCollapseText = allExpanded
+    ? (language === 'fr' ? 'Réduire tout' : 'Collapse All')
+    : (language === 'fr' ? 'Développer tout' : 'Expand All');
+
   // Initialize with empty entries if needed
   useEffect(() => {
     if (data.entries.length === 0) {
@@ -123,7 +128,7 @@ export function ImprovedImpressionSection({ data, onChange }: ImprovedImpression
       });
       
       // Expand the new entry
-      setExpandedEntries(prev => new Set([...prev, newId]));
+      setExpandedEntries(prev => new Set([...Array.from(prev), newId]));
     }
     
     onChange({ entries: updatedEntries });
@@ -286,8 +291,8 @@ export function ImprovedImpressionSection({ data, onChange }: ImprovedImpression
               onClick={toggleAllEntries}
               className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded text-sm transition-colors flex items-center space-x-1"
             >
-              {allExpanded ? <Minimize className="w-3 h-3" /> : <Expand className="w-3 h-3" />}
-              <span>{allExpanded ? (language === 'fr' ? 'Réduire tout' : 'Collapse All') : (language === 'fr' ? 'Développer tout' : 'Expand All')}</span>
+              {expandCollapseIcon}
+              <span>{expandCollapseText}</span>
             </button>
             <button
               onClick={clearAllEntries}
@@ -321,11 +326,12 @@ export function ImprovedImpressionSection({ data, onChange }: ImprovedImpression
                       }`}>
                         {entryIndex + 1}
                       </div>
-                      <FocusStableInput
+                      <DotPhraseTextarea
                         value={entry.mainImpression}
                         onChange={(value) => updateMainImpression(entry.id, value)}
-                        placeholder={language === 'fr' ? 'Entrer l\'impression clinique principale...' : 'Enter main clinical impression...'}
+                        placeholder={language === 'fr' ? "Entrer l'impression clinique principale..." : 'Enter main clinical impression...'}
                         className="flex-1 font-medium px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                        rows={1}
                       />
                       <div className="flex items-center space-x-1">
                         <Button
@@ -362,11 +368,12 @@ export function ImprovedImpressionSection({ data, onChange }: ImprovedImpression
                               <DraggableSubEntry key={`${entry.id}-sub-${subIndex}`} id={`${entry.id}-sub-${subIndex}`}>
                                 <div className="flex items-center space-x-2">
                                   <div className="w-2 h-2 bg-orange-400 rounded-full flex-shrink-0 mt-2"></div>
-                                  <FocusStableInput
+                                  <DotPhraseTextarea
                                     value={subEntry}
                                     onChange={(value) => updateSubEntry(entry.id, subIndex, value)}
                                     placeholder={language === 'fr' ? 'Ajouter des détails...' : 'Add details...'}
                                     className="flex-1 text-sm px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    rows={1}
                                   />
                                   <Button
                                     variant="ghost"

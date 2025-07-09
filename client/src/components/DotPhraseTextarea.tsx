@@ -7,6 +7,7 @@ import { CalculationModal } from './CalculationModal';
 import { CalculationResult } from './CalculationModal';
 import getCaretCoordinates from 'textarea-caret';
 import { useAuth } from 'react-oidc-context';
+import { useDotPhrases } from '@/hooks/useDotPhrases';
 
 interface DotPhraseTextareaProps {
   value: string;
@@ -15,6 +16,9 @@ interface DotPhraseTextareaProps {
   className?: string;
   rows?: number;
   disabled?: boolean;
+  onRef?: (ref: React.RefObject<HTMLTextAreaElement>) => void;
+  isCreationMode?: boolean;
+  onBlur?: () => void;
 }
 
 // Helper to find slash phrase at cursor
@@ -53,6 +57,9 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   className = '',
   rows = 4,
   disabled = false,
+  onRef,
+  isCreationMode = false,
+  onBlur,
 }) => {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -60,7 +67,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [smartOptions, setSmartOptions] = useState<any[]>([]);
   const [activeSmartIdx, setActiveSmartIdx] = useState<number | null>(null);
-  const [customPhrases, setCustomPhrases] = useState<CustomDotPhrase[]>([]);
+  const { data: customPhrases = [] } = useDotPhrases();
   const [isCalculationModalOpen, setIsCalculationModalOpen] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -77,34 +84,13 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const [calendarIsOpen, setCalendarIsOpen] = useState(false);
   const auth = useAuth();
 
+  // Expose textarea ref to parent
   useEffect(() => {
-    const fetchCustomPhrases = async () => {
-      if (!auth.isAuthenticated || !auth.user?.id_token) {
-        setCustomPhrases([]);
-        return;
-      }
+    if (onRef) {
+      onRef(textareaRef);
+    }
+  }, [onRef]);
 
-      try {
-        const response = await fetch('/api/dot-phrases', {
-          headers: {
-            'Authorization': `Bearer ${auth.user.id_token}`
-          }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setCustomPhrases(data);
-        } else {
-          console.error('Failed to fetch custom dot phrases');
-          setCustomPhrases([]);
-        }
-      } catch (error) {
-        console.error('Error fetching custom dot phrases:', error);
-        setCustomPhrases([]);
-      }
-    };
-
-    fetchCustomPhrases();
-  }, [auth.isAuthenticated, auth.user]);
 
   // Create combined dot phrases object
   const getCombinedDotPhrases = (): Record<string, string> => {
@@ -120,7 +106,17 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   useEffect(() => {
     const options = parseSmartOptions(value);
     setSmartOptions(options);
-  }, [value]);
+    
+    // Auto-activate first smart option if we have smart functions (but not in creation mode)
+    if (options.length > 0 && activeSmartIdx === null && !isCreationMode) {
+      // Check if this looks like a template or dot phrase expansion
+      const hasOnlySmartFunctions = value.trim().match(/^\[\[.*\]\]$/) || 
+                                   justExpandedToSmartOption.current;
+      if (hasOnlySmartFunctions) {
+        setActiveSmartIdx(0);
+      }
+    }
+  }, [value, activeSmartIdx, isCreationMode]);
 
   // Handle typing in textarea
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -206,8 +202,8 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       return;
     }
 
-    // Smart phrase dropdown navigation
-    if (smartOptions.length > 0 && activeSmartIdx !== null) {
+    // Smart phrase dropdown navigation (but not in creation mode)
+    if (!isCreationMode && smartOptions.length > 0 && activeSmartIdx !== null) {
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
         const opt = smartOptions[activeSmartIdx];
@@ -218,14 +214,21 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         const opt = smartOptions[activeSmartIdx];
         opt.selectedIdx = (opt.selectedIdx + 1) % opt.options.length;
         setSmartOptions([...smartOptions]);
-      } else if (e.key === 'Enter' || e.key === 'Tab') {
+      } else if (e.key === 'Tab' || e.key === 'Enter') {
         e.preventDefault();
         handleSmartOptionSelect(activeSmartIdx, smartOptions[activeSmartIdx].selectedIdx);
       } else if (e.key === 'Escape') {
         setActiveSmartIdx(null);
       }
+      return;
     }
-  }, [value, onChange, showSuggestions, suggestions, selectedSuggestion, smartOptions, activeSmartIdx]);
+    
+    // Allow normal Enter behavior when no suggestions or smart options are active
+    if (e.key === 'Enter' && !showSuggestions && (smartOptions.length === 0 || activeSmartIdx === null)) {
+      // Let the default Enter behavior happen (create new line)
+      return;
+    }
+  }, [value, onChange, showSuggestions, suggestions, selectedSuggestion, smartOptions, activeSmartIdx, isCreationMode]);
 
   // Expand dot phrase in textarea
   const expandDotPhrase = (dotKey: string) => {
@@ -238,9 +241,9 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     const after = value.slice(currentDot.end);
     const expanded = before + phrase + after;
     
-    // Check if the expanded value contains a smart option
+    // Check if the expanded value contains a smart option (but don't activate in creation mode)  
     const smartOpts = parseSmartOptions(expanded);
-    if (smartOpts.length > 0) {
+    if (smartOpts.length > 0 && !isCreationMode) {
       justExpandedToSmartOption.current = true;
     }
     
@@ -459,7 +462,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   }, [isCalculationModalOpen]);
 
   useEffect(() => {
-    if (activeSmartIdx !== null && textareaRef.current && smartOptions[activeSmartIdx]) {
+    if (!isCreationMode && activeSmartIdx !== null && textareaRef.current && smartOptions[activeSmartIdx]) {
       const opt = smartOptions[activeSmartIdx];
       const caret = getCaretCoordinates(textareaRef.current, opt.start);
       const rect = textareaRef.current.getBoundingClientRect();
@@ -468,11 +471,12 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         left: rect.left + caret.left - textareaRef.current.scrollLeft + 8
       });
     }
-  }, [activeSmartIdx, smartOptions, value]);
+  }, [activeSmartIdx, smartOptions, value, isCreationMode]);
 
-  // Open the date picker automatically and robustly when the dropdown appears for a DATE smart option
+  // Open the date picker automatically and robustly when the dropdown appears for a DATE smart option (but not in creation mode)
   useEffect(() => {
     if (
+      !isCreationMode &&
       activeSmartIdx !== null &&
       smartOptions[activeSmartIdx] &&
       smartOptions[activeSmartIdx].options[0] === 'DATE'
@@ -483,21 +487,23 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     } else {
       setDatePickerOpen(false);
     }
-  }, [activeSmartIdx, smartOptions]);
+  }, [activeSmartIdx, smartOptions, isCreationMode]);
 
   // Prevent blur from closing dropdown when interacting with date picker
   const handleBlur = () => {
     setTimeout(() => {
-      if (!dropdownMouseDownRef.current && !(activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options[0] === 'DATE' && (datePickerOpen || calendarIsOpen))) {
+      if (isCreationMode || (!dropdownMouseDownRef.current && !(activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options[0] === 'DATE' && (datePickerOpen || calendarIsOpen)))) {
         setActiveSmartIdx(null);
+        setShowSuggestions(false);
       }
       dropdownMouseDownRef.current = false;
-    }, 0);
+      if (onBlur) onBlur();
+    }, 50);
   };
 
   // Handle keyboard navigation in dropdown
   useEffect(() => {
-    if (activeSmartIdx === null || !smartOptions[activeSmartIdx]) return;
+    if (isCreationMode || activeSmartIdx === null || !smartOptions[activeSmartIdx]) return;
     const handleDropdownKeyDown = (e: KeyboardEvent) => {
       if (activeSmartIdx === null) return;
       const opts = smartOptions[activeSmartIdx].options;
@@ -547,23 +553,24 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     };
     window.addEventListener('keydown', handleDropdownKeyDown);
     return () => window.removeEventListener('keydown', handleDropdownKeyDown);
-  }, [activeSmartIdx, smartOptions, customInputFocused, customInput]);
+  }, [activeSmartIdx, smartOptions, customInputFocused, customInput, isCreationMode]);
 
   function updateSmartOptionsIdx(idx: number, sel: number) {
     setSmartOptions(prev => prev.map((o, i) => i === idx ? { ...o, selectedIdx: sel } : o));
   }
 
-  // After smartOptions update, if justExpandedToSmartOption is true, set activeSmartIdx
+  // After smartOptions update, if justExpandedToSmartOption is true, set activeSmartIdx (but not in creation mode)
   useEffect(() => {
-    if (justExpandedToSmartOption.current && smartOptions.length > 0) {
+    if (justExpandedToSmartOption.current && smartOptions.length > 0 && !isCreationMode) {
       setActiveSmartIdx(0);
       justExpandedToSmartOption.current = false;
     }
-  }, [smartOptions]);
+  }, [smartOptions, isCreationMode]);
 
-  // Always open dropdown/calendar for a single smart option covering the whole textarea
+  // Always open dropdown/calendar for a single smart option covering the whole textarea (but not in creation mode)
   useEffect(() => {
     if (
+      !isCreationMode &&
       smartOptions.length === 1 &&
       smartOptions[0].start === 0 &&
       smartOptions[0].end === value.length &&
@@ -576,7 +583,22 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         setCalendarIsOpen(true);
       }
     }
-  }, [value, smartOptions]);
+  }, [value, smartOptions, isCreationMode]);
+
+  // Handle click to activate smart functions (but not in creation mode)
+  const handleTextareaClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+    if (isCreationMode) return; // Don't activate smart functions in creation mode
+    
+    const textarea = e.currentTarget;
+    const cursor = textarea.selectionStart;
+    
+    // Check if click is inside a smart function
+    smartOptions.forEach((option, index) => {
+      if (cursor >= option.start && cursor <= option.end) {
+        setActiveSmartIdx(index);
+      }
+    });
+  };
 
   // Always render the textarea, but overlay smart options when needed
   const renderTextarea = () => (
@@ -587,24 +609,12 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       onKeyDown={handleKeyDown}
       onSelect={handleSelect}
       onBlur={handleBlur}
+      onClick={handleTextareaClick}
       placeholder={placeholder}
-      className={className}
-      rows={8}
+      className={`px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${className}`}
+      rows={rows}
       style={{
-        width: '100%',
-        minHeight: '400px',
-        fontSize: '0.875rem',
-        fontFamily: 'inherit',
-        lineHeight: '1.5',
-        color: 'inherit',
-        background: '#f9f9f9',
-        border: '1px solid #ccc',
-        borderRadius: 4,
-        padding: 8,
-        boxSizing: 'border-box',
         resize: 'vertical',
-        overflow: 'auto',
-        caretColor: 'black',
       }}
     />
   );
@@ -615,65 +625,52 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       
       {/* Suggestions dropdown */}
       {showSuggestions && suggestions.length > 0 && (
-        <div 
-          className="absolute left-0 bg-white border rounded shadow-lg z-10 mt-1 w-full"
-          style={{
-            maxHeight: '250px',
-            overflowY: 'auto',
-          }}
+        <div
+          className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto min-w-48"
+          onPointerDown={() => { dropdownMouseDownRef.current = true; }}
+          onPointerUp={() => { dropdownMouseDownRef.current = false; }}
+          onMouseDown={() => { dropdownMouseDownRef.current = true; }}
+          onMouseUp={() => { dropdownMouseDownRef.current = false; }}
         >
           {suggestions.map((s, idx) => {
             const isCustom = customPhrases.some(p => p.trigger === s);
             const customPhrase = customPhrases.find(p => p.trigger === s);
             const combinedPhrases = getCombinedDotPhrases();
             const content = combinedPhrases[s] || '';
-            const preview = content.length > 60 ? content.substring(0, 60) + '...' : content;
+            const preview = content.split('\n')[0] || '';
             
             return (
               <div
                 key={s + idx}
-                className={`px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${selectedSuggestion === idx ? 'bg-blue-50 border-blue-200' : ''}`}
-                onMouseDown={e => {
+                className={`px-3 py-2 cursor-pointer hover:bg-blue-50 ${
+                  idx === selectedSuggestion ? 'bg-blue-100' : ''
+                }`}
+                onClick={e => {
                   e.preventDefault();
+                  e.stopPropagation();
                   handleSuggestionClick(idx);
                 }}
+                onPointerDown={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onMouseDown={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-blue-700 font-semibold">{s}</span>
-                    {isCustom ? (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                        Custom
-                      </span>
-                    ) : (
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                        Built-in
-                      </span>
-                    )}
-                  </div>
+                <div className="font-mono text-sm">{s}</div>
+                <div className="text-xs text-gray-500 truncate">
+                  {customPhrase?.description || preview}
                 </div>
-                {(customPhrase?.description || preview) && (
-                  <div className="mt-1">
-                    {customPhrase?.description && (
-                      <div className="text-xs text-gray-600 font-medium">{customPhrase.description}</div>
-                    )}
-                    <div className="text-xs text-gray-500 mt-0.5">{preview}</div>
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
       )}
 
-      <CalculationModal
-        isOpen={isCalculationModalOpen}
-        onClose={() => setIsCalculationModalOpen(false)}
-        onResult={handleCalculationResult}
-      />
-
-      {/* Smart Option Dropdown Overlay */}
-      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && (
+      {/* Smart Options Dropdown */}
+      {!isCreationMode && activeSmartIdx !== null && smartOptions[activeSmartIdx] && (
         <div
           className="fixed z-30 bg-white/90 border border-blue-200 rounded shadow-lg p-1 text-sm"
           style={{ minWidth: 120, maxWidth: 220, top: dropdownPos.top, left: dropdownPos.left }}
@@ -829,6 +826,13 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
           )}
         </div>
       )}
+
+      <CalculationModal
+        isOpen={isCalculationModalOpen}
+        onClose={() => setIsCalculationModalOpen(false)}
+        onResult={handleCalculationResult}
+      />
+
     </div>
   );
 };

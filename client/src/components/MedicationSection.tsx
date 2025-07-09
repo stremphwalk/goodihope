@@ -410,7 +410,7 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
               onToggleDiscontinued={(medicationId) => toggleMedicationDiscontinued(medicationId, isHome)}
               onMoveUp={() => moveMedication(med.id, 'up', isHome)}
               onMoveDown={() => moveMedication(med.id, 'down', isHome)}
-              onMoveToPosition={(position) => moveToPosition(med.id, position, isHome)}
+                            onMoveToPosition={(position) => moveToPosition(med.id, parseInt(position), isHome)}
               availableDosages={commonDosages}
               language={language}
               position={index + 1}

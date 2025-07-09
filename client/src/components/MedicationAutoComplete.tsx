@@ -25,9 +25,26 @@ export function MedicationAutoComplete({ onMedicationAdd, selectedMedications, o
   const [suggestions, setSuggestions] = useState<Medication[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const { t, language } = useLanguage();
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  // Client-side fallback medications for when API fails
+  const clientFallbackMedications: Medication[] = [
+    { id: 'acetaminophen', brandName: 'Tylenol', genericName: 'Acetaminophen', strength: '', dosageForm: 'tablet' },
+    { id: 'ibuprofen', brandName: 'Advil', genericName: 'Ibuprofen', strength: '', dosageForm: 'tablet' },
+    { id: 'aspirin', brandName: 'Aspirin', genericName: 'Acetylsalicylic acid', strength: '', dosageForm: 'tablet' },
+    { id: 'metformin', brandName: 'Glucophage', genericName: 'Metformin', strength: '', dosageForm: 'tablet' },
+    { id: 'lisinopril', brandName: 'Prinivil', genericName: 'Lisinopril', strength: '', dosageForm: 'tablet' },
+    { id: 'atorvastatin', brandName: 'Lipitor', genericName: 'Atorvastatin', strength: '', dosageForm: 'tablet' },
+    { id: 'amlodipine', brandName: 'Norvasc', genericName: 'Amlodipine', strength: '', dosageForm: 'tablet' },
+    { id: 'omeprazole', brandName: 'Prilosec', genericName: 'Omeprazole', strength: '', dosageForm: 'capsule' },
+    { id: 'levothyroxine', brandName: 'Synthroid', genericName: 'Levothyroxine', strength: '', dosageForm: 'tablet' },
+    { id: 'hydrochlorothiazide', brandName: 'Microzide', genericName: 'Hydrochlorothiazide', strength: '', dosageForm: 'tablet' },
+    { id: 'warfarin', brandName: 'Coumadin', genericName: 'Warfarin', strength: '', dosageForm: 'tablet' },
+    { id: 'furosemide', brandName: 'Lasix', genericName: 'Furosemide', strength: '', dosageForm: 'tablet' }
+  ];
 
   // Search for medications when search term changes
   useEffect(() => {
@@ -39,28 +56,58 @@ export function MedicationAutoComplete({ onMedicationAdd, selectedMedications, o
       }
 
       setIsLoading(true);
+      let medications: Medication[] = [];
+      let apiSucceeded = false;
+
       try {
-        // Call our medication search API
-        const response = await fetch(`/api/medications/search?q=${encodeURIComponent(searchTerm)}&limit=10`);
+        // Call our medication search API with retry logic
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+
+        const response = await fetch(`/api/medications/search?q=${encodeURIComponent(searchTerm)}&limit=10`, {
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
         if (response.ok) {
-          const medications = await response.json();
-          setSuggestions(medications);
-          setShowSuggestions(true);
+          medications = await response.json();
+          apiSucceeded = true;
+          console.log(`API search successful: ${medications.length} results for "${searchTerm}"`);
         } else {
-          // Fallback if API is not available
-          setSuggestions([]);
-          setShowSuggestions(false);
+          console.warn(`API search failed with status ${response.status} for "${searchTerm}"`);
         }
       } catch (error) {
-        console.error('Error searching medications:', error);
-        setSuggestions([]);
-        setShowSuggestions(false);
-      } finally {
-        setIsLoading(false);
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.warn(`API search timed out for "${searchTerm}"`);
+        } else {
+          console.error('Error searching medications via API:', error);
+        }
       }
+
+      // If API failed or returned no results, try client-side fallback
+      if (!apiSucceeded || medications.length === 0) {
+        console.log(`${apiSucceeded ? 'No API results' : 'API failed'}, attempting client-side fallback for "${searchTerm}"`);
+        
+        const fallbackResults = clientFallbackMedications.filter(med => 
+          med.brandName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          med.genericName.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+        
+        if (fallbackResults.length > 0) {
+          medications = fallbackResults;
+          console.log(`Client fallback: Found ${medications.length} results for "${searchTerm}"`);
+        }
+      }
+
+      setSuggestions(medications);
+      setShowSuggestions(medications.length > 0);
+      setSelectedIndex(-1); // Reset keyboard selection
+      setIsLoading(false);
     };
 
-    const debounceTimer = setTimeout(searchMedications, 300);
+    // Improved debouncing - shorter delay for better responsiveness
+    const debounceTimer = setTimeout(searchMedications, 200);
     return () => clearTimeout(debounceTimer);
   }, [searchTerm]);
 
@@ -100,18 +147,35 @@ export function MedicationAutoComplete({ onMedicationAdd, selectedMedications, o
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       setShowSuggestions(false);
-    } else if (e.key === 'Enter' && searchTerm.trim()) {
+      setSelectedIndex(-1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (showSuggestions && suggestions.length > 0) {
+        setSelectedIndex(prev => (prev + 1) % suggestions.length);
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (showSuggestions && suggestions.length > 0) {
+        setSelectedIndex(prev => prev <= 0 ? suggestions.length - 1 : prev - 1);
+      }
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       
-      // Check if medication is already selected
-      const isAlreadySelected = selectedMedications.includes(searchTerm.trim());
-      
-      if (!isAlreadySelected) {
-        onMedicationAdd(searchTerm.trim(), true); // Mark as custom
-        setSearchTerm('');
-        setSuggestions([]);
-        setShowSuggestions(false);
-        inputRef.current?.focus();
+      if (selectedIndex >= 0 && selectedIndex < suggestions.length) {
+        // Select the highlighted suggestion
+        handleMedicationSelect(suggestions[selectedIndex]);
+      } else if (searchTerm.trim()) {
+        // Add as custom medication
+        const isAlreadySelected = selectedMedications.includes(searchTerm.trim());
+        
+        if (!isAlreadySelected) {
+          onMedicationAdd(searchTerm.trim(), true); // Mark as custom
+          setSearchTerm('');
+          setSuggestions([]);
+          setShowSuggestions(false);
+          setSelectedIndex(-1);
+          inputRef.current?.focus();
+        }
       }
     }
   };
@@ -148,7 +212,11 @@ export function MedicationAutoComplete({ onMedicationAdd, selectedMedications, o
               <button
                 key={`${medication.id}-${index}`}
                 onClick={() => handleMedicationSelect(medication)}
-                className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-600 last:border-b-0 transition-colors"
+                className={`w-full px-4 py-3 text-left border-b border-gray-100 dark:border-gray-600 last:border-b-0 transition-colors ${
+                  selectedIndex === index
+                    ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
               >
                 <div className="flex items-center space-x-3">
                   <Pill className="h-4 w-4 text-blue-600 flex-shrink-0" />

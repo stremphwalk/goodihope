@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Smart Functions</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-case { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        textarea { width: 100%; height: 100px; }
+    </style>
+</head>
+<body>
+    <h1>Smart Functions Test Cases</h1>
+    
+    <div class="test-case">
+        <h3>Test 1: Basic Multi-Option</h3>
+        <p>Enter this text: <code>Patient has [[chest pain|shortness of breath|palpitations]]</code></p>
+        <textarea id="test1"></textarea>
+    </div>
+    
+    <div class="test-case">
+        <h3>Test 2: Date Picker</h3>
+        <p>Enter this text: <code>Date of admission: [[DATE]]</code></p>
+        <textarea id="test2"></textarea>
+    </div>
+    
+    <div class="test-case">
+        <h3>Test 3: Medical Condition</h3>
+        <p>Enter this text: <code>Diabetes mellitus - [[well controlled|poorly controlled|uncontrolled]]</code></p>
+        <textarea id="test3"></textarea>
+    </div>
+    
+    <script>
+        // Basic test to see if text patterns are recognized
+        function testSmartPattern(text) {
+            const regex = /\[\[([^\]]+?)\]\]/g;
+            const matches = [];
+            let match;
+            while ((match = regex.exec(text))) {
+                matches.push({
+                    full: match[0],
+                    content: match[1],
+                    options: match[1].split('|'),
+                    start: match.index,
+                    end: match.index + match[0].length
+                });
+            }
+            return matches;
+        }
+        
+        // Add listeners to textareas
+        document.querySelectorAll('textarea').forEach(textarea => {
+            textarea.addEventListener('input', (e) => {
+                const matches = testSmartPattern(e.target.value);
+                if (matches.length > 0) {
+                    console.log('Smart functions detected:', matches);
+                }
+            });
+        });
+        
+        // Auto-populate test cases
+        document.getElementById('test1').value = 'Patient has [[chest pain|shortness of breath|palpitations]]';
+        document.getElementById('test2').value = 'Date of admission: [[DATE]]';
+        document.getElementById('test3').value = 'Diabetes mellitus - [[well controlled|poorly controlled|uncontrolled]]';
+    </script>
+</body>
+</html>

@@ -63,65 +63,181 @@ export function MedicationImageUpload({ onMedicationsExtracted }: MedicationImag
   }, [language, toast]);
 
   const processFiles = async (files: File[]) => {
-    // Validate all files before processing
+    // Enhanced validation with detailed feedback
     const invalidFiles = files.filter(file => !file.type.startsWith('image/'));
     if (invalidFiles.length > 0) {
       toast({
-        title: language === 'fr' ? 'Erreur' : 'Error',
-        description: language === 'fr' ? 'Veuillez sélectionner uniquement des images' : 'Please select only image files',
+        title: language === 'fr' ? 'Erreur de format' : 'Format Error',
+        description: language === 'fr' 
+          ? `${invalidFiles.length} fichier(s) non-image(s) détecté(s). Formats supportés: JPG, PNG, WEBP, GIF`
+          : `${invalidFiles.length} non-image file(s) detected. Supported formats: JPG, PNG, WEBP, GIF`,
         variant: 'destructive'
       });
       return;
     }
 
-    // Validate file sizes (max 5MB each)
+    // Validate file sizes with specific feedback
     const oversizedFiles = files.filter(file => file.size > 5 * 1024 * 1024);
     if (oversizedFiles.length > 0) {
+      const oversizedNames = oversizedFiles.map(f => f.name).join(', ');
       toast({
-        title: language === 'fr' ? 'Erreur' : 'Error',
-        description: language === 'fr' ? 'Certaines images sont trop volumineuses (max 5MB)' : 'Some images are too large (max 5MB)',
+        title: language === 'fr' ? 'Fichiers trop volumineux' : 'Files Too Large',
+        description: language === 'fr' 
+          ? `Ces fichiers dépassent 5MB: ${oversizedNames}` 
+          : `These files exceed 5MB: ${oversizedNames}`,
         variant: 'destructive'
       });
       return;
+    }
+
+    // Check image dimensions and quality
+    const lowQualityFiles: File[] = [];
+    for (const file of files) {
+      try {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error('Failed to load image'));
+          img.src = url;
+        });
+        URL.revokeObjectURL(url);
+        
+        // Warn about very small images (likely poor OCR quality)
+        if (img.width < 300 || img.height < 300) {
+          lowQualityFiles.push(file);
+        }
+      } catch (error) {
+        console.warn(`Could not check dimensions for ${file.name}:`, error);
+      }
+    }
+
+    if (lowQualityFiles.length > 0) {
+      toast({
+        title: language === 'fr' ? 'Qualité d\'image faible' : 'Low Image Quality',
+        description: language === 'fr'
+          ? `${lowQualityFiles.length} image(s) de petite taille détectée(s). La qualité d'extraction pourrait être réduite.`
+          : `${lowQualityFiles.length} small image(s) detected. Extraction quality may be reduced.`,
+        variant: 'default'
+      });
     }
 
     setProcessingProgress({ current: 0, total: files.length });
+    const allMedications: ExtractedMedication[] = [];
+    const imageDataUrls: string[] = [];
+    const processedResults: Array<{file: string, success: boolean, error?: string, count: number}> = [];
     
     try {
-      const allMedications: ExtractedMedication[] = [];
-      const imageDataUrls: string[] = [];
-
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         setProcessingProgress({ current: i + 1, total: files.length });
 
-        // Convert to base64 for display
-        const base64 = await fileToBase64(file);
-        const dataUrl = `data:${file.type};base64,${base64}`;
-        imageDataUrls.push(dataUrl);
+        try {
+          console.log(`Processing image ${i + 1}/${files.length}: ${file.name}`);
+          
+          // Convert to base64 for display
+          const base64 = await fileToBase64(file);
+          const dataUrl = `data:${file.type};base64,${base64}`;
+          imageDataUrls.push(dataUrl);
 
-        // Extract medications from image
-        const response = await fetch('/api/medications/extract-from-image', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            image: base64,
-            mediaType: file.type
-          }),
-        });
-        
-        if (!response.ok) {
-          console.error(`Failed to process image ${i + 1}`);
-          continue; // Skip failed image and continue with others
+          // Extract medications from image with timeout and retry
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+          const response = await fetch('/api/medications/extract-from-image', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              image: base64,
+              mediaType: file.type
+            }),
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Failed to process image ${i + 1}:`, response.status, errorText);
+            processedResults.push({
+              file: file.name,
+              success: false,
+              error: `HTTP ${response.status}`,
+              count: 0
+            });
+            continue;
+          }
+          
+          const result = await response.json();
+          const medications: ExtractedMedication[] = result.medications || result;
+          
+          // Check if server indicated no medications found with suggestions
+          if (result.success === false && result.suggestions) {
+            processedResults.push({
+              file: file.name,
+              success: false,
+              error: result.debug || 'No medications found',
+              count: 0,
+              suggestions: result.suggestions
+            });
+            continue;
+          }
+          
+          // Validate extracted medications
+          const validMedications = medications.filter(med => 
+            med.name && 
+            med.name.trim().length > 1 && 
+            !/^\d+$/.test(med.name.trim()) &&
+            med.name.length < 100 // Reasonable medication name length
+          );
+          
+          allMedications.push(...validMedications);
+          processedResults.push({
+            file: file.name,
+            success: true,
+            count: validMedications.length,
+            extractionMethod: result.extractionMethod || 'Unknown'
+          });
+          
+          console.log(`Image ${i + 1} processed: ${validMedications.length} medications found`);
+          
+        } catch (error) {
+          console.error(`Error processing image ${i + 1} (${file.name}):`, error);
+          
+          let errorMessage = 'Unknown error';
+          let suggestions: string[] = [];
+          
+          if (error instanceof Error) {
+            if (error.name === 'AbortError') {
+              errorMessage = 'Timeout';
+              suggestions = ['Try with a smaller image', 'Check your internet connection'];
+            } else {
+              errorMessage = error.message;
+              // Try to parse error response for suggestions
+              try {
+                const errorResponse = JSON.parse(error.message);
+                if (errorResponse.suggestions) {
+                  suggestions = errorResponse.suggestions;
+                }
+              } catch {
+                // Ignore parsing errors
+              }
+            }
+          }
+          
+          processedResults.push({
+            file: file.name,
+            success: false,
+            error: errorMessage,
+            count: 0,
+            suggestions: suggestions.length > 0 ? suggestions : undefined
+          });
         }
-        
-        const medications: ExtractedMedication[] = await response.json();
-        allMedications.push(...medications);
       }
 
-      // Remove duplicates based on medication name
+      // Remove duplicates based on medication name (case-insensitive)
       const uniqueMedications = allMedications.filter((med, index, arr) => 
         arr.findIndex(m => m.name.toLowerCase() === med.name.toLowerCase()) === index
       );
@@ -129,11 +245,16 @@ export function MedicationImageUpload({ onMedicationsExtracted }: MedicationImag
       setUploadedImages(imageDataUrls);
       setExtractedMedications(uniqueMedications);
       
-      // Convert extracted medications to SelectedMedication format and pass to parent
-      if (uniqueMedications.length > 0) {
+      // Provide detailed feedback about processing results
+      const successCount = processedResults.filter(r => r.success).length;
+      const failureCount = processedResults.filter(r => !r.success).length;
+      const totalMedications = uniqueMedications.length;
+      
+      if (totalMedications > 0) {
+        // Convert extracted medications to SelectedMedication format and pass to parent
         const selectedMedications = uniqueMedications.map(med => ({
           id: crypto.randomUUID(),
-          name: med.name.charAt(0).toUpperCase() + med.name.slice(1).toLowerCase(),
+          name: med.name ? med.name.charAt(0).toUpperCase() + med.name.slice(1).toLowerCase() : '',
           category: categorizeMedication(med.name),
           dosage: med.dosage || '',
           frequency: med.frequency || '',
@@ -144,26 +265,63 @@ export function MedicationImageUpload({ onMedicationsExtracted }: MedicationImag
         
         onMedicationsExtracted(selectedMedications, true);
         
+        let description = '';
+        if (language === 'fr') {
+          description = `${totalMedications} médicament(s) extrait(s) de ${successCount}/${files.length} image(s)`;
+          if (failureCount > 0) {
+            description += `. ${failureCount} image(s) non traitée(s)`;
+          }
+        } else {
+          description = `${totalMedications} medication(s) extracted from ${successCount}/${files.length} image(s)`;
+          if (failureCount > 0) {
+            description += `. ${failureCount} image(s) failed`;
+          }
+        }
+        
         toast({
           title: language === 'fr' ? 'Extraction terminée' : 'Extraction Complete',
-          description: language === 'fr'
-            ? `${uniqueMedications.length} médicament(s) ajouté(s) à la section médicaments.`
-            : `${uniqueMedications.length} medication(s) added to medications section.`,
+          description: description,
         });
       } else {
+        const failedImages = processedResults.filter(r => !r.success);
+        let description = language === 'fr' 
+          ? 'Aucun médicament trouvé dans les images.'
+          : 'No medications found in the images.';
+          
+        // Check if we have detailed suggestions from the server
+        const lastResult = processedResults[processedResults.length - 1];
+        if (lastResult && lastResult.suggestions) {
+          description = language === 'fr' 
+            ? 'Suggestions pour améliorer la détection :'
+            : 'Suggestions to improve detection:';
+          description += '\n• ' + lastResult.suggestions.slice(0, 3).join('\n• ');
+        } else if (failedImages.length > 0) {
+          description += language === 'fr'
+            ? ` ${failedImages.length} image(s) n'ont pas pu être traitées.`
+            : ` ${failedImages.length} image(s) could not be processed.`;
+        }
+        
         toast({
-          title: language === 'fr' ? 'Extraction terminée' : 'Extraction Complete',
-          description: language === 'fr' 
-            ? 'Aucun médicament n\'a été trouvé dans les images.'
-            : 'No medications were found in the images.',
-          variant: 'destructive'
+          title: language === 'fr' ? 'Aucun médicament trouvé' : 'No Medications Found',
+          description: description,
+          variant: 'destructive',
+          duration: 8000 // Longer duration for helpful suggestions
         });
       }
+      
+      // Log detailed results for debugging
+      console.log('Processing summary:');
+      processedResults.forEach(result => {
+        console.log(`- ${result.file}: ${result.success ? `✓ ${result.count} medications` : `✗ ${result.error}`}`);
+      });
+      
     } catch (error) {
       console.error('Error processing medication images:', error);
       toast({
         title: language === 'fr' ? 'Erreur de traitement' : 'Processing Error',
-        description: language === 'fr' ? 'Erreur lors du traitement des images' : 'Error processing images',
+        description: language === 'fr' 
+          ? 'Erreur lors du traitement des images. Vérifiez que les images contiennent du texte lisible.'
+          : 'Error processing images. Please ensure images contain readable text.',
         variant: 'destructive'
       });
     } finally {
@@ -202,8 +360,8 @@ export function MedicationImageUpload({ onMedicationsExtracted }: MedicationImag
       return medication;
     });
 
-    const sortedMedications = sortMedicationsByImportance(selectedMedications);
-    onMedicationsExtracted(sortedMedications, true);
+        const sortedMedications = sortMedicationsByImportance(selectedMedications);
+    onMedicationsExtracted(sortedMedications);
     
     // Clear the extracted medications and images
     setExtractedMedications([]);

@@ -167,46 +167,124 @@ function createMedicationFromCSV(): MedicationData[] {
   }
 }
 
+// Simple fuzzy matching function for better search results
+function calculateFuzzyScore(query: string, target: string): number {
+  const queryLower = query.toLowerCase();
+  const targetLower = target.toLowerCase();
+  
+  // Exact match gets highest score
+  if (targetLower === queryLower) return 100;
+  
+  // Starts with query gets high score
+  if (targetLower.startsWith(queryLower)) return 90;
+  
+  // Contains query gets medium score
+  if (targetLower.includes(queryLower)) return 70;
+  
+  // Word boundary matching (e.g., "met" matches "Metformin")
+  const words = targetLower.split(/\s+/);
+  for (const word of words) {
+    if (word.startsWith(queryLower)) return 80;
+  }
+  
+  // Fuzzy character matching for typos
+  let score = 0;
+  let queryIndex = 0;
+  
+  for (let i = 0; i < targetLower.length && queryIndex < queryLower.length; i++) {
+    if (targetLower[i] === queryLower[queryIndex]) {
+      score += 1;
+      queryIndex++;
+    }
+  }
+  
+  if (queryIndex === queryLower.length) {
+    return Math.round((score / queryLower.length) * 60);
+  }
+  
+  return 0;
+}
+
 export function searchMedications(query: string, limit: number = 10): MedicationData[] {
   const medications = createMedicationFromCSV();
-  const searchTerm = query.toLowerCase();
+  const searchTerm = query.toLowerCase().trim();
   
-  const matches = medications.filter(med => 
-    med.genericName.toLowerCase().includes(searchTerm) ||
-    med.brandName.toLowerCase().includes(searchTerm)
-  );
+  if (!searchTerm || searchTerm.length < 1) {
+    return [];
+  }
   
-  // Consolidate medications by generic name only
-  const consolidated = new Map<string, MedicationData>();
-  
-  matches.forEach(med => {
-    const key = med.genericName;
+  // Score all medications based on fuzzy matching
+  const scoredMatches = medications.map(med => {
+    const genericScore = calculateFuzzyScore(searchTerm, med.genericName);
+    const brandScore = calculateFuzzyScore(searchTerm, med.brandName);
+    const maxScore = Math.max(genericScore, brandScore);
     
-    if (!consolidated.has(key)) {
+    return {
+      medication: med,
+      score: maxScore,
+      matchType: genericScore >= brandScore ? 'generic' : 'brand'
+    };
+  }).filter(item => item.score > 0);
+  
+  // Sort by score (highest first)
+  scoredMatches.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    // If scores are equal, prefer shorter names (more specific matches)
+    const aLength = a.matchType === 'generic' ? a.medication.genericName.length : a.medication.brandName.length;
+    const bLength = b.matchType === 'generic' ? b.medication.genericName.length : b.medication.brandName.length;
+    return aLength - bLength;
+  });
+  
+  // Consolidate medications by generic name, preserving the best match
+  const consolidated = new Map<string, {medication: MedicationData, score: number}>();
+  
+  scoredMatches.forEach(item => {
+    const key = item.medication.genericName.toLowerCase();
+    
+    if (!consolidated.has(key) || consolidated.get(key)!.score < item.score) {
       // Find the most common brand name for this generic
-      const genericMatches = matches.filter(m => m.genericName === med.genericName);
-      const brandCounts = new Map<string, number>();
+      const genericMatches = scoredMatches.filter(m => 
+        m.medication.genericName.toLowerCase() === key
+      );
       
+      const brandCounts = new Map<string, number>();
       genericMatches.forEach(m => {
-        const brandName = m.brandName.split(',')[0].trim();
+        const brandName = m.medication.brandName.split(',')[0].trim();
         brandCounts.set(brandName, (brandCounts.get(brandName) || 0) + 1);
       });
       
-      // Use the most common brand name
-      const mostCommonBrand = Array.from(brandCounts.entries())
-        .sort((a, b) => b[1] - a[1])[0][0];
+      // Use the most common brand name, but prefer exact matches
+      let bestBrand = item.medication.brandName;
+      if (brandCounts.size > 1) {
+        const sortedBrands = Array.from(brandCounts.entries())
+          .sort((a, b) => {
+            // Prefer brands that match the search term better
+            const scoreA = calculateFuzzyScore(searchTerm, a[0]);
+            const scoreB = calculateFuzzyScore(searchTerm, b[0]);
+            if (scoreA !== scoreB) return scoreB - scoreA;
+            return b[1] - a[1]; // Fall back to frequency
+          });
+        bestBrand = sortedBrands[0][0];
+      }
       
       consolidated.set(key, {
-        ...med,
-        id: `${med.genericName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-        brandName: mostCommonBrand,
-        strength: '', // We'll show all strengths in dosage selection
-        dosageForm: med.dosageForm
+        medication: {
+          ...item.medication,
+          id: `${item.medication.genericName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          brandName: bestBrand,
+          strength: '', // We'll show all strengths in dosage selection
+          dosageForm: item.medication.dosageForm || 'tablet'
+        },
+        score: item.score
       });
     }
   });
   
-  return Array.from(consolidated.values()).slice(0, limit);
+  // Return sorted by score, limited by the requested limit
+  return Array.from(consolidated.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(item => item.medication);
 }
 
 export function getCommonDosages(medicationName: string): string[] {

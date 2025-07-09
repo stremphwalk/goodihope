@@ -47,7 +47,7 @@ export function CalculationsPage() {
         />
       </div>
       <div className="space-y-10">
-        {sortedSpecialties.map((specialty: Specialty) => {
+        {sortedSpecialties.map(specialty => {
           if (!specialty) return null;
           const specialtyCalcs = calculations
             .filter((calc: Calculation) => calc.specialty === specialty.id)

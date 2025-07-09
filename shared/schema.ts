@@ -16,37 +16,15 @@ export const dotPhrases = pgTable("dot_phrases", {
   content: text("content").notNull(),
   description: text("description"),
   category: text("category").default("general"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-export const templates = pgTable("templates", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  name: text("name").notNull(),
-  description: text("description"),
-  category: text("category").notNull(), // admission, discharge, progress, consultation, etc.
-  specialty: text("specialty"), // cardiology, neurology, etc.
-  content: jsonb("content").notNull(), // JSON structure of template sections
-  compatibleNoteTypes: jsonb("compatible_note_types"), // ["admission", "progress", "consultation"]
-  compatibleSubtypes: jsonb("compatible_subtypes"), // ["general", "icu"] 
-  sectionDefaults: jsonb("section_defaults"), // Default content for each section
+  shareCode: text("share_code").unique(),
   isPublic: boolean("is_public").default(false),
-  version: integer("version").default(1),
-  parentTemplateId: integer("parent_template_id"), // for versioning (nullable)
-  lastUsed: timestamp("last_used"),
-  isFavorite: boolean("is_favorite").default(false),
+  sharedAt: timestamp("shared_at"),
+  importCount: integer("import_count").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const templateUsage = pgTable("template_usage", {
-  id: serial("id").primaryKey(),
-  templateId: integer("template_id").references(() => templates.id).notNull(),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  usedAt: timestamp("used_at").defaultNow(),
-  patientContext: jsonb("patient_context"), // patient data when template was used
-});
+
 
 export const rosNotes = pgTable("ros_notes", {
   id: serial("id").primaryKey(),
@@ -98,22 +76,6 @@ export const medicationCategories = {
   other: []
 } as const;
 
-// Enhanced template type with note type compatibility
-export const templateInsertSchema = createInsertSchema(templates).pick({
-  userId: true,
-  name: true,
-  description: true,
-  category: true,
-  specialty: true,
-  content: true,
-  compatibleNoteTypes: true,
-  compatibleSubtypes: true,
-  sectionDefaults: true,
-  isPublic: true,
-  version: true,
-  parentTemplateId: true,
-  isFavorite: true,
-});
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -121,30 +83,4 @@ export type InsertDotPhrase = z.infer<typeof insertDotPhraseSchema>;
 export type DotPhrase = typeof dotPhrases.$inferSelect;
 export type InsertRosNote = z.infer<typeof insertRosNoteSchema>;
 export type RosNote = typeof rosNotes.$inferSelect;
-export type Template = typeof templates.$inferSelect;
-export type InsertTemplate = z.infer<typeof templateInsertSchema>;
-export type TemplateUsage = typeof templateUsage.$inferSelect;
 
-// Note type definitions for template compatibility
-export type NoteType = "admission" | "progress" | "consultation";
-export type NoteSubtype = "general" | "icu";
-
-// Enhanced template content structure
-export interface EnhancedTemplateContent {
-  sections: Array<{
-    id: string;
-    sectionId: string;
-    order: number;
-    isEnabled: boolean;
-    customContent?: string;
-    smartOptions?: string[];
-  }>;
-  metadata: {
-    name: string;
-    description?: string;
-    category: string;
-    specialty?: string;
-    compatibleNoteTypes?: NoteType[];
-    compatibleSubtypes?: NoteSubtype[];
-  };
-}

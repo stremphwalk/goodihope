@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, Save, X, HelpCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, HelpCircle, Calendar, List, Hash, Share2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,6 +10,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from 'react-oidc-context';
 import { Tabs } from '@/components/ui/tabs';
+import { DotPhraseTextarea } from './DotPhraseTextarea';
+import { SmartFunctionBuilder } from './SmartFunctionBuilder';
+import { ShareDotPhraseModal } from './ShareDotPhraseModal';
+import { ImportDotPhraseModal } from './ImportDotPhraseModal';
+import { useDotPhrases, useCreateDotPhrase, useUpdateDotPhrase, useDeleteDotPhrase } from '@/hooks/useDotPhrases';
 
 export interface CustomDotPhrase {
   id: string;
@@ -17,6 +22,10 @@ export interface CustomDotPhrase {
   content: string; // The phrase content with [[options]]
   description: string;
   category: string;
+  shareCode?: string; // 4-character sharing code
+  isPublic?: boolean; // Whether the phrase is shared publicly
+  sharedAt?: Date; // When the phrase was first shared
+  importCount?: number; // How many times it's been imported
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,84 +34,23 @@ interface DotPhraseManagerProps {
   onDotPhrasesChange?: (phrases: CustomDotPhrase[]) => void;
 }
 
-// API functions for custom dot phrases
-const getApiHeaders = (id_token: string) => ({
-  'Content-Type': 'application/json',
-  'Authorization': `Bearer ${id_token}`,
-});
-
-const dotPhrasesAPI = {
-  async getAll(id_token: string): Promise<CustomDotPhrase[]> {
-    const response = await fetch('/api/dot-phrases', {
-      headers: getApiHeaders(id_token),
-    });
-    if (!response.ok) {
-      throw new Error('Failed to fetch dot phrases');
-    }
-    const data = await response.json();
-    return data.map((phrase: any) => ({
-      ...phrase,
-      createdAt: new Date(phrase.createdAt),
-      updatedAt: new Date(phrase.updatedAt)
-    }));
-  },
-
-  async create(phrase: Omit<CustomDotPhrase, 'id' | 'createdAt' | 'updatedAt'>, id_token: string): Promise<CustomDotPhrase> {
-    const response = await fetch('/api/dot-phrases', {
-      method: 'POST',
-      headers: getApiHeaders(id_token),
-      body: JSON.stringify(phrase),
-    });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to create dot phrase');
-    }
-    const data = await response.json();
-    return {
-      ...data,
-      createdAt: new Date(data.createdAt),
-      updatedAt: new Date(data.updatedAt)
-    };
-  },
-
-  async update(id: string, phrase: Partial<CustomDotPhrase>, id_token: string): Promise<CustomDotPhrase> {
-    const response = await fetch(`/api/dot-phrases/${id}`, {
-      method: 'PUT',
-      headers: getApiHeaders(id_token),
-      body: JSON.stringify(phrase),
-    });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to update dot phrase');
-    }
-    const data = await response.json();
-    return {
-      ...data,
-      createdAt: new Date(data.createdAt),
-      updatedAt: new Date(data.updatedAt)
-    };
-  },
-
-  async delete(id: string, id_token: string): Promise<void> {
-    const response = await fetch(`/api/dot-phrases/${id}`, {
-      method: 'DELETE',
-      headers: getApiHeaders(id_token),
-    });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to delete dot phrase');
-    }
-  },
-};
 
 export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) {
-  const [customPhrases, setCustomPhrases] = useState<CustomDotPhrase[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [selectedPhraseForShare, setSelectedPhraseForShare] = useState<CustomDotPhrase | null>(null);
+  
+  // React Query hooks
+  const { data: customPhrases = [], isLoading: loading, error: queryError } = useDotPhrases();
+  const createMutation = useCreateDotPhrase();
+  const updateMutation = useUpdateDotPhrase();
+  const deleteMutation = useDeleteDotPhrase();
+  
+  const error = queryError?.message || null;
 
   // Form state for creating/editing
   const [formData, setFormData] = useState({
@@ -114,54 +62,13 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
 
   const { t } = useLanguage();
   const auth = useAuth();
+  const [textareaRef, setTextareaRef] = useState<React.RefObject<HTMLTextAreaElement> | null>(null);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [showOptionDialog, setShowOptionDialog] = useState(false);
-  const [optionInput, setOptionInput] = useState('');
+  
 
-  // Smart Option Panel State
-  const [showOptionPanel, setShowOptionPanel] = useState(false);
-  const [optionInputs, setOptionInputs] = useState<string[]>(['']);
-  const [smartTab, setSmartTab] = useState<'dropdown'|'date'>('dropdown');
-  const optionInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Load saved phrases from API on mount
+  // Notify parent when phrases change
   useEffect(() => {
-    const loadDotPhrases = async () => {
-      if (!auth.user?.id_token) return;
-      try {
-        setLoading(true);
-        setError(null);
-        const phrases = await dotPhrasesAPI.getAll(auth.user.id_token);
-        setCustomPhrases(phrases);
-      } catch (err) {
-        console.error('Failed to load custom dot phrases:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load dot phrases');
-        // Fallback to localStorage if API fails
-        const saved = localStorage.getItem('customDotPhrases');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            setCustomPhrases(parsed.map((p: any) => ({
-              ...p,
-              createdAt: new Date(p.createdAt),
-              updatedAt: new Date(p.updatedAt)
-            })));
-          } catch (localError) {
-            console.error('Failed to load from localStorage:', localError);
-          }
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadDotPhrases();
-  }, [auth.user?.id_token]);
-
-  // Save phrases to localStorage as backup whenever they change
-  useEffect(() => {
-    localStorage.setItem('customDotPhrases', JSON.stringify(customPhrases));
     onDotPhrasesChange?.(customPhrases);
   }, [customPhrases, onDotPhrasesChange]);
 
@@ -194,6 +101,29 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
     });
   };
 
+  // Smart feature insertion function
+  const handleSmartFunctionInsert = (content: string) => {
+    const textarea = textareaRef?.current;
+    if (!textarea) {
+      // Fallback: append to end of content
+      setFormData(prev => ({ ...prev, content: prev.content + content }));
+      return;
+    }
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentContent = formData.content;
+    
+    const newContent = currentContent.slice(0, start) + content + currentContent.slice(end);
+    setFormData(prev => ({ ...prev, content: newContent }));
+
+    // Set cursor position after inserted text
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + content.length, start + content.length);
+    }, 0);
+  };
+
   const validateForm = () => {
     if (!formData.trigger.trim()) return 'Trigger is required';
     if (!formData.trigger.startsWith('/')) return 'Trigger must start with /';
@@ -214,24 +144,20 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
       return;
     }
 
-    const error = validateForm();
-    if (error) {
-      alert(error);
+    const validationError = validateForm();
+    if (validationError) {
+      alert(validationError);
       return;
     }
 
     try {
       if (editingId) {
         // Update existing phrase
-        const updatedPhrase = await dotPhrasesAPI.update(editingId, formData, auth.user.id_token);
-        setCustomPhrases(phrases => phrases.map(p => 
-          p.id === editingId ? updatedPhrase : p
-        ));
+        await updateMutation.mutateAsync({ id: editingId, phrase: formData });
         setEditingId(null);
       } else {
         // Create new phrase
-        const newPhrase = await dotPhrasesAPI.create(formData, auth.user.id_token);
-        setCustomPhrases(phrases => [...phrases, newPhrase]);
+        await createMutation.mutateAsync(formData);
         setIsCreating(false);
       }
       
@@ -260,8 +186,7 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
     }
     if (confirm('Are you sure you want to delete this dot phrase?')) {
       try {
-        await dotPhrasesAPI.delete(id, auth.user.id_token);
-        setCustomPhrases(phrases => phrases.filter(p => p.id !== id));
+        await deleteMutation.mutateAsync(id);
       } catch (err) {
         console.error('Error deleting dot phrase:', err);
         alert(err instanceof Error ? err.message : 'Failed to delete dot phrase');
@@ -283,182 +208,29 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
     return matchesSearch && matchesCategory;
   });
 
-  const parseSmartOptions = (content: string) => {
+  
+
+  // Helper function to preview content (truncate long text)
+  const previewContent = (content: string) => {
+    const plainText = content.replace(/\[\[.*?\]\]/g, '[...]');
+    return plainText.length > 100 ? plainText.substring(0, 100) + '...' : plainText;
+  };
+
+  // Helper to parse smart options
+  const parseSmartOptions = (text: string) => {
     const regex = /\[\[([^\]]+?)\]\]/g;
     const matches = [];
     let match;
-    while ((match = regex.exec(content))) {
-      matches.push(match[1].split('|'));
+    while ((match = regex.exec(text))) {
+      const options = match[1].split('|');
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        options,
+        selectedIdx: 0
+      });
     }
     return matches;
-  };
-
-  const previewContent = (content: string) => {
-    const smartOptions = parseSmartOptions(content);
-    if (smartOptions.length === 0) return content;
-    
-    let result = content;
-    smartOptions.forEach(options => {
-      const pattern = `[[${options.join('|')}]]`;
-      result = result.replace(pattern, `[${options[0]}]`);
-    });
-    return result;
-  };
-
-  // UI for smart option panel
-  const SmartOptionPanel = () => {
-    // We keep local state for the tab, but manage options via parent state
-    const [smartTab, setSmartTab] = useState<'dropdown'|'date'>('dropdown');
-    
-    const handleConfirm = () => {
-      if (!textareaRef.current) return;
-      
-      const textarea = textareaRef.current;
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const before = formData.content.slice(0, start);
-      const after = formData.content.slice(end);
-      
-      let insertVal = '';
-      if (smartTab === 'dropdown') {
-        const options = optionInputRefs.current
-          .map(input => input?.value.trim())
-          .filter((value): value is string => Boolean(value));
-
-        if (options.length === 0) return;
-        insertVal = `[[${options.join('|')}]]`;
-      } else if (smartTab === 'date') {
-        insertVal = '[[DATE]]';
-      }
-      
-      const newContent = before + insertVal + after;
-      setFormData(prev => ({ ...prev, content: newContent }));
-      setShowOptionPanel(false);
-      setOptionInputs(['']); // Reset for next time
-      
-      // Focus back to textarea after insertion
-      setTimeout(() => {
-        if (textareaRef.current) {
-          textareaRef.current.focus();
-          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = before.length + insertVal.length;
-        }
-      }, 0);
-    };
-
-    const addOption = () => {
-      setOptionInputs(prev => [...prev, '']);
-    };
-
-    const removeOption = (index: number) => {
-      if (optionInputs.length > 1) {
-        setOptionInputs(prev => prev.filter((_, i) => i !== index));
-        // Also remove the ref
-        optionInputRefs.current.splice(index, 1);
-      }
-    };
-
-    const handleCancel = () => {
-      setShowOptionPanel(false);
-      setOptionInputs(['']); // Reset for next time
-    };
-
-    return (
-      <div style={{ 
-        background: '#fff', 
-        border: '1px solid #ccc', 
-        borderRadius: 8, 
-        padding: 16, 
-        position: 'absolute', 
-        zIndex: 100, 
-        boxShadow: '0 2px 8px rgba(0,0,0,0.12)', 
-        left: 0, 
-        top: -180, 
-        minWidth: 320, 
-        maxWidth: 400 
-      }}>
-        <div className="mb-2 font-medium">{t('dotManager.insertSmartOptionTitle')}</div>
-        <div className="mb-4 flex gap-2">
-          <button 
-            className={`px-3 py-1 rounded ${smartTab==='dropdown'?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-600'}`} 
-            onClick={()=>setSmartTab('dropdown')}
-          >
-            {t('dotManager.tabDropdown')}
-          </button>
-          <button 
-            className={`px-3 py-1 rounded ${smartTab==='date'?'bg-blue-100 text-blue-800':'bg-gray-100 text-gray-600'}`} 
-            onClick={()=>setSmartTab('date')}
-          >
-            {t('dotManager.tabDate')}
-          </button>
-        </div>
-        
-        {smartTab === 'dropdown' && (
-          <>
-            <div className="text-sm text-gray-600 mb-2">{t('dotManager.insertSmartOptionDesc')}</div>
-            {optionInputs.map((val, idx) => (
-              <div key={idx} className="flex gap-2 mb-2">
-                <input
-                  ref={el => optionInputRefs.current[idx] = el}
-                  type="text"
-                  className="border px-2 py-1 rounded flex-1"
-                  placeholder={`Option ${idx + 1}`}
-                  defaultValue={val}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (idx === optionInputs.length - 1) {
-                        addOption();
-                      } else {
-                        optionInputRefs.current[idx + 1]?.focus();
-                      }
-                    } else if (e.key === 'Backspace' && (e.target as HTMLInputElement).value === '' && optionInputs.length > 1) {
-                      e.preventDefault();
-                      removeOption(idx);
-                      if (idx > 0) {
-                        optionInputRefs.current[idx - 1]?.focus();
-                      }
-                    }
-                  }}
-                />
-                {optionInputs.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeOption(idx)}
-                    className="px-2 py-1 text-red-500 hover:text-red-700"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-            <Button 
-              type="button" 
-              size="sm" 
-              variant="outline" 
-              onClick={addOption}
-              className="mb-3"
-            >
-              + {t('dotManager.addAnotherOption')}
-            </Button>
-          </>
-        )}
-        
-        {smartTab === 'date' && (
-          <div className="text-sm p-4 text-center bg-gray-50 rounded">
-            {t('dotManager.dateSmartOptionDesc')}
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2 mt-4">
-          <Button type="button" size="sm" variant="ghost" onClick={handleCancel}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="button" size="sm" onClick={handleConfirm}>
-            {t('common.confirm')}
-          </Button>
-        </div>
-      </div>
-    );
   };
 
   const enhancedPreview = (content: string) => {
@@ -570,9 +342,18 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
           ))}
         </select>
         <Button 
-          onClick={() => setIsCreating(true)}
+          onClick={() => setImportModalOpen(true)}
+          variant="outline"
           className="flex items-center gap-2"
           disabled={isCreating || editingId !== null || loading}
+        >
+          <Download className="w-4 h-4" />
+          Import
+        </Button>
+        <Button 
+          onClick={() => setIsCreating(true)}
+          className="flex items-center gap-2"
+          disabled={isCreating || editingId !== null || loading || createMutation.isPending}
         >
           <Plus className="w-4 h-4" />
           {t('dotManager.newPhrase')}
@@ -636,43 +417,90 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
             </div>
             
             <div>
-              {/* Add Smart Option button above and left of textarea */}
-              <div className="mb-2 flex items-center gap-2">
-                <Button type="button" onClick={() => setShowOptionPanel(true)}>
-                  + {t('dotManager.addSmartOption')}
-                </Button>
-                <span className="text-xs text-gray-500">{t('dotManager.smartOptionsHint')}</span>
-              </div>
               <label className="block text-sm font-medium mb-2">{t('dotManager.content')}</label>
-              <div style={{ position: 'relative' }}>
-              <Textarea
-                  ref={textareaRef}
-                  placeholder={t('dotManager.content')}
+              <DotPhraseTextarea
                 value={formData.content}
-                onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                onChange={(val) => setFormData(prev => ({ ...prev, content: val }))}
+                placeholder={t('dotManager.content')}
                 rows={4}
+                className="w-full min-w-[600px]"
+                onRef={(ref) => setTextareaRef(ref)}
+                isCreationMode={true}
               />
-                {showOptionPanel && <SmartOptionPanel />}
-              </div>
+              
+              {/* Enhanced Smart Function Builder */}
+              <SmartFunctionBuilder
+                onInsert={handleSmartFunctionInsert}
+                className="mt-2"
+              />
             </div>
 
-            {/* Preview */}
+            {/* Enhanced Interactive Preview */}
             {formData.content && (
               <div>
-                <label className="block text-sm font-medium mb-2">{t('dotManager.preview')}</label>
-                <div className="p-3 bg-gray-50 border rounded-md text-sm" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
-                  {enhancedPreview(formData.content)}
+                <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                  {t('dotManager.preview')}
+                  <Badge variant="secondary" className="text-xs">Interactive</Badge>
+                </label>
+                <div className="border rounded-lg overflow-hidden">
+                  {/* Static Preview */}
+                  <div className="p-3 bg-gray-50 border-b text-sm" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                    <div className="text-xs text-gray-600 mb-2 font-medium">Visual Preview:</div>
+                    {enhancedPreview(formData.content)}
+                  </div>
+                  
+                  {/* Interactive Testing Area */}
+                  {parseSmartOptions(formData.content).length > 0 && (
+                    <div className="p-3 bg-blue-50">
+                      <div className="text-xs text-blue-700 mb-2 font-medium">
+                        Test Interactive Functions ({parseSmartOptions(formData.content).length} detected):
+                      </div>
+                      <DotPhraseTextarea
+                        value={formData.content}
+                        onChange={() => {}} // Read-only for testing
+                        placeholder="This preview shows how your dot phrase will work when used"
+                        rows={2}
+                        className="w-full bg-white text-sm"
+                        disabled={true}
+                        isCreationMode={true}
+                      />
+                      <p className="text-xs text-blue-600 mt-1">
+                        This shows how users will see your smart functions in action. Click dropdown arrows to test options.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Analysis */}
+                  <div className="p-3 bg-white border-t">
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span>Smart Functions:</span>
+                        <span className="font-medium">{parseSmartOptions(formData.content).length}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span>Character Length:</span>
+                        <span className="font-medium">{formData.content.length}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span>Contains Calculations:</span>
+                        <span className="font-medium">{formData.content.includes('/calc') ? 'Yes' : 'No'}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span>Contains Dates:</span>
+                        <span className="font-medium">{formData.content.includes('[[DATE]]') ? 'Yes' : 'No'}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                {parseSmartOptions(formData.content).length > 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    {t('dotManager.smartOptionsDetected').replace('{count}', parseSmartOptions(formData.content).length.toString())}
-                  </p>
-                )}
               </div>
             )}
 
             <div className="flex gap-2">
-              <Button onClick={handleSave} className="flex items-center gap-2">
+              <Button 
+                onClick={handleSave} 
+                className="flex items-center gap-2"
+                disabled={createMutation.isPending || updateMutation.isPending}
+              >
                 <Save className="w-4 h-4" />
                 {editingId ? t('dotManager.update') : t('dotManager.create')}
               </Button>
@@ -709,6 +537,12 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
                           {phrase.trigger}
                         </code>
                         <Badge variant="secondary">{phrase.category}</Badge>
+                        {phrase.shareCode && (
+                          <Badge variant="outline" className="text-green-600 border-green-600">
+                            <Share2 className="w-3 h-3 mr-1" />
+                            Shared
+                          </Badge>
+                        )}
                       </div>
                       <h3 className="font-medium text-gray-900 mb-1">{phrase.description}</h3>
                       <p className="text-sm text-gray-600 mb-2">{previewContent(phrase.content)}</p>
@@ -720,8 +554,20 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleEdit(phrase)}
+                        onClick={() => {
+                          setSelectedPhraseForShare(phrase);
+                          setShareModalOpen(true);
+                        }}
                         disabled={isCreating || editingId !== null}
+                        title="Share this dot phrase"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEdit(phrase)}
+                        disabled={isCreating || editingId !== null || createMutation.isPending || updateMutation.isPending}
                       >
                         <Edit2 className="w-4 h-4" />
                       </Button>
@@ -730,6 +576,7 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
                         size="sm"
                         onClick={() => handleDelete(phrase.id)}
                         className="text-red-600 hover:text-red-700"
+                        disabled={deleteMutation.isPending}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -741,6 +588,28 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
           )}
         </div>
       )}
+
+      {/* Share Modal */}
+      {selectedPhraseForShare && (
+        <ShareDotPhraseModal
+          isOpen={shareModalOpen}
+          onClose={() => {
+            setShareModalOpen(false);
+            setSelectedPhraseForShare(null);
+          }}
+          dotPhrase={selectedPhraseForShare}
+        />
+      )}
+
+      {/* Import Modal */}
+      <ImportDotPhraseModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onSuccess={(importedPhrase) => {
+          // The phrase will be automatically added to the list via React Query cache
+          console.log('Successfully imported:', importedPhrase.trigger);
+        }}
+      />
     </div>
   );
 }

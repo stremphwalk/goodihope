@@ -64,10 +64,20 @@ function isFutureDate(timestamp: string): boolean {
 }
 
 /**
+ * Validate if a date is actually valid (handles edge cases like Feb 30)
+ */
+function isValidDate(year: number, month: number, day: number): boolean {
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && 
+         date.getMonth() === month - 1 && 
+         date.getDate() === day;
+}
+
+/**
  * A robust function to parse 'YYMMDD HHMM' timestamps into valid Date objects.
  * This is the key to accurate chronological sorting.
  */
-function parseLabTimestamp(timestamp?: string): Date {
+export function parseLabTimestamp(timestamp?: string): Date {
   if (!timestamp) return new Date(0); 
 
   const parts = timestamp.trim().split(' ');
@@ -84,10 +94,17 @@ function parseLabTimestamp(timestamp?: string): Date {
       return new Date(0);
     }
 
-    // Future-proof year determination for decades ahead:
-    // For medical records, assume all 2-digit years refer to 21st century (2000-2099)
-    // This handles current dates (25 = 2025) through future dates (99 = 2099)
-    const fullYear = 2000 + year;
+    // Future-proof year determination:
+    // For medical records, assume 2-digit years:
+    // 00-30 = 2000-2030 (future)
+    // 31-99 = 1931-1999 (past) - for historical medical records
+    const fullYear = year <= 30 ? 2000 + year : 1900 + year;
+
+    // Validate actual date exists (handles Feb 29 on non-leap years, etc.)
+    if (!isValidDate(fullYear, month, day)) {
+      console.warn(`Invalid date for timestamp ${timestamp}: ${fullYear}-${month}-${day} does not exist`);
+      return new Date(0);
+    }
 
     let hour = 0;
     let minute = 0;
@@ -96,18 +113,27 @@ function parseLabTimestamp(timestamp?: string): Date {
       const timePart = parts[1];
       hour = parseInt(timePart.substring(0, 2), 10);
       minute = parseInt(timePart.substring(2, 4), 10);
+      
+      // Validate time components
+      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        console.warn(`Invalid time components for timestamp ${timestamp}: ${hour}:${minute}`);
+        hour = 0;
+        minute = 0;
+      }
     }
 
-    const result = new Date(fullYear, month - 1, day, hour, minute); // month-1 for 0-based
+    const result = new Date(fullYear, month - 1, day, hour, minute);
     
-    // Debug logging for problematic dates
-    if (timestamp === '250602' || timestamp === '250608') {
-      console.log(`Parsed ${timestamp}: ${result.toISOString()} (${fullYear}-${month}-${day})`);
+    // Final validation - ensure the date object is valid
+    if (isNaN(result.getTime())) {
+      console.warn(`Failed to create valid date for timestamp ${timestamp}`);
+      return new Date(0);
     }
     
     return result;
   }
 
+  // Try to parse as standard date string
   const parsedDate = Date.parse(timestamp);
   if (!isNaN(parsedDate)) {
     return new Date(parsedDate);
@@ -119,9 +145,29 @@ function parseLabTimestamp(timestamp?: string): Date {
 /**
  * This function uses the robust date-sorting logic to guarantee chronological order.
  */
+// Cache current date to avoid repeated calls
+let cachedCurrentDate: string | null = null;
+let cacheTimestamp = 0;
+
+function getCachedCurrentDateYYMMDD(): string {
+  const now = Date.now();
+  // Cache for 1 minute to avoid repeated calculations
+  if (!cachedCurrentDate || now - cacheTimestamp > 60000) {
+    cachedCurrentDate = getCurrentDateYYMMDD();
+    cacheTimestamp = now;
+  }
+  return cachedCurrentDate;
+}
+
 export function processLabValues(labValues: LabValue[]): ProcessedLabValue[] {
+  // Input validation
+  if (!labValues || !Array.isArray(labValues)) {
+    console.warn('processLabValues: Invalid input - expected array of LabValue');
+    return [];
+  }
+  
   // Get current date for intelligent comparison
-  const currentYYMMDD = getCurrentDateYYMMDD();
+  const currentYYMMDD = getCachedCurrentDateYYMMDD();
   console.log(`Current system date (YYMMDD): ${currentYYMMDD}`);
 
   // First, filter out any invalid lab values
@@ -235,13 +281,16 @@ export function processLabValues(labValues: LabValue[]): ProcessedLabValue[] {
     }
 
     const mostRecent = sortedByDate[0]; 
+    const trendingValues = sortedByDate.slice(1);
+    const hasTrending = trendingValues.length > 0;
+    
     processed.push({
       testName: mostRecent.testName,
       category: mostRecent.category,
       mostRecent: mostRecent,
-      trending: sortedByDate.slice(1),
-      showTrending: false,
-      trendCount: 0, 
+      trending: trendingValues,
+      showTrending: hasTrending, // Auto-enable trending if there are multiple values
+      trendCount: hasTrending ? trendingValues.length : 0, // Show all trending values by default
       showInNote: true,
     });
   });
@@ -263,23 +312,32 @@ export function formatLabValuesForNote(processedLabs: ProcessedLabValue[]): stri
   processedLabs.forEach(lab => {
     if (!lab.showInNote) return;
     const name = LAB_ABBREVIATIONS[lab.testName] || lab.testName;
-    let line = `${name} ${lab.mostRecent.value}`;
-
-    if (lab.showTrending && lab.trendCount > 0 && lab.trending.length > 0) {
-      const trendValues = lab.trending
+    
+    if (lab.showTrending && lab.trendCount > 0 && lab.trending && lab.trending.length > 0) {
+      const principalValue = lab.mostRecent.value;
+      const trendingValues = lab.trending
         .slice(0, lab.trendCount)
-        .map(t => t.value)
-        .join(', ');
+        .map(v => v.value);
 
-      if (trendValues) {
-        line += ` (${trendValues})`;
+      let line = `${name} ${principalValue}`;
+
+      if (trendingValues.length > 0) {
+        line += ` (${trendingValues.join(', ')})`;
       }
-    }
 
-    if (!groupedByCategory.has(lab.category)) {
-      groupedByCategory.set(lab.category, []);
+      if (!groupedByCategory.has(lab.category)) {
+        groupedByCategory.set(lab.category, []);
+      }
+      groupedByCategory.get(lab.category)!.push(line);
+    } else {
+      // No trending - just show the most recent value
+      let line = `${name} ${lab.mostRecent.value}`;
+
+      if (!groupedByCategory.has(lab.category)) {
+        groupedByCategory.set(lab.category, []);
+      }
+      groupedByCategory.get(lab.category)!.push(line);
     }
-    groupedByCategory.get(lab.category)!.push(line);
   });
 
   const finalLines: string[] = [];
@@ -304,13 +362,17 @@ export function updateLabTrending(
   change: 'increase' | 'decrease'
 ): ProcessedLabValue[] {
   return processedLabs.map(lab => {
-    if (lab.testName === testName) {
-      let newCount = lab.trendCount;
+    if (lab.testName.toLowerCase() === testName.toLowerCase()) {
+      // Ensure trending array exists and is valid
+      const trendingLength = lab.trending?.length || 0;
+      let newCount = lab.trendCount || 0;
+      
       if (change === 'increase') {
-        newCount = Math.min(lab.trendCount + 1, lab.trending.length);
+        newCount = Math.min(newCount + 1, trendingLength);
       } else {
-        newCount = Math.max(lab.trendCount - 1, 0);
+        newCount = Math.max(newCount - 1, 0);
       }
+      
       return {
         ...lab,
         trendCount: newCount,
@@ -334,4 +396,78 @@ export function toggleLabShowInNote(
     }
     return lab; 
   });
+}
+
+export function moveLabUp(
+  processedLabs: ProcessedLabValue[],
+  testName: string
+): ProcessedLabValue[] {
+  if (!processedLabs || processedLabs.length === 0 || !testName) {
+    return processedLabs;
+  }
+  
+  const currentIndex = processedLabs.findIndex(lab => 
+    lab.testName.toLowerCase() === testName.toLowerCase()
+  );
+  
+  if (currentIndex <= 0) return processedLabs;
+  
+  // Find the previous lab in the same category
+  const currentLab = processedLabs[currentIndex];
+  if (!currentLab || !currentLab.category) return processedLabs;
+  
+  let targetIndex = -1;
+  
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    const lab = processedLabs[i];
+    if (lab && lab.category === currentLab.category) {
+      targetIndex = i;
+      break;
+    }
+  }
+  
+  if (targetIndex === -1) return processedLabs;
+  
+  const newOrder = [...processedLabs];
+  [newOrder[currentIndex], newOrder[targetIndex]] = [newOrder[targetIndex], newOrder[currentIndex]];
+  
+  return newOrder;
+}
+
+export function moveLabDown(
+  processedLabs: ProcessedLabValue[],
+  testName: string
+): ProcessedLabValue[] {
+  if (!processedLabs || processedLabs.length === 0 || !testName) {
+    return processedLabs;
+  }
+  
+  const currentIndex = processedLabs.findIndex(lab => 
+    lab.testName.toLowerCase() === testName.toLowerCase()
+  );
+  
+  if (currentIndex === -1 || currentIndex >= processedLabs.length - 1) {
+    return processedLabs;
+  }
+  
+  // Find the next lab in the same category
+  const currentLab = processedLabs[currentIndex];
+  if (!currentLab || !currentLab.category) return processedLabs;
+  
+  let targetIndex = -1;
+  
+  for (let i = currentIndex + 1; i < processedLabs.length; i++) {
+    const lab = processedLabs[i];
+    if (lab && lab.category === currentLab.category) {
+      targetIndex = i;
+      break;
+    }
+  }
+  
+  if (targetIndex === -1) return processedLabs;
+  
+  const newOrder = [...processedLabs];
+  [newOrder[currentIndex], newOrder[targetIndex]] = [newOrder[targetIndex], newOrder[currentIndex]];
+  
+  return newOrder;
 }

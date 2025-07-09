@@ -18,12 +18,8 @@ import {
   Sparkles
 } from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
-import { useTemplate } from "../contexts/TemplateContext";
 import { DotPhraseManager } from './DotPhraseManager';
-import { TemplateManager } from './TemplateManager';
-import { TemplateSelectorPage } from './TemplateSelectorPage';
-import { SECTION_LIBRARY, getSectionById } from '@/lib/sectionLibrary';
-import { type Template } from '@shared/schema';
+import { UserProfileSection } from './UserProfileSection';
 
 interface MainLayoutProps {
   selectedMenu: string;
@@ -44,57 +40,9 @@ export function MainLayout({
   isICU = false,
 }: MainLayoutProps & { children: React.ReactNode }) {
   const { language, setLanguage } = useLanguage();
-  const { selectedTemplate, isTemplateActive, getTemplateContent } = useTemplate();
 
-  // Generate template-aware medical notes sections
+  // Generate medical notes sections
   const getMedicalNotesSections = () => {
-    // If template is active, use template sections
-    if (isTemplateActive) {
-      try {
-        const templateContent = getTemplateContent();
-        if (templateContent && templateContent.sections && Array.isArray(templateContent.sections)) {
-          const enabledSections = templateContent.sections
-            .filter(section => section && section.isEnabled !== false && section.sectionId)
-            .sort((a, b) => (a.order || 0) - (b.order || 0));
-          
-          if (enabledSections.length === 0) {
-            console.warn('Template has no enabled sections, falling back to default');
-            return getDefaultMedicalNotesSections();
-          }
-          
-          const mappedSections = enabledSections.map(section => {
-            const sectionDef = getSectionById(section.sectionId);
-            if (!sectionDef) {
-              console.warn(`Section definition not found for: ${section.sectionId}`);
-              return null;
-            }
-            
-            const IconComponent = sectionDef.icon;
-            if (!IconComponent) {
-              console.warn(`Icon not found for section: ${section.sectionId}`);
-              return {
-                key: section.sectionId,
-                label: sectionDef.name,
-                icon: <FileText className="w-6 h-6 text-purple-500 bg-purple-100 rounded-full p-1" />
-              };
-            }
-            
-            return {
-              key: section.sectionId,
-              label: sectionDef.name,
-              icon: <IconComponent className="w-6 h-6 text-purple-500 bg-purple-100 rounded-full p-1" />
-            };
-          }).filter(Boolean);
-          
-          return mappedSections.length > 0 ? mappedSections : getDefaultMedicalNotesSections();
-        }
-      } catch (error) {
-        console.error('Error processing template sections:', error);
-        return getDefaultMedicalNotesSections();
-      }
-    }
-    
-    // Default sections when no template is active
     return getDefaultMedicalNotesSections();
   };
 
@@ -114,7 +62,7 @@ export function MainLayout({
     ];
   };
 
-  // Generate main menus dynamically to ensure template reactivity
+  // Generate main menus
   const getMainMenus = () => [
     {
       key: "medical-notes",
@@ -123,20 +71,12 @@ export function MainLayout({
       subOptions: getMedicalNotesSections(),
     },
     {
-      key: "templates",
-      label: "Templates",
-      icon: <FileText className="w-5 h-5" />,
-      subOptions: [
-        { key: "template-selector", label: "Select Template", icon: <FileText className="w-6 h-6 text-purple-500 bg-purple-100 rounded-full p-1" /> },
-        { key: "template-manager", label: "Manage Templates", icon: <Sparkles className="w-6 h-6 text-indigo-500 bg-indigo-100 rounded-full p-1" /> },
-      ],
-    },
-    {
       key: "smart-options",
       label: "Smart Functions",
       icon: <Sparkles className="w-5 h-5" />,
       subOptions: [
         { key: "dot-phrases", label: "Dot Phrases", icon: <ClipboardList className="w-6 h-6 text-green-500 bg-green-100 rounded-full p-1" /> },
+        { key: "test-smart-functions", label: "Test Smart Functions", icon: <TestTube className="w-6 h-6 text-purple-500 bg-purple-100 rounded-full p-1" /> },
       ],
     },
     {
@@ -150,19 +90,21 @@ export function MainLayout({
   const MAIN_MENUS = getMainMenus();
   const currentMenu = MAIN_MENUS.find((m) => m.key === selectedMenu) || MAIN_MENUS[0];
   const [medicalNotesOpen, setMedicalNotesOpen] = useState(true);
-  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [smartOptionsOpen, setSmartOptionsOpen] = useState(false);
 
   return (
     <SidebarProvider>
       <div className="flex h-screen">
-        <Sidebar className="medical-sidebar border-r border-gray-200">
+        <Sidebar className="medical-sidebar border-r border-gray-200 flex flex-col">
           {/* Logo */}
-          <div className="medical-header py-6 flex flex-col items-center">
+          <div className="medical-header py-6 flex flex-col items-center flex-shrink-0">
             <span style={{ fontFamily: 'Inter, Manrope, Arial, sans-serif', fontWeight: 600, color: '#2D3748', fontSize: '1.35rem', letterSpacing: '-0.01em' }}>AriNote</span>
           </div>
-          {/* Main menu */}
-          <nav className="flex flex-col gap-3 px-3">
+          
+          {/* Scrollable navigation area */}
+          <div className="flex-1 overflow-y-auto">
+            {/* Main menu */}
+            <nav className="flex flex-col gap-3 px-3 pb-3">
             {MAIN_MENUS.map((menu, idx) => (
               <div key={menu.key} className="menu-item">
                 <button
@@ -172,11 +114,6 @@ export function MainLayout({
                     if (menu.key === "medical-notes") {
                       setMedicalNotesOpen((open) => !open);
                       if (!medicalNotesOpen && menu.subOptions.length > 0) {
-                        setSelectedSubOption(menu.subOptions[0].key);
-                      }
-                    } else if (menu.key === "templates") {
-                      setTemplatesOpen((open) => !open);
-                      if (!templatesOpen && menu.subOptions.length > 0) {
                         setSelectedSubOption(menu.subOptions[0].key);
                       }
                     } else if (menu.key === "smart-options") {
@@ -192,9 +129,6 @@ export function MainLayout({
                   <span>{menu.label}</span>
                   {menu.key === "medical-notes" && (
                     <ChevronDown className={`ml-auto w-4 h-4 transition-transform ${medicalNotesOpen ? "rotate-0" : "-rotate-90"}`} />
-                  )}
-                  {menu.key === "templates" && (
-                    <ChevronDown className={`ml-auto w-4 h-4 transition-transform ${templatesOpen ? "rotate-0" : "-rotate-90"}`} />
                   )}
                   {menu.key === "smart-options" && (
                     <ChevronDown className={`ml-auto w-4 h-4 transition-transform ${smartOptionsOpen ? "rotate-0" : "-rotate-90"}`} />
@@ -232,22 +166,6 @@ export function MainLayout({
                     ))}
                   </nav>
                 )}
-                {/* Templates subnav */}
-                {menu.key === "templates" && templatesOpen && menu.subOptions.length > 0 && (
-                  <nav className="flex flex-col gap-1 mt-2 ml-2">
-                    {menu.subOptions.map((sub) => (
-                      <button
-                        key={sub.key}
-                        className={`medical-subnav-button ${selectedSubOption === sub.key ? 'medical-subnav-active' : ''}`}
-                        onClick={() => setSelectedSubOption(sub.key)}
-                        tabIndex={0}
-                      >
-                        {sub.icon}
-                        <span>{sub.label}</span>
-                      </button>
-                    ))}
-                  </nav>
-                )}
                 {/* Smart Options subnav toggle */}
                 {menu.key === "smart-options" && smartOptionsOpen && menu.subOptions.length > 0 && (
                   <nav className="flex flex-col gap-1 mt-2 ml-2">
@@ -266,26 +184,28 @@ export function MainLayout({
                 )}
               </div>
             ))}
-          </nav>
-          {/* Language Switcher */}
-          <div className="mt-auto flex flex-col items-center py-6">
-            <button
-              className="medical-language-button"
-              onClick={() => setLanguage(language === "fr" ? "en" : "fr")}
-            >
-              <Globe className="w-4 h-4" />
-              {language === "fr" ? "Français" : "English"}
-            </button>
+            </nav>
+          </div>
+          
+          {/* Fixed bottom section - User Profile and Language */}
+          <div className="flex-shrink-0 mt-auto">
+            <UserProfileSection />
+            {/* Language Switcher */}
+            <div className="flex flex-col items-center py-6">
+              <button
+                className="medical-language-button"
+                onClick={() => setLanguage(language === "fr" ? "en" : "fr")}
+              >
+                <Globe className="w-4 h-4" />
+                {language === "fr" ? "Français" : "English"}
+              </button>
+            </div>
           </div>
         </Sidebar>
         {/* Main content area */}
         <main className="medical-main-content">
           {selectedMenu === 'smart-options' && selectedSubOption === 'dot-phrases' ? (
             <DotPhraseManager />
-          ) : selectedMenu === 'templates' && selectedSubOption === 'template-manager' ? (
-            <TemplateManager />
-          ) : selectedMenu === 'templates' && selectedSubOption === 'template-selector' ? (
-            <TemplateSelectorPage />
           ) : (
             children
           )}

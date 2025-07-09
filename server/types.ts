@@ -5,4 +5,6 @@ export interface ExtractedMedication {
   category?: string;
   quantity?: string;
   isPRN?: boolean;
+  instructions?: string;
+  notes?: string;
 } 
