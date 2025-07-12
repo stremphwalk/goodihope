@@ -31,12 +31,10 @@ import {
   Fade,
   Stack,
 } from '@mui/material';
-import {
-  ArrowBack,
-  ArrowForward,
-  Pause,
-  PlayArrow,
-} from '@mui/icons-material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import PauseIcon from '@mui/icons-material/Pause';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 interface Screenshot {
   id: string;
@@ -193,7 +191,7 @@ const ScreenshotCarousel: React.FC<ScreenshotCarouselProps> = ({
                   },
                 }}
               >
-                <ArrowBack />
+                <ArrowBackIcon />
               </IconButton>
               
               <IconButton
@@ -210,7 +208,7 @@ const ScreenshotCarousel: React.FC<ScreenshotCarouselProps> = ({
                   },
                 }}
               >
-                <ArrowForward />
+                <ArrowForwardIcon />
               </IconButton>
 
               {/* Play/Pause Button */}
@@ -227,7 +225,7 @@ const ScreenshotCarousel: React.FC<ScreenshotCarouselProps> = ({
                   },
                 }}
               >
-                {isPlaying ? <Pause /> : <PlayArrow />}
+                {isPlaying ? <PauseIcon /> : <PlayArrowIcon />}
               </IconButton>
             </Box>
           </Card>

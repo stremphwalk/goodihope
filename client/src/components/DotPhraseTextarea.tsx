@@ -5,9 +5,14 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { CalculationModal } from './CalculationModal';
 import { CalculationResult } from './CalculationModal';
+import { WidgetModal } from './WidgetModal';
 import getCaretCoordinates from 'textarea-caret';
 import { useAuth } from 'react-oidc-context';
 import { useDotPhrases } from '@/hooks/useDotPhrases';
+import { widgetRegistry, parseWidgetSyntax } from '@/lib/widgetRegistry';
+import { WidgetWrapper } from './WidgetWrapper';
+import { WidgetInstance } from '@/types/widgets';
+import '@/lib/registerWidgets';
 
 interface DotPhraseTextareaProps {
   value: string;
@@ -40,11 +45,17 @@ function parseSmartOptions(text: string) {
   let match;
   while ((match = regex.exec(text))) {
     const options = match[1].split('|');
+    
+    // Check if this is a widget option (starts with WIDGET:)
+    const isWidget = options.length === 1 && options[0].startsWith('WIDGET:');
+    
     matches.push({
       start: match.index,
       end: match.index + match[0].length,
-      options,
-      selectedIdx: 0
+      options: isWidget ? ['Open Widget'] : options,
+      selectedIdx: 0,
+      isWidget,
+      widgetType: isWidget ? options[0].split(':')[1] : null
     });
   }
   return matches;
@@ -69,6 +80,9 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const [activeSmartIdx, setActiveSmartIdx] = useState<number | null>(null);
   const { data: customPhrases = [] } = useDotPhrases();
   const [isCalculationModalOpen, setIsCalculationModalOpen] = useState(false);
+  const [widgets, setWidgets] = useState<Map<string, WidgetInstance>>(new Map());
+  const [showWidgetMode, setShowWidgetMode] = useState(false);
+  const [activeWidgetModal, setActiveWidgetModal] = useState<{type: string, position: number} | null>(null);
   const [currentPosition, setCurrentPosition] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [dateValue, setDateValue] = useState<string>("");
@@ -102,10 +116,43 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   };
 
 
-  // Update smart options when value changes
+  // Update smart options and widgets when value changes
   useEffect(() => {
     const options = parseSmartOptions(value);
     setSmartOptions(options);
+    
+    // Parse widgets with error handling
+    try {
+      const widgetMatches = parseWidgetSyntax(value);
+      const newWidgets = new Map<string, WidgetInstance>();
+      
+      widgetMatches.forEach(match => {
+        try {
+          const existingWidget = widgets.get(match.id);
+          if (existingWidget) {
+            newWidgets.set(match.id, existingWidget);
+          } else {
+            // Create new widget instance
+            const widget = widgetRegistry.createWidget(match.type);
+            if (widget) {
+              widget.id = match.id;
+              widget.onDataChange = (data) => handleWidgetDataChange(match.id, data);
+              newWidgets.set(match.id, widget);
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to process widget ${match.id} of type ${match.type}:`, error);
+        }
+      });
+      
+      // Only update widgets if the map has actually changed
+      if (newWidgets.size !== widgets.size || 
+          Array.from(newWidgets.keys()).some(id => !widgets.has(id))) {
+        setWidgets(newWidgets);
+      }
+    } catch (error) {
+      console.warn('Error parsing widget syntax:', error);
+    }
     
     // Auto-activate first smart option if we have smart functions (but not in creation mode)
     if (options.length > 0 && activeSmartIdx === null && !isCreationMode) {
@@ -115,6 +162,14 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       if (hasOnlySmartFunctions) {
         setActiveSmartIdx(0);
       }
+    }
+    
+    // Show widget mode if we have widgets and no smart options
+    try {
+      const widgetMatches = parseWidgetSyntax(value);
+      setShowWidgetMode(widgetMatches.length > 0 && options.length === 0);
+    } catch (error) {
+      setShowWidgetMode(false);
     }
   }, [value, activeSmartIdx, isCreationMode]);
 
@@ -206,17 +261,41 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     if (!isCreationMode && smartOptions.length > 0 && activeSmartIdx !== null) {
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        const opt = smartOptions[activeSmartIdx];
-        opt.selectedIdx = (opt.selectedIdx - 1 + opt.options.length) % opt.options.length;
-        setSmartOptions([...smartOptions]);
+        if (smartOptions.length > 1) {
+          const prevIdx = (activeSmartIdx - 1 + smartOptions.length) % smartOptions.length;
+          setActiveSmartIdx(prevIdx);
+        } else {
+          const opt = smartOptions[activeSmartIdx];
+          opt.selectedIdx = (opt.selectedIdx - 1 + opt.options.length) % opt.options.length;
+          setSmartOptions([...smartOptions]);
+        }
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        const opt = smartOptions[activeSmartIdx];
-        opt.selectedIdx = (opt.selectedIdx + 1) % opt.options.length;
-        setSmartOptions([...smartOptions]);
-      } else if (e.key === 'Tab' || e.key === 'Enter') {
+        if (smartOptions.length > 1) {
+          const nextIdx = (activeSmartIdx + 1) % smartOptions.length;
+          setActiveSmartIdx(nextIdx);
+        } else {
+          const opt = smartOptions[activeSmartIdx];
+          opt.selectedIdx = (opt.selectedIdx + 1) % opt.options.length;
+          setSmartOptions([...smartOptions]);
+        }
+      } else if (e.key === 'Tab') {
         e.preventDefault();
-        handleSmartOptionSelect(activeSmartIdx, smartOptions[activeSmartIdx].selectedIdx);
+        if (e.shiftKey) {
+          // Shift+Tab: go to previous smart option
+          const prevIdx = (activeSmartIdx - 1 + smartOptions.length) % smartOptions.length;
+          setActiveSmartIdx(prevIdx);
+        } else {
+          // Tab: confirm current and go to next smart option
+          handleSmartOptionSelect(activeSmartIdx, smartOptions[activeSmartIdx].selectedIdx || 0);
+          if (smartOptions.length > 1) {
+            const nextIdx = (activeSmartIdx + 1) % smartOptions.length;
+            setTimeout(() => setActiveSmartIdx(nextIdx), 0);
+          }
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSmartOptionSelect(activeSmartIdx, smartOptions[activeSmartIdx].selectedIdx || 0);
       } else if (e.key === 'Escape') {
         setActiveSmartIdx(null);
       }
@@ -284,6 +363,18 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const handleSmartOptionSelect = (idx: number, optIdx: number) => {
     if (smartOptions.length === 0) return;
     const opt = smartOptions[idx];
+    
+    // Check if this is a widget option
+    if (opt.isWidget && opt.widgetType) {
+      // Open widget modal instead of replacing text
+      setActiveWidgetModal({
+        type: opt.widgetType,
+        position: opt.start
+      });
+      setActiveSmartIdx(null);
+      return;
+    }
+    
     const before = value.slice(0, opt.start);
     const after = value.slice(opt.end);
     const selected = opt.options[optIdx];
@@ -322,6 +413,37 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         }
       });
     }
+  };
+
+  // Handle widget data changes
+  const handleWidgetDataChange = (widgetId: string, newData: Record<string, any>) => {
+    setWidgets(prev => {
+      const newWidgets = new Map(prev);
+      const widget = newWidgets.get(widgetId);
+      if (widget) {
+        widget.data = newData;
+        widget.onDataChange = (data) => handleWidgetDataChange(widgetId, data);
+        newWidgets.set(widgetId, widget);
+      }
+      return newWidgets;
+    });
+  };
+
+  // Generate text output including widgets
+  const generateTextOutput = () => {
+    let output = value;
+    const widgetMatches = parseWidgetSyntax(value);
+    
+    // Replace widget syntax with text from widgets
+    widgetMatches.forEach(match => {
+      const widget = widgets.get(match.id);
+      if (widget) {
+        const text = widgetRegistry.generateText(match.type, widget.data);
+        output = output.replace(match.match, text);
+      }
+    });
+    
+    return output;
   };
 
   // Handle custom option input
@@ -441,6 +563,36 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       textarea.selectionEnd = newPosition;
     }, 0);
   }, [value, currentPosition, onChange]);
+
+  // Handle widget result
+  const handleWidgetResult = useCallback((widgetData: Record<string, any>) => {
+    if (!activeWidgetModal || !textareaRef.current) return;
+    
+    const textarea = textareaRef.current;
+    const widgetText = widgetRegistry.generateText(activeWidgetModal.type, widgetData);
+    
+    // Find the widget placeholder in the text
+    const beforeWidget = value.substring(0, activeWidgetModal.position);
+    const afterWidget = value.substring(activeWidgetModal.position);
+    
+    // Remove the [[WIDGET:type]] placeholder and insert the generated text
+    const widgetPlaceholderEnd = afterWidget.indexOf(']]') + 2;
+    const afterWidgetClean = afterWidget.substring(widgetPlaceholderEnd);
+    
+    const newValue = beforeWidget + widgetText + afterWidgetClean;
+    onChange(newValue);
+    
+    // Close modal and focus textarea
+    setActiveWidgetModal(null);
+    textarea.focus();
+    
+    // Set cursor position after the inserted text
+    const newPosition = beforeWidget.length + widgetText.length;
+    setTimeout(() => {
+      textarea.selectionStart = newPosition;
+      textarea.selectionEnd = newPosition;
+    }, 0);
+  }, [activeWidgetModal, value, onChange]);
 
   // Handle cursor position changes
   const handleSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -676,6 +828,12 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
           style={{ minWidth: 120, maxWidth: 220, top: dropdownPos.top, left: dropdownPos.left }}
           onMouseDown={() => { dropdownMouseDownRef.current = true; }}
         >
+          {/* Multiple options indicator */}
+          {smartOptions.length > 1 && (
+            <div className="text-xs text-gray-500 mb-1 px-1">
+              {activeSmartIdx + 1}/{smartOptions.length} • ←→ to cycle
+            </div>
+          )}
           {/* Pointer triangle */}
           <div
             style={{
@@ -692,7 +850,31 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
             }}
           />
           {/* Dropdown content */}
-          {smartOptions[activeSmartIdx].options[0] === 'DATE' ? (
+          {smartOptions[activeSmartIdx].isWidget ? (
+            <div className="flex flex-col items-center gap-2 p-2">
+              <div className="text-xs text-gray-600 text-center">
+                {smartOptions[activeSmartIdx].widgetType?.charAt(0).toUpperCase() + smartOptions[activeSmartIdx].widgetType?.slice(1)} Widget
+              </div>
+              <button
+                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                onMouseDown={e => {
+                  e.preventDefault();
+                  handleSmartOptionSelect(activeSmartIdx, 0);
+                }}
+              >
+                Open Widget
+              </button>
+              <button
+                className="text-xs text-red-600 hover:underline"
+                onMouseDown={e => {
+                  e.preventDefault();
+                  handleCancelOption(activeSmartIdx);
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          ) : smartOptions[activeSmartIdx].options[0] === 'DATE' ? (
             <div className="flex flex-col items-start gap-1">
               <label className="text-xs text-gray-500 mb-1">Select date:</label>
               <DatePicker
@@ -827,10 +1009,64 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         </div>
       )}
 
+      {/* Widget Rendering */}
+      {showWidgetMode && widgets.size > 0 && (
+        <div className="mt-4 space-y-4">
+          {Array.from(widgets.entries()).map(([widgetId, widget]) => (
+            <WidgetWrapper
+              key={widgetId}
+              widget={widget}
+              onDataChange={(data) => handleWidgetDataChange(widgetId, data)}
+              mode="interactive"
+              isReadOnly={disabled}
+              showControls={true}
+              className="border border-purple-200 bg-purple-50"
+            />
+          ))}
+          <div className="flex justify-end gap-2">
+            <button
+              className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600"
+              onClick={() => {
+                const textOutput = generateTextOutput();
+                navigator.clipboard.writeText(textOutput);
+                // Could add a toast notification here
+              }}
+            >
+              Copy as Text
+            </button>
+            <button
+              className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+              onClick={() => setShowWidgetMode(false)}
+            >
+              Hide Widgets
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Show Widgets Button */}
+      {!showWidgetMode && widgets.size > 0 && (
+        <div className="mt-2">
+          <button
+            className="px-3 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600"
+            onClick={() => setShowWidgetMode(true)}
+          >
+            Show Widgets ({widgets.size})
+          </button>
+        </div>
+      )}
+
       <CalculationModal
         isOpen={isCalculationModalOpen}
         onClose={() => setIsCalculationModalOpen(false)}
         onResult={handleCalculationResult}
+      />
+
+      <WidgetModal
+        isOpen={activeWidgetModal !== null}
+        widgetType={activeWidgetModal?.type || ''}
+        onClose={() => setActiveWidgetModal(null)}
+        onResult={handleWidgetResult}
       />
 
     </div>

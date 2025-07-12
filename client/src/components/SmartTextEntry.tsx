@@ -170,16 +170,25 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         const condition = line.replace('#', '').trim();
         formatted.push(`${conditionCount}. ${condition}`);
       } else if (line.startsWith('-')) {
+        // Sub-point - preserve as indented with dash
         const detail = line.replace('-', '').trim();
         formatted.push(`     - ${detail}`);
       } else if (line.startsWith('--')) {
+        // Sub-sub-detail (deeper indentation)
         const subDetail = line.replace('--', '').trim();
         formatted.push(`       - ${subDetail}`);
       } else {
         // Only auto-format as numbered condition if line doesn't already start with a number
+        // and doesn't start with whitespace (preserving indented content)
         if (!/^\d+\./.test(line)) {
-          conditionCount++;
-          formatted.push(`${conditionCount}. ${line}`);
+          if (line.match(/^\s+/)) {
+            // Line starts with whitespace, preserve as-is (likely a sub-point or indented content)
+            formatted.push(line);
+          } else {
+            // Auto-format as numbered condition
+            conditionCount++;
+            formatted.push(`${conditionCount}. ${line}`);
+          }
         } else {
           // Line already has a number, just add it as-is
           formatted.push(line);

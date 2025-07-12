@@ -67,3 +67,7 @@ aws-infrastructure/.terraform/providers/registry.terraform.io/hashicorp/aws/5.10
 .terraform/
 *.zip
 terraform.tfstate*
+
+# Desktop companion release files (too large for GitHub)
+desktop-companion/release/
+bundle-analysis.html

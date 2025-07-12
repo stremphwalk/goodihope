@@ -72,11 +72,13 @@ interface Template {
   isFavorite: boolean;
 }
 
-type NoteType = 'admission' | 'progress' | 'consultation' | null;
+type NoteType = 'admission' | 'progress' | 'consultation' | 'custom' | null;
 type NoteSubtype = 'general' | 'icu' | 'er' | 'clinic';
 import { SmartPMHSection } from "@/components/SmartPMHSection";
 import { SmartImpressionSection } from "@/components/SmartImpressionSection";
 import { MedicationSection } from "@/components/MedicationSectionNew";
+import { AllergiesSection } from "@/components/AllergiesSection";
+import { SocialHistorySection } from "@/components/SocialHistorySection";
 import { ChiefComplaintSection, type ChiefComplaintData } from "@/components/ChiefComplaintSection";
 import { type MedicationData, formatMedicationsForNote } from "@/lib/medicationUtils";
 import { LabImageUpload } from "@/components/LabImageUpload";
@@ -216,7 +218,8 @@ function ReviewOfSystems() {
   const [currentText, setCurrentText] = useState("");
   const dmp = useRef(new DiffMatchPatch.diff_match_patch());
   
-  const [noteType, setNoteType] = useState<"admission" | "progress" | "consultation" | null>(null);
+  const [noteType, setNoteType] = useState<"admission" | "progress" | "consultation" | "custom" | null>(null);
+  const [customNoteText, setCustomNoteText] = useState<string>("");
   const [admissionType, setAdmissionType] = useState<"general" | "icu">("general");
   const [progressType, setProgressType] = useState<"general" | "icu">("general");
   
@@ -1935,7 +1938,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
         return (
           <SectionWrapper title={sectionTitle["note-type"]} sectionKey="note-type">
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div
                   className={`max-w-xs w-full p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
                     noteType === "admission"
@@ -1977,6 +1980,20 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                     <span className="font-medium text-gray-900">Consultation</span>
                   </div>
                   <p className="text-sm text-gray-600">For specialist or consult notes.</p>
+                </div>
+                <div
+                  className={`max-w-xs w-full p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
+                    noteType === "custom"
+                      ? "border-orange-500 bg-orange-50"
+                      : "border-gray-200 hover:border-gray-300"
+                  }`}
+                  onClick={() => setNoteType("custom")}
+                >
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Edit3 className="w-5 h-5 text-orange-600" />
+                    <span className="font-medium text-gray-900">{language === 'fr' ? 'Personnalisé' : 'Custom'}</span>
+                  </div>
+                  <p className="text-sm text-gray-600">{language === 'fr' ? 'Note libre avec phrases-points.' : 'Free-form note with dot phrases.'}</p>
                 </div>
               </div>
               {noteType === "progress" && (
@@ -2229,260 +2246,17 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       case "allergies-social":
         return (
           <SectionWrapper title={sectionTitle["allergies-social"]} sectionKey="allergies">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Allergies Section */}
-              <div className="space-y-4">
-                <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-orange-500" />
-                  {language === 'fr' ? 'Allergies' : 'Allergies'}
-                </h4>
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="text-sm text-gray-600">{language === 'fr' ? 'Patient a des allergies' : 'Patient has allergies'}</span>
-                  <button
-                    onClick={() => {
-                      setAllergies({
-                        hasAllergies: !allergies.hasAllergies,
-                        allergiesList: allergies.hasAllergies ? [] : allergies.allergiesList
-                      });
-                    }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
-                      allergies.hasAllergies ? 'bg-orange-500' : 'bg-gray-200'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        allergies.hasAllergies ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    value={newAllergy}
-                    onChange={(e) => setNewAllergy(e.target.value)}
-                    placeholder={language === 'fr' ? 'Ajouter une allergie...' : 'Add allergy...'}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newAllergy.trim()) {
-                        if (!allergies.allergiesList.includes(newAllergy.trim())) {
-                          setAllergies(prev => ({
-                            hasAllergies: true,
-                            allergiesList: [...prev.allergiesList, newAllergy.trim()]
-                          }));
-                        }
-                        setNewAllergy('');
-                      }
-                    }}
-                    className="flex-1"
-                  />
-                  <Button
-                    onClick={() => {
-                      if (newAllergy.trim() && !allergies.allergiesList.includes(newAllergy.trim())) {
-                        setAllergies(prev => ({
-                          hasAllergies: true,
-                          allergiesList: [...prev.allergiesList, newAllergy.trim()]
-                        }));
-                        setNewAllergy('');
-                        handleAllergiesConfirm();
-                      }
-                    }}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-                {allergies.hasAllergies && allergies.allergiesList.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-2">
-                      {allergies.allergiesList.map((allergy, index) => (
-                        <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                          {allergy}
-                          <X
-                            className="w-3 h-3 cursor-pointer hover:text-red-600"
-                            onClick={() => setAllergies(prev => ({
-                              hasAllergies: true,
-                              allergiesList: prev.allergiesList.filter((_, i) => i !== index)
-                            }))}
-                          />
-                        </Badge>
-                      ))}
-                    </div>
-                    <Button
-                      onClick={handleAllergiesConfirm}
-                      size="sm"
-                      variant="outline"
-                      className="mt-2"
-                    >
-                      {language === 'fr' ? 'Confirmer les allergies' : 'Confirm Allergies'}
-                    </Button>
-                  </div>
-                )}
-              </div>
-              
-              {/* Social History Section */}
-              <div className="space-y-4">
-                <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                  <Users className="w-4 h-4 text-pink-500" />
-                  {language === 'fr' ? 'Histoire Sociale' : 'Social History'}
-                </h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">{language === 'fr' ? 'Tabagisme' : 'Smoking'}</span>
-                    <button
-                      onClick={() => {
-                        const newStatus = !socialHistory.smoking.status;
-                        setSocialHistory(prev => ({ ...prev, smoking: { status: newStatus, details: newStatus ? prev.smoking.details : '' } }));
-                        if (newStatus) {
-                          // When enabling, sync local state with saved state
-                          setSmokingDetails(socialHistory.smoking.details);
-                        } else {
-                          // When disabling, clear local state
-                          setSmokingDetails('');
-                        }
-                      }}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
-                        socialHistory.smoking.status ? 'bg-pink-500' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          socialHistory.smoking.status ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  {socialHistory.smoking.status && (
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder={language === 'fr' ? 'Détails du tabagisme...' : 'Smoking details...'}
-                        value={smokingDetails}
-                        onChange={(e) => setSmokingDetails(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            setSocialHistory(prev => ({ ...prev, smoking: { ...prev.smoking, details: smokingDetails } }));
-                            handleSocialHistoryConfirm();
-                          }
-                        }}
-                        className="flex-1"
-                      />
-                      <Button
-                        onClick={() => {
-                          setSocialHistory(prev => ({ ...prev, smoking: { ...prev.smoking, details: smokingDetails } }));
-                          handleSocialHistoryConfirm();
-                        }}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {language === 'fr' ? 'Confirmer' : 'Confirm'}
-                      </Button>
-                    </div>
-                  )}
-                  
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">{language === 'fr' ? 'Alcool' : 'Alcohol'}</span>
-                    <button
-                      onClick={() => {
-                        const newStatus = !socialHistory.alcohol.status;
-                        setSocialHistory(prev => ({ ...prev, alcohol: { status: newStatus, details: newStatus ? prev.alcohol.details : '' } }));
-                        if (newStatus) {
-                          // When enabling, sync local state with saved state
-                          setAlcoholDetails(socialHistory.alcohol.details);
-                        } else {
-                          // When disabling, clear local state
-                          setAlcoholDetails('');
-                        }
-                      }}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
-                        socialHistory.alcohol.status ? 'bg-pink-500' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          socialHistory.alcohol.status ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  {socialHistory.alcohol.status && (
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder={language === 'fr' ? 'Détails de l\'alcool...' : 'Alcohol details...'}
-                        value={alcoholDetails}
-                        onChange={(e) => setAlcoholDetails(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            setSocialHistory(prev => ({ ...prev, alcohol: { ...prev.alcohol, details: alcoholDetails } }));
-                            handleSocialHistoryConfirm();
-                          }
-                        }}
-                        className="flex-1"
-                      />
-                      <Button
-                        onClick={() => {
-                          setSocialHistory(prev => ({ ...prev, alcohol: { ...prev.alcohol, details: alcoholDetails } }));
-                          handleSocialHistoryConfirm();
-                        }}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {language === 'fr' ? 'Confirmer' : 'Confirm'}
-                      </Button>
-                    </div>
-                  )}
-                  
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">{language === 'fr' ? 'Drogues' : 'Drugs'}</span>
-                    <button
-                      onClick={() => {
-                        const newStatus = !socialHistory.drugs.status;
-                        setSocialHistory(prev => ({ ...prev, drugs: { status: newStatus, details: newStatus ? prev.drugs.details : '' } }));
-                        if (newStatus) {
-                          // When enabling, sync local state with saved state
-                          setDrugsDetails(socialHistory.drugs.details);
-                        } else {
-                          // When disabling, clear local state
-                          setDrugsDetails('');
-                        }
-                      }}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 ${
-                        socialHistory.drugs.status ? 'bg-pink-500' : 'bg-gray-200'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          socialHistory.drugs.status ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  {socialHistory.drugs.status && (
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder={language === 'fr' ? 'Détails des drogues...' : 'Drug details...'}
-                        value={drugsDetails}
-                        onChange={(e) => setDrugsDetails(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            setSocialHistory(prev => ({ ...prev, drugs: { ...prev.drugs, details: drugsDetails } }));
-                            handleSocialHistoryConfirm();
-                          }
-                        }}
-                        className="flex-1"
-                      />
-                      <Button
-                        onClick={() => {
-                          setSocialHistory(prev => ({ ...prev, drugs: { ...prev.drugs, details: drugsDetails } }));
-                          handleSocialHistoryConfirm();
-                        }}
-                        size="sm"
-                        variant="outline"
-                      >
-                        {language === 'fr' ? 'Confirmer' : 'Confirm'}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+              <AllergiesSection
+                allergies={allergies}
+                onAllergiesChange={setAllergies}
+                onConfirm={handleAllergiesConfirm}
+              />
+              <SocialHistorySection
+                socialHistory={socialHistory}
+                onSocialHistoryChange={setSocialHistory}
+                onConfirm={handleSocialHistoryConfirm}
+              />
             </div>
           </SectionWrapper>
         );
@@ -2826,6 +2600,51 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       />
     );
   };
+
+  // Custom note mode - full width live preview only
+  if (noteType === "custom") {
+    return (
+      <MainLayout
+        selectedMenu={selectedMenu}
+        setSelectedMenu={setSelectedMenu}
+        selectedSubOption={selectedSubOption}
+        setSelectedSubOption={setSelectedSubOption}
+        livePreview={null}
+        isICU={false}
+      >
+        <div className="flex flex-1 h-full min-h-[600px] bg-gray-50">
+          <div className="flex-1 min-w-0 flex flex-col p-4">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Edit3 className="w-6 h-6 text-orange-600" />
+                <h1 className="text-xl font-semibold text-gray-900">
+                  {language === 'fr' ? 'Note Personnalisée' : 'Custom Note'}
+                </h1>
+              </div>
+              <Button
+                onClick={() => setNoteType(null)}
+                variant="outline"
+                size="sm"
+              >
+                {language === 'fr' ? 'Retour' : 'Back'}
+              </Button>
+            </div>
+            <div className="flex-1 bg-white rounded-lg border border-gray-200 shadow-sm">
+              <DotPhraseTextarea
+                value={customNoteText}
+                onChange={setCustomNoteText}
+                placeholder={language === 'fr' 
+                  ? 'Commencez à taper votre note... Utilisez /phrase pour les phrases-points.'
+                  : 'Start typing your note... Use /phrase for dot phrases.'}
+                className="w-full h-full resize-none border-0 focus:ring-0 text-base leading-relaxed"
+                rows={25}
+              />
+            </div>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout

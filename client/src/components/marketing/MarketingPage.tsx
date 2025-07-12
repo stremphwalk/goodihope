@@ -23,17 +23,15 @@ import {
   Stack,
   Chip,
 } from '@mui/material';
-import {
-  Menu as MenuIcon,
-  Close as CloseIcon,
-  LocalHospital,
-  Assignment,
-  Speed,
-  Security,
-  CloudSync,
-  AutoAwesome,
-  CheckCircle,
-} from '@mui/icons-material';
+import MenuIcon from '@mui/icons-material/Menu';
+import CloseIcon from '@mui/icons-material/Close';
+import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
+import AssignmentIcon from '@mui/icons-material/Assignment';
+import SpeedIcon from '@mui/icons-material/Speed';
+import SecurityIcon from '@mui/icons-material/Security';
+import CloudSyncIcon from '@mui/icons-material/CloudSync';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useAuth } from 'react-oidc-context';
 import ScreenshotCarousel from './ScreenshotCarousel';
 
@@ -262,7 +260,7 @@ const AppAppBar = () => {
         <Container maxWidth="lg">
           <Toolbar disableGutters>
             <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
-              <LocalHospital sx={{ color: 'primary.main', mr: 1 }} />
+              <LocalHospitalIcon sx={{ color: 'primary.main', mr: 1 }} />
               <Typography
                 variant="h6"
                 component="div"
@@ -438,7 +436,7 @@ const Hero = () => {
                       mb: 2,
                     }}
                   >
-                    <Assignment sx={{ fontSize: 36, color: 'white' }} />
+                    <AssignmentIcon sx={{ fontSize: 36, color: 'white' }} />
                   </Box>
                   <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
                     {MARKETING_CONTENT.hero.demoCard.title}
@@ -465,12 +463,12 @@ const Hero = () => {
 
 const Features = () => {
   const featureIcons = [
-    <AutoAwesome />,
-    <Assignment />,
-    <Speed />,
-    <Security />,
-    <CloudSync />,
-    <CheckCircle />,
+    <AutoAwesomeIcon />,
+    <AssignmentIcon />,
+    <SpeedIcon />,
+    <SecurityIcon />,
+    <CloudSyncIcon />,
+    <CheckCircleIcon />,
   ];
   
   const features = MARKETING_CONTENT.features.items.map((item, index) => ({
@@ -608,7 +606,7 @@ const Footer = () => {
         <Grid container spacing={4}>
           <Grid item xs={12} md={4}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <LocalHospital sx={{ mr: 1 }} />
+              <LocalHospitalIcon sx={{ mr: 1 }} />
               <Typography variant="h6" sx={{ fontWeight: 700 }}>
                 {MARKETING_CONTENT.footer.brandName}
               </Typography>

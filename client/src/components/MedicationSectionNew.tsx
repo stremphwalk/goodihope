@@ -91,23 +91,59 @@ function MedicationItem({
         </div>
       </div>
 
-      {/* Dosage and Frequency Selection */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {/* Dosage Input */}
-        <Input
-          placeholder={language === 'fr' ? 'Dose' : 'Dose'}
-          value={medication.dosage || ''}
-          onChange={(e) => onDosageChange(medication.id, e.target.value)}
-          className="h-6 w-16 text-xs rounded-full text-center border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-        />
-
-        {/* Frequency Input */}
-        <Input
-          placeholder={language === 'fr' ? 'Fréq' : 'Freq'}
-          value={medication.frequency || ''}
-          onChange={(e) => onFrequencyChange(medication.id, e.target.value)}
-          className="h-6 w-12 text-xs rounded-full text-center border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-        />
+      {/* Dosage and Frequency Section */}
+      <div className="flex flex-col gap-1 flex-shrink-0">
+        {/* Input Fields */}
+        <div className="flex items-center gap-1">
+          <Input
+            placeholder={language === 'fr' ? 'Dose' : 'Dose'}
+            defaultValue={medication.dosage || ''}
+            onBlur={(e) => onDosageChange(medication.id, e.target.value)}
+            className="h-6 w-16 text-xs text-center border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+          />
+          <Input
+            placeholder={language === 'fr' ? 'Fréq' : 'Freq'}
+            defaultValue={medication.frequency || ''}
+            onBlur={(e) => onFrequencyChange(medication.id, e.target.value)}
+            className="h-6 w-12 text-xs text-center border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+          />
+        </div>
+        
+        {/* Common Dosages Bubbles */}
+        {!medication.isCustom && availableDosages.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {availableDosages.slice(0, 3).map(dosage => (
+              <button
+                key={dosage}
+                onClick={(e) => { e.stopPropagation(); onDosageChange(medication.id, dosage); }}
+                className={`px-1.5 py-0.5 text-xs rounded-full border transition-all hover:scale-105 ${
+                  medication.dosage === dosage 
+                    ? 'bg-blue-500 text-white border-blue-500' 
+                    : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                }`}
+              >
+                {dosage}
+              </button>
+            ))}
+          </div>
+        )}
+        
+        {/* Common Frequencies Bubbles */}
+        <div className="flex flex-wrap gap-1">
+          {['DIE', 'BID', 'TID'].map(freq => (
+            <button
+              key={freq}
+              onClick={(e) => { e.stopPropagation(); onFrequencyChange(medication.id, freq); }}
+              className={`px-1.5 py-0.5 text-xs rounded-full border transition-all hover:scale-105 ${
+                medication.frequency === freq 
+                  ? 'bg-green-500 text-white border-green-500' 
+                  : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-green-400'
+              }`}
+            >
+              {freq}
+            </button>
+          ))}
+        </div>
       </div>
 
       <Button
@@ -137,6 +173,31 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
   const [reorderMode, setReorderMode] = useState(false);
   const [orderingQueue, setOrderingQueue] = useState<string[]>([]);
   const { language } = useLanguage();
+
+  // Load dosages for new medications
+  useEffect(() => {
+    const loadDosages = async () => {
+      const allMeds = [...medications.homeMedications, ...medications.hospitalMedications];
+      const newMeds = allMeds.filter(med => !med.isCustom && !medicationDosages[med.name]);
+      
+      if (newMeds.length === 0) return;
+      
+      const dosagePromises = newMeds.map(async (med) => {
+        const dosages = await getCommonDosages(med.name);
+        return { name: med.name, dosages };
+      });
+      
+      const results = await Promise.all(dosagePromises);
+      const newDosageMap: Record<string, string[]> = {};
+      results.forEach(result => {
+        newDosageMap[result.name] = result.dosages;
+      });
+      
+      setMedicationDosages(prev => ({ ...prev, ...newDosageMap }));
+    };
+
+    loadDosages();
+  }, [medications.homeMedications.length, medications.hospitalMedications.length]);
 
   const handleHomeMedicationAdd = (medicationName: string, isCustom: boolean = false) => {
     const medication = createMedication(medicationName, isCustom);
@@ -311,38 +372,7 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
     });
   };
 
-  // Load dosages for medications - only when medication names change, not order
-  useEffect(() => {
-    const loadDosages = async () => {
-      const allMeds = [...medications.homeMedications, ...medications.hospitalMedications];
-      
-      // Only load dosages for medications we don't already have
-      const newMeds = allMeds.filter(med => !medicationDosages[med.name]);
-      
-      if (newMeds.length === 0) return;
-      
-      console.log('Loading dosages for new medications:', newMeds.map(m => m.name));
-      
-      const dosagePromises = newMeds.map(async (med) => {
-        if (!med.isCustom) {
-          const dosages = await getCommonDosages(med.name);
-          return { name: med.name, dosages };
-        }
-        return { name: med.name, dosages: [] };
-      });
-      
-      const results = await Promise.all(dosagePromises);
-      const newDosageMap: Record<string, string[]> = {};
-      results.forEach(result => {
-        newDosageMap[result.name] = result.dosages;
-      });
-      
-      // Merge with existing dosages instead of replacing
-      setMedicationDosages(prev => ({ ...prev, ...newDosageMap }));
-    };
 
-    loadDosages();
-  }, [medications.homeMedications.length, medications.hospitalMedications.length, medications.homeMedications.map(m => m.name).join(','), medications.hospitalMedications.map(m => m.name).join(','), medicationDosages]);
 
   const getHomeMedicationNames = () => medications.homeMedications.map(med => med.name);
   const getHospitalMedicationNames = () => medications.hospitalMedications.map(med => med.name);

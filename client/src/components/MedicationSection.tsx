@@ -135,26 +135,60 @@ function SortableMedicationItem({
           </Badge>
         </div>
         
-        <div className="flex items-center gap-2 mt-1">
-          {showCommonDosages && availableDosages.length > 0 ? (
-            <select
-              value={medication.dosage || ''}
-              onChange={(e) => onDosageChange(medication.id, e.target.value)}
-              className="px-2 py-1 text-xs border rounded w-20 bg-white dark:bg-gray-700"
-            >
-              <option value="">{language === 'fr' ? 'Dose' : 'Dose'}</option>
-              {availableDosages.map(dosage => (
-                <option key={dosage} value={dosage}>{dosage}</option>
+        <div className="flex flex-col gap-2 mt-1">
+          {/* Dosage Section */}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1">
+              <Input
+                placeholder={language === 'fr' ? 'Dose...' : 'Dose...'}
+                defaultValue={medication.dosage || ''}
+                onBlur={(e) => onDosageChange(medication.id, e.target.value)}
+                className="w-20 h-6 text-xs"
+              />
+              <Input
+                placeholder={language === 'fr' ? 'Fréq...' : 'Freq...'}
+                defaultValue={medication.frequency || ''}
+                onBlur={(e) => onFrequencyChange(medication.id, e.target.value)}
+                className="w-16 h-6 text-xs"
+              />
+            </div>
+            
+            {/* Common Dosages Bubbles */}
+            {showCommonDosages && availableDosages.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {availableDosages.slice(0, 3).map(dosage => (
+                  <button
+                    key={dosage}
+                    onClick={() => onDosageChange(medication.id, dosage)}
+                    className={`px-2 py-0.5 text-xs rounded-full border transition-all hover:scale-105 ${
+                      medication.dosage === dosage 
+                        ? 'bg-blue-500 text-white border-blue-500' 
+                        : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                    }`}
+                  >
+                    {dosage}
+                  </button>
+                ))}
+              </div>
+            )}
+            
+            {/* Common Frequencies Bubbles */}
+            <div className="flex flex-wrap gap-1">
+              {['DIE', 'BID', 'TID'].map(freq => (
+                <button
+                  key={freq}
+                  onClick={() => onFrequencyChange(medication.id, freq)}
+                  className={`px-2 py-0.5 text-xs rounded-full border transition-all hover:scale-105 ${
+                    medication.frequency === freq 
+                      ? 'bg-green-500 text-white border-green-500' 
+                      : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-green-400'
+                  }`}
+                >
+                  {freq}
+                </button>
               ))}
-            </select>
-          ) : (
-            <Input
-              placeholder={language === 'fr' ? 'Dose...' : 'Dose...'}
-              value={medication.dosage || ''}
-              onChange={(e) => onDosageChange(medication.id, e.target.value)}
-              className="w-20 h-7 text-xs"
-            />
-          )}
+            </div>
+          </div>
         </div>
       </div>
 

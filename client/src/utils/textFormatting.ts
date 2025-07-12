@@ -58,9 +58,16 @@ export function formatSmartText(text: string, options: {
         }
         formatted.push(line);
       } else if (!preserveFormatting || !/^\d+\./.test(line)) {
-        // Auto-format as numbered condition
-        conditionCount++;
-        formatted.push(`${conditionCount}. ${line}`);
+        // Only auto-format as numbered condition if line doesn't start with spaces (indicating it's not indented)
+        // This preserves sub-points and other indented content
+        if (line.match(/^\s+/)) {
+          // Line starts with whitespace, preserve as-is (likely a sub-point or indented content)
+          formatted.push(line);
+        } else {
+          // Auto-format as numbered condition
+          conditionCount++;
+          formatted.push(`${conditionCount}. ${line}`);
+        }
       } else {
         formatted.push(line);
       }

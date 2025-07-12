@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, GripVertical, Calendar, Hash, List, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, X, GripVertical, Calendar, Hash, List, ChevronDown, ChevronUp, Pill, AlertCircle, History, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { widgetRegistry, insertWidgetSyntax } from '@/lib/widgetRegistry';
+import '@/lib/registerWidgets';
 
 export interface SmartFunction {
   id: string;
-  type: 'multi-option' | 'date' | 'calculation';
+  type: 'multi-option' | 'date' | 'calculation' | 'widget';
   options?: string[];
+  widgetType?: string;
   position: number;
 }
 
@@ -19,7 +22,7 @@ interface SmartFunctionBuilderProps {
 
 export function SmartFunctionBuilder({ onInsert, className = '' }: SmartFunctionBuilderProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [activeBuilder, setActiveBuilder] = useState<'multi-option' | 'date' | 'calculation' | null>(null);
+  const [activeBuilder, setActiveBuilder] = useState<'multi-option' | 'date' | 'calculation' | 'widget' | null>(null);
   const [multiOptions, setMultiOptions] = useState<string[]>(['']);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
@@ -89,6 +92,36 @@ export function SmartFunctionBuilder({ onInsert, className = '' }: SmartFunction
   const insertCalculation = () => {
     onInsert('/calc');
     setActiveBuilder(null);
+  };
+
+  // Widget insertion functions
+  const insertWidget = (widgetType: string) => {
+    const widget = widgetRegistry.createWidget(widgetType);
+    if (widget) {
+      const syntax = `[[WIDGET:${widgetType}:${widget.id}]]`;
+      onInsert(syntax);
+      setActiveBuilder(null);
+    }
+  };
+
+  const availableWidgets = widgetRegistry.getAvailableTypes().map(type => ({
+    type,
+    config: widgetRegistry.get(type)?.config
+  })).filter(widget => widget.config);
+
+  const getWidgetIcon = (type: string) => {
+    switch (type) {
+      case 'medication':
+        return <Pill className="w-3 h-3" />;
+      case 'allergies':
+        return <AlertCircle className="w-3 h-3" />;
+      case 'pmh':
+        return <History className="w-3 h-3" />;
+      case 'impression':
+        return <Target className="w-3 h-3" />;
+      default:
+        return <List className="w-3 h-3" />;
+    }
   };
 
   // Medical template suggestions organized by specialty
@@ -188,6 +221,23 @@ export function SmartFunctionBuilder({ onInsert, className = '' }: SmartFunction
             >
               <Hash className="w-3 h-3" />
             </Button>
+            {/* Widget buttons */}
+            {availableWidgets.slice(0, 3).map(widget => (
+              <Button
+                key={widget.type}
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  insertWidget(widget.type);
+                }}
+                className="text-xs px-2 py-1 h-6"
+                title={widget.config?.description}
+              >
+                {getWidgetIcon(widget.type)}
+              </Button>
+            ))}
           </div>
         </div>
       </div>
@@ -229,6 +279,21 @@ export function SmartFunctionBuilder({ onInsert, className = '' }: SmartFunction
                 <Hash className="w-3 h-3 mr-1" />
                 Calculator
               </Button>
+              {/* Widget buttons */}
+              {availableWidgets.map(widget => (
+                <Button
+                  key={widget.type}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => insertWidget(widget.type)}
+                  className="text-xs bg-white hover:bg-purple-100 border-purple-300"
+                  title={widget.config?.description}
+                >
+                  {getWidgetIcon(widget.type)}
+                  <span className="ml-1">{widget.config?.label}</span>
+                </Button>
+              ))}
             </div>
           </div>
 
@@ -391,6 +456,9 @@ export function SmartFunctionBuilder({ onInsert, className = '' }: SmartFunction
             </p>
             <p>
               <strong>Calculator:</strong> Inserts medical calculation trigger
+            </p>
+            <p>
+              <strong>Widgets:</strong> Inserts interactive components (medications, allergies, etc.)
             </p>
           </div>
         </div>

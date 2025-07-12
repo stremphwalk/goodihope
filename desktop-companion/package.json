@@ -1,0 +1,77 @@
+{
+  "name": "arinote-companion",
+  "version": "1.0.0",
+  "description": "Desktop companion app for AriNote dot phrases with system-wide functionality",
+  "main": "dist/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:vite\" \"wait-on http://localhost:5173 && npm run dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "cross-env NODE_ENV=development electron .",
+    "build": "npm run build:vite && npm run build:electron",
+    "build:vite": "vite build",
+    "build:electron": "tsc -p tsconfig.main.json",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "debug:shortcuts": "cross-env NODE_ENV=development electron debug-shortcuts.js"
+  },
+  "keywords": [
+    "medical",
+    "documentation",
+    "dot-phrases",
+    "electron",
+    "desktop"
+  ],
+  "author": "AriNote Team",
+  "license": "MIT",
+  "homepage": "./",
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.11",
+    "@tanstack/react-query": "^5.82.0",
+    "@types/node": "^24.0.13",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "autoprefixer": "^10.4.21",
+    "aws-amplify": "^6.15.3",
+    "clsx": "^2.1.1",
+    "concurrently": "^9.2.0",
+    "cross-env": "^7.0.3",
+    "fuse.js": "^7.1.0",
+    "postcss": "^8.5.6",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.4",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "com.arinote.companion",
+    "productName": "AriNote Companion",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.medical",
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  },
+  "devDependencies": {
+    "electron": "^37.2.1",
+    "electron-builder": "^26.0.12",
+    "terser": "^5.43.1"
+  }
+}
