@@ -2,6 +2,7 @@ import React from "react";
 import { useAuth } from "react-oidc-context";
 import { User, LogOut } from "lucide-react";
 import { Button } from "./ui/button";
+import { Link } from 'wouter'; // Import for client-side navigation
 
 export function UserProfileSection() {
   const auth = useAuth();
@@ -37,6 +38,16 @@ export function UserProfileSection() {
           </div>
         </div>
       </div>
+      <Link href="/profile">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-start text-gray-700 hover:text-gray-900 mb-2" // Added mb-2 for spacing
+        >
+          <User className="w-4 h-4 mr-2" />
+          View Profile
+        </Button>
+      </Link>
       <Button
         variant="outline"
         size="sm"

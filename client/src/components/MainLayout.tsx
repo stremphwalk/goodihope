@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { SidebarProvider, Sidebar } from "./ui/sidebar";
 import {
   FileText,
@@ -20,6 +20,7 @@ import {
 import { useLanguage } from "../contexts/LanguageContext";
 import { DotPhraseManager } from './DotPhraseManager';
 import { UserProfileSection } from './UserProfileSection';
+import { useLocation } from 'wouter';
 
 interface MainLayoutProps {
   selectedMenu: string;
@@ -40,6 +41,7 @@ export function MainLayout({
   isICU = false,
 }: MainLayoutProps & { children: React.ReactNode }) {
   const { language, setLanguage } = useLanguage();
+  const [location, setLocation] = useLocation();
 
   // Generate medical notes sections
   const getMedicalNotesSections = () => {
@@ -89,8 +91,18 @@ export function MainLayout({
 
   const MAIN_MENUS = getMainMenus();
   const currentMenu = MAIN_MENUS.find((m) => m.key === selectedMenu) || MAIN_MENUS[0];
-  const [medicalNotesOpen, setMedicalNotesOpen] = useState(true);
-  const [smartOptionsOpen, setSmartOptionsOpen] = useState(false);
+  const [medicalNotesOpen, setMedicalNotesOpen] = useState(true); // Always start with medical notes open
+  const [smartOptionsOpen, setSmartOptionsOpen] = useState(selectedMenu === 'smart-options');
+
+  // Synchronize open/close state and suboption selection with selectedMenu
+  useEffect(() => {
+    setMedicalNotesOpen(selectedMenu === 'medical-notes');
+    setSmartOptionsOpen(selectedMenu === 'smart-options');
+    const menu = MAIN_MENUS.find((m) => m.key === selectedMenu);
+    if (menu && menu.subOptions.length > 0 && !menu.subOptions.some(sub => sub.key === selectedSubOption)) {
+      setSelectedSubOption(menu.subOptions[0].key);
+    }
+  }, [selectedMenu, selectedSubOption, MAIN_MENUS, setSelectedSubOption]);
 
   return (
     <SidebarProvider>
@@ -110,10 +122,24 @@ export function MainLayout({
                 <button
                   className={`medical-nav-button ${selectedMenu === menu.key ? 'medical-nav-active' : ''}`}
                   onClick={() => {
+                    // Navigate to the appropriate route when switching from profile page
+                    if (location === '/profile') {
+                      if (menu.key === "medical-notes") {
+                        setLocation('/');
+                        return;
+                      } else if (menu.key === "smart-options") {
+                        setLocation('/dot-phrases');
+                        return;
+                      } else if (menu.key === "calculations") {
+                        setLocation('/calculations');
+                        return;
+                      }
+                    }
+                    
                     setSelectedMenu(menu.key);
                     if (menu.key === "medical-notes") {
-                      setMedicalNotesOpen((open) => !open);
-                      if (!medicalNotesOpen && menu.subOptions.length > 0) {
+                      setMedicalNotesOpen(true); // Always keep medical notes open when selected
+                      if (menu.subOptions.length > 0) {
                         setSelectedSubOption(menu.subOptions[0].key);
                       }
                     } else if (menu.key === "smart-options") {
@@ -140,7 +166,14 @@ export function MainLayout({
                       <button
                         key={sub.key}
                         className={`medical-subnav-button ${selectedSubOption === sub.key ? 'medical-subnav-active' : ''}`}
-                        onClick={() => setSelectedSubOption(sub.key)}
+                        onClick={() => {
+                          // Navigate to the appropriate route when switching from profile page
+                          if (location === '/profile') {
+                            setLocation('/');
+                            return;
+                          }
+                          setSelectedSubOption(sub.key);
+                        }}
                         tabIndex={0}
                         onKeyDown={e => {
                           if (e.key === 'ArrowDown') {
@@ -173,7 +206,16 @@ export function MainLayout({
                       <button
                         key={sub.key}
                         className={`medical-subnav-button ${selectedSubOption === sub.key ? 'medical-subnav-active' : ''}`}
-                        onClick={() => setSelectedSubOption(sub.key)}
+                        onClick={() => {
+                          // Navigate to the appropriate route when switching from profile page
+                          if (location === '/profile') {
+                            if (sub.key === 'dot-phrases') {
+                              setLocation('/dot-phrases');
+                            }
+                            return;
+                          }
+                          setSelectedSubOption(sub.key);
+                        }}
                         tabIndex={0}
                       >
                         {sub.icon}

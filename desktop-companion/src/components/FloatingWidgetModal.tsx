@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { widgetRegistry } from '../lib/widgetRegistry'
 import { WidgetInstance } from '../types/widgets'
 

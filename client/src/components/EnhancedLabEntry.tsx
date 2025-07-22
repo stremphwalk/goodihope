@@ -204,6 +204,9 @@ export function EnhancedLabEntry({
   const [customLabName, setCustomLabName] = useState('');
   const [customLabValue, setCustomLabValue] = useState('');
   const [customLabUnit, setCustomLabUnit] = useState('');
+  const [showCustomSuggestions, setShowCustomSuggestions] = useState(false);
+  const [customSuggestions, setCustomSuggestions] = useState<LabTest[]>([]);
+  const [selectedCustomIndex, setSelectedCustomIndex] = useState(-1);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -335,20 +338,97 @@ export function EnhancedLabEntry({
     });
   };
 
+  // Auto-complete functionality for custom lab name
+  const handleCustomLabNameChange = (value: string) => {
+    setCustomLabName(value);
+    
+    if (value.length < 2) {
+      setShowCustomSuggestions(false);
+      setCustomSuggestions([]);
+      return;
+    }
+
+    // Get all lab tests from all groups
+    const allTests = LAB_GROUPS.flatMap(group => group.tests);
+    
+    // Filter tests that match the input
+    const filteredTests = allTests.filter(test => 
+      test.name.toLowerCase().includes(value.toLowerCase()) ||
+      test.id.toLowerCase().includes(value.toLowerCase())
+    );
+    
+    setCustomSuggestions(filteredTests.slice(0, 8)); // Limit to 8 suggestions
+    setShowCustomSuggestions(filteredTests.length > 0);
+    setSelectedCustomIndex(-1);
+  };
+
+  const handleCustomLabNameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setShowCustomSuggestions(false);
+      setSelectedCustomIndex(-1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (showCustomSuggestions && customSuggestions.length > 0) {
+        setSelectedCustomIndex(prev => (prev + 1) % customSuggestions.length);
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (showCustomSuggestions && customSuggestions.length > 0) {
+        setSelectedCustomIndex(prev => prev <= 0 ? customSuggestions.length - 1 : prev - 1);
+      }
+    } else if (e.key === 'Enter' && selectedCustomIndex >= 0 && customSuggestions[selectedCustomIndex]) {
+      e.preventDefault();
+      const selectedTest = customSuggestions[selectedCustomIndex];
+      setCustomLabName(selectedTest.name);
+      setCustomLabUnit(selectedTest.unit);
+      setShowCustomSuggestions(false);
+      setSelectedCustomIndex(-1);
+    }
+  };
+
+  const handleCustomSuggestionClick = (test: LabTest) => {
+    setCustomLabName(test.name);
+    setCustomLabUnit(test.unit);
+    setShowCustomSuggestions(false);
+    setSelectedCustomIndex(-1);
+  };
+
   return (
     <div className="space-y-8 w-full">
       {/* Custom Lab Entry Section */}
       <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg">
         <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-          <div className="flex-1">
+          <div className="flex-1 relative">
             <label className="block text-xs font-medium mb-1">{language === 'fr' ? 'Nom du test personnalisé' : 'Custom Lab Name'}</label>
             <input
               type="text"
               className="w-full border rounded px-2 py-1 text-xs"
               value={customLabName}
-              onChange={e => setCustomLabName(e.target.value)}
-              placeholder={language === 'fr' ? 'Ex: Amylase' : 'e.g. Amylase'}
+              onChange={e => handleCustomLabNameChange(e.target.value)}
+              onKeyDown={handleCustomLabNameKeyDown}
+              onBlur={() => setTimeout(() => setShowCustomSuggestions(false), 150)}
+              placeholder={language === 'fr' ? 'Ex: Amylase ou rechercher...' : 'e.g. Amylase or search...'}
             />
+            {/* Auto-complete suggestions dropdown */}
+            {showCustomSuggestions && customSuggestions.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {customSuggestions.map((test, index) => (
+                  <div
+                    key={test.id}
+                    className={`px-3 py-2 cursor-pointer text-xs hover:bg-blue-50 dark:hover:bg-blue-900/50 ${
+                      index === selectedCustomIndex ? 'bg-blue-100 dark:bg-blue-900' : ''
+                    }`}
+                    onClick={() => handleCustomSuggestionClick(test)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{test.name}</span>
+                      <span className="text-gray-500 text-xs">{test.unit}</span>
+                    </div>
+                    <div className="text-gray-400 text-xs mt-1">{test.category} • {test.referenceRange}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex-1">
             <label className="block text-xs font-medium mb-1">{language === 'fr' ? 'Valeur' : 'Value'}</label>

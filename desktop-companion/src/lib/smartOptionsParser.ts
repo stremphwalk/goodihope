@@ -119,7 +119,7 @@ export class SmartOptionsParser {
   /**
    * Get the first unresolved smart option from content
    */
-  static getFirstInteractiveOption(content: string, cursorPosition: { x: number; y: number }): SmartOption | null {
+  static getFirstInteractiveOption(content: string): SmartOption | null {
     const parsed = this.parseContent(content)
     
     if (parsed.smartOptions.length > 0) {
@@ -144,4 +144,3 @@ export class SmartOptionsParser {
 }
 
 // Export types for use in other components
-export type { SmartOption, ParsedContent }

@@ -1,8 +1,6 @@
-import React from 'react'
 import { WidgetInstance, AllergyData, Allergy } from '../../types/widgets'
 
 export function AllergiesWidget({ 
-  id, 
   data, 
   onDataChange, 
   mode = 'interactive',

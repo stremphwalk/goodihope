@@ -6,6 +6,16 @@ import { Upload, FileImage, Clipboard, Loader2, CheckCircle, X, Pill, Camera, Im
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { createMedication, sortMedicationsByImportance, type SelectedMedication, type ExtractedMedication, categorizeMedication } from '@/lib/medicationUtils';
+import { Progress } from '@/components/ui/progress';
+
+interface ProcessingResult {
+  file: string;
+  success: boolean;
+  error?: string;
+  count: number;
+  suggestions?: string[];
+  extractionMethod?: string;
+}
 
 interface MedicationImageUploadProps {
   onMedicationsExtracted: (medications: SelectedMedication[], isHome: boolean) => void;
@@ -94,7 +104,7 @@ export function MedicationImageUpload({ onMedicationsExtracted }: MedicationImag
     const lowQualityFiles: File[] = [];
     for (const file of files) {
       try {
-        const img = new Image();
+        const img = new window.Image();
         const url = URL.createObjectURL(file);
         await new Promise<void>((resolve, reject) => {
           img.onload = () => resolve();
@@ -125,7 +135,7 @@ export function MedicationImageUpload({ onMedicationsExtracted }: MedicationImag
     setProcessingProgress({ current: 0, total: files.length });
     const allMedications: ExtractedMedication[] = [];
     const imageDataUrls: string[] = [];
-    const processedResults: Array<{file: string, success: boolean, error?: string, count: number}> = [];
+    const processedResults: ProcessingResult[] = [];
     
     try {
       for (let i = 0; i < files.length; i++) {
@@ -263,7 +273,8 @@ export function MedicationImageUpload({ onMedicationsExtracted }: MedicationImag
           addedAt: Date.now()
         }));
         
-        onMedicationsExtracted(selectedMedications, true);
+        const sortedMedications = sortMedicationsByImportance(selectedMedications);
+        onMedicationsExtracted(sortedMedications, false);
         
         let description = '';
         if (language === 'fr') {
@@ -355,13 +366,13 @@ export function MedicationImageUpload({ onMedicationsExtracted }: MedicationImag
 
     const selectedMedications = extractedMedications.map(med => {
       const medication = createMedication(med.name, false);
-      medication.dosage = med.dosage;
-      medication.frequency = med.frequency;
+      medication.dosage = med.dosage ?? '';
+      medication.frequency = med.frequency ?? '';
       return medication;
     });
 
         const sortedMedications = sortMedicationsByImportance(selectedMedications);
-    onMedicationsExtracted(sortedMedications);
+    onMedicationsExtracted(sortedMedications, false);
     
     // Clear the extracted medications and images
     setExtractedMedications([]);
@@ -505,13 +516,12 @@ export function MedicationImageUpload({ onMedicationsExtracted }: MedicationImag
               {language === 'fr' ? 'Traitement en cours...' : 'Processing...'}
             </span>
           </div>
-          {processingProgress.total > 0 && (
-            <p className="text-xs text-gray-600">
-              {language === 'fr' 
-                ? `Image ${processingProgress.current} sur ${processingProgress.total}`
-                : `Image ${processingProgress.current} of ${processingProgress.total}`}
-            </p>
-          )}
+          <Progress value={(processingProgress.current / processingProgress.total) * 100} className="w-full mb-2" />
+          <p className="text-xs text-gray-600">
+            {language === 'fr' 
+              ? `Image ${processingProgress.current} sur ${processingProgress.total}`
+              : `Image ${processingProgress.current} of ${processingProgress.total}`}
+          </p>
         </div>
       )}
 

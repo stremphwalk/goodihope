@@ -1,0 +1,326 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": false
+        },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "password": {
+          "name": "password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "custom_identifier": {
+          "name": "custom_identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "users_username_unique": {
+          "name": "users_username_unique",
+          "tableName": "users",
+          "columnNames": ["username"],
+          "isUnique": true,
+          "isPrimary": false
+        },
+        "users_custom_identifier_unique": {
+          "name": "users_custom_identifier_unique",
+          "tableName": "users",
+          "columnNames": ["custom_identifier"],
+          "isUnique": true,
+          "isPrimary": false
+        },
+        "idx_users_custom_identifier": {
+          "name": "idx_users_custom_identifier",
+          "tableName": "users",
+          "columnNames": ["custom_identifier"],
+          "isUnique": false,
+          "isPrimary": false
+        }
+      },
+      "foreignKeys": {},
+      "uniqueConstraints": {
+        "users_username_unique": {
+          "name": "users_username_unique",
+          "tableName": "users",
+          "columnNames": ["username"]
+        },
+        "users_custom_identifier_unique": {
+          "name": "users_custom_identifier_unique",
+          "tableName": "users",
+          "columnNames": ["custom_identifier"]
+        }
+      }
+    },
+    "dot_phrases": {
+      "name": "dot_phrases",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger": {
+          "name": "trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "share_code": {
+          "name": "share_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_public": {
+          "name": "is_public",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shared_at": {
+          "name": "shared_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "import_count": {
+          "name": "import_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "dot_phrases_share_code_unique": {
+          "name": "dot_phrases_share_code_unique",
+          "tableName": "dot_phrases",
+          "columnNames": ["share_code"],
+          "isUnique": true,
+          "isPrimary": false
+        }
+      },
+      "foreignKeys": {
+        "dot_phrases_user_id_users_id_fk": {
+          "name": "dot_phrases_user_id_users_id_fk",
+          "tableName": "dot_phrases",
+          "columnNames": ["user_id"],
+          "referencedTableName": "users",
+          "referencedColumnNames": ["id"]
+        }
+      },
+      "uniqueConstraints": {
+        "dot_phrases_share_code_unique": {
+          "name": "dot_phrases_share_code_unique",
+          "tableName": "dot_phrases",
+          "columnNames": ["share_code"]
+        }
+      }
+    },
+    "ros_notes": {
+      "name": "ros_notes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_name": {
+          "name": "patient_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_dob": {
+          "name": "patient_dob",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_mrn": {
+          "name": "patient_mrn",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "selections": {
+          "name": "selections",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "medications": {
+          "name": "medications",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generated_note": {
+          "name": "generated_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "ros_notes_user_id_users_id_fk": {
+          "name": "ros_notes_user_id_users_id_fk",
+          "tableName": "ros_notes",
+          "columnNames": ["user_id"],
+          "referencedTableName": "users",
+          "referencedColumnNames": ["id"]
+        }
+      },
+      "uniqueConstraints": {}
+    },
+    "user_presets": {
+      "name": "user_presets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_favorite": {
+          "name": "is_favorite",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "symptoms": {
+          "name": "symptoms",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_user_presets_user_id": {
+          "name": "idx_user_presets_user_id",
+          "tableName": "user_presets",
+          "columnNames": ["user_id"],
+          "isUnique": false,
+          "isPrimary": false
+        },
+        "idx_user_presets_updated_at": {
+          "name": "idx_user_presets_updated_at",
+          "tableName": "user_presets",
+          "columnNames": ["updated_at"],
+          "isUnique": false,
+          "isPrimary": false
+        }
+      },
+      "foreignKeys": {
+        "user_presets_user_id_users_id_fk": {
+          "name": "user_presets_user_id_users_id_fk",
+          "tableName": "user_presets",
+          "columnNames": ["user_id"],
+          "referencedTableName": "users",
+          "referencedColumnNames": ["id"]
+        }
+      },
+      "uniqueConstraints": {}
+    }
+  }
+} 

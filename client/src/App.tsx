@@ -1,8 +1,8 @@
-import { Switch, Route } from "wouter";
-import { useState } from "react";
+import { Switch, Route, useLocation } from "wouter";
+import { useState, useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "@/components/ui/toaster";
+import { Toaster } from 'react-hot-toast';
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { useAuth } from "react-oidc-context";
@@ -10,29 +10,46 @@ import { Stethoscope } from "lucide-react";
 import { LoginPage } from "@/components/LoginPage";
 import { Navigation } from "@/components/Navigation";
 import MarketingPage from "@/components/marketing/MarketingPage";
-import ReviewOfSystems from "@/pages/review-of-systems-fixed";
+import ReviewOfSystems from "@/pages/review-of-systems";
 import DotPhraseManagerPage from "@/pages/dot-phrase-manager";
 import Calculations from "@/pages/calculations";
 import NotFound from "@/pages/not-found";
+import UserProfilePage from '@/pages/user-profile';
 
-function Router() {
+// Add prop types for sidebar state
+interface SidebarStateProps {
+  selectedMenu: string;
+  setSelectedMenu: (menu: string) => void;
+  selectedSubOption: string;
+  setSelectedSubOption: (option: string) => void;
+}
+
+function Router({ selectedMenu, setSelectedMenu, selectedSubOption, setSelectedSubOption }: SidebarStateProps) {
   return (
-    <div>
-      {/* <Navigation /> Removed: navigation is now in the sidebar */}
-      <main>
-        <Switch>
-          <Route path="/" component={ReviewOfSystems} />
-          <Route path="/dot-phrases" component={DotPhraseManagerPage} />
-          <Route path="/calculations" component={Calculations} />
-          <Route component={NotFound} />
-        </Switch>
-      </main>
-    </div>
+    <Switch>
+      <Route path="/" component={() => <ReviewOfSystems selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+      <Route path="/dot-phrases" component={() => <DotPhraseManagerPage selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+      <Route path="/calculations" component={() => <Calculations selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+      <Route path="/profile" component={() => <UserProfilePage selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+      <Route component={() => <NotFound selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+    </Switch>
   );
 }
 
 function ProtectedApp() {
   const auth = useAuth();
+  const [selectedMenu, setSelectedMenu] = useState('medical-notes');
+  const [selectedSubOption, setSelectedSubOption] = useState('note-type');
+
+  // Ensure medical notes is default on initial load
+  useEffect(() => {
+    if (selectedMenu !== 'medical-notes') {
+      setSelectedMenu('medical-notes');
+    }
+    if (selectedSubOption !== 'note-type') {
+      setSelectedSubOption('note-type');
+    }
+  }, []);
 
   const signOutRedirect = () => {
     const clientId = "2ajlh70hd6rsk8hoc9ldvqnbtr";
@@ -50,7 +67,7 @@ function ProtectedApp() {
   }
 
   if (auth.isAuthenticated) {
-    return <Router />;
+    return <Router selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />;
   }
 
   return <MarketingPage />;
@@ -61,7 +78,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>
         <TooltipProvider>
-          <Toaster />
+          <Toaster position="top-right" />
           <ProtectedApp />
         </TooltipProvider>
       </LanguageProvider>

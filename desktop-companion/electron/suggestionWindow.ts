@@ -32,16 +32,34 @@ export class SuggestionWindow {
         nodeIntegration: false,
         contextIsolation: true,
         preload: path.join(__dirname, 'suggestionPreload.js'),
+        backgroundThrottling: false,
       },
     })
 
-    // Load the suggestion UI
-    if (process.env.NODE_ENV === 'development') {
-      // Try multiple ports to find the correct dev server
-      this.loadDevURL()
-    } else {
-      this.window.loadFile(path.join(__dirname, '../dist/suggestion.html'))
-    }
+    // Temporary test content
+    this.window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Test Suggestion Window</title>
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+              padding: 20px; 
+              background: #ffffff;
+              color: #000000;
+              border: 2px solid #000000;
+            }
+            h1 { color: #ff0000; }
+          </style>
+        </head>
+        <body>
+          <h1>Test Pop-up Window</h1>
+          <p>If you see this, the pop-up is working!</p>
+          <p>Press Cmd + / to trigger.</p>
+        </body>
+      </html>
+    `));
 
     // Add error handling for window creation
     this.window.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -192,7 +210,7 @@ export class SuggestionWindow {
     // Technique 1: Basic show and focus
     this.window.show()
     this.window.focus()
-    this.window.setAlwaysOnTop(true)
+    this.window.setAlwaysOnTop(true, 'screen-saver')
     this.window.moveTop()
     
     // Technique 2: Force visibility on all workspaces

@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { deferExpensiveOperation } from '../lib/startupOptimizer'
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Suggestion {
   trigger: string
@@ -116,7 +117,7 @@ export function SuggestionHandler() {
     }, [])
 
     // Optimized suggestion update handler with deferred processing
-    const handleSuggestionUpdate = useCallback(async (event: any, newSuggestions: Suggestion[]) => {
+    const handleSuggestionUpdate = useCallback(async (newSuggestions: Suggestion[]) => {
       // Defer expensive suggestion processing for better performance
       await deferExpensiveOperation(() => {
         setAllSuggestions(newSuggestions)
@@ -132,7 +133,7 @@ export function SuggestionHandler() {
       console.log('✅ [REACT] suggestionAPI is available')
       window.suggestionAPI.onUpdateSuggestions((suggestions: any) => {
         console.log('📥 [REACT] Received update-suggestions:', suggestions)
-        handleSuggestionUpdate(null, suggestions)
+        handleSuggestionUpdate(suggestions)
       })
       window.suggestionAPI.onShowDotPhraseWindow((data: any) => {
         console.log('📥 [REACT] Received show-dot-phrase-window:', data)
@@ -239,53 +240,10 @@ export function SuggestionHandler() {
   // Memoized suggestion items for better performance
   const memoizedSuggestions = useMemo(() => {
     return suggestions.map((suggestion, index) => (
-      <div
-        key={`${suggestion.trigger}-${index}`}
-        className={`suggestion-item p-3 rounded-md cursor-pointer ${
-          index === selectedIndex ? 'selected' : ''
-        }`}
-        onClick={() => selectSuggestion(suggestion)}
-        onMouseEnter={() => setSelectedIndex(index)}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-medium text-blue-600">
-                {suggestion.trigger}
-              </span>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${
-                suggestion.type === 'built-in' 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-blue-100 text-blue-800'
-              }`}>
-                {suggestion.type === 'built-in' ? 'Built-in' : 'Custom'}
-              </span>
-              {suggestion.category && (
-                <span className="text-xs text-gray-500">
-                  {suggestion.category}
-                </span>
-              )}
-            </div>
-            
-            {suggestion.description && (
-              <div className="text-sm text-gray-600 mt-1">
-                {suggestion.description}
-              </div>
-            )}
-            
-            <div className="text-xs text-gray-500 mt-1 truncate">
-              {suggestion.content.substring(0, 60)}
-              {suggestion.content.length > 60 && '...'}
-            </div>
-          </div>
-          
-          {index === selectedIndex && (
-            <div className="text-blue-500 text-sm font-medium">
-              {isLoading ? '⏳' : '↵'}
-            </div>
-          )}
-        </div>
-      </div>
+      <motion.div key={index} className={`p-3 rounded-lg hover:bg-blue-50 cursor-pointer ${index === selectedIndex ? 'bg-blue-100' : ''}`} onClick={() => selectSuggestion(suggestion)} whileHover={{ scale: 1.02 }}>
+        <div className="font-medium">{suggestion.trigger}</div>
+        <div className="text-sm text-gray-600">{suggestion.description}</div>
+      </motion.div>
     ))
   }, [suggestions, selectedIndex, selectSuggestion])
 
@@ -347,7 +305,9 @@ export function SuggestionHandler() {
                 </div>
               </div>
             ) : (
-              memoizedSuggestions
+              <AnimatePresence mode="wait">
+                {memoizedSuggestions}
+              </AnimatePresence>
             )}
           </div>
           

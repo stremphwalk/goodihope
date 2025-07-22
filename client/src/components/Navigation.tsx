@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'wouter';
-import { FileText, Settings, Stethoscope, Calculator } from 'lucide-react';
+import { FileText, Settings, Stethoscope, Calculator, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -25,7 +25,7 @@ export function Navigation() {
       label: t('nav.calculations'),
       icon: Calculator,
       description: t('nav.calculations.desc')
-    }
+    },
   ];
 
   const isActive = (path: string) => {
@@ -39,7 +39,6 @@ export function Navigation() {
         <div className="flex justify-between items-center h-16">
           {/* Logo/Brand */}
           <div className="flex items-center gap-3">
-            {/* AriNote Logo - Clipboard with dots and red cross */}
             <div className="arinote-logo" style={{ width: 256, height: 256, position: 'relative', display: 'flex', alignItems: 'center' }}>
               <img src="/AriNote_Logo_Vector.svg" alt="AriNote logo" style={{ width: 256, height: 256, objectFit: 'contain', display: 'block' }} />
             </div>

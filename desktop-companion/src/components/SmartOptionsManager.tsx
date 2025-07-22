@@ -1,12 +1,17 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { SmartOptionsModal } from './SmartOptionsModal'
-import { SmartOptionsParser, type SmartOption } from '../lib/smartOptionsParser'
+import { SmartOptionsParser, type SmartOption as BaseSmartOption } from '../lib/smartOptionsParser'
+
+interface SmartOption extends BaseSmartOption {
+  selectedIndex: number;
+  position: { x: number; y: number };
+}
 
 interface SmartOptionsWorkflow {
   expansionId: string
   content: string
   phrase: any
-  currentOptions: SmartOption[]
+  currentOptions: BaseSmartOption[]
   currentOptionIndex: number
   selections: Record<string, string>
 }
@@ -71,8 +76,9 @@ export function SmartOptionsManager() {
     const option = currentWorkflow.currentOptions[currentWorkflow.currentOptionIndex]
     setCurrentOption({
       ...option,
+      selectedIndex: 0,
       position: cursorPosition
-    })
+    } as SmartOption)
   }
 
   const handleOptionSelect = (optionId: string, selectedValue: string) => {

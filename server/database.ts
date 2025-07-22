@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { users, rosNotes, dotPhrases } from '@shared/schema';
+import { users, rosNotes, dotPhrases, userPresets } from '@shared/schema';
 import { eq, desc, and } from 'drizzle-orm';
 
 // Railway provides DATABASE_URL environment variable
@@ -17,7 +17,7 @@ if (!connectionString.startsWith('postgresql://') && !connectionString.startsWit
 
 // Create postgres connection with security settings
 const client = postgres(connectionString, {
-  max: process.env.NODE_ENV === 'production' ? 10 : 1,
+  max: process.env.NODE_ENV === 'production' ? 10 : 5, // Increased from 1 to 5 for development
   ssl: process.env.NODE_ENV === 'production' ? 'require' : false,
   idle_timeout: 20,
   connect_timeout: 10,
@@ -28,7 +28,7 @@ const client = postgres(connectionString, {
 export const db = drizzle(client);
 
 // Export tables for easy access
-export { users, rosNotes, dotPhrases };
+export { users, rosNotes, dotPhrases, userPresets };
 
 // Database operations
 export const userQueries = {
@@ -100,4 +100,27 @@ export const rosNoteQueries = {
   async deleteNote(id: number, userId: number) {
     return await db.delete(rosNotes).where(and(eq(rosNotes.id, id), eq(rosNotes.userId, userId)));
   }
-}; 
+};
+
+// New queries for user presets
+export const userPresetQueries = {
+  async getUserPresets(userId: number) {
+    if (!Number.isInteger(userId) || userId <= 0) {
+      throw new Error('Invalid user ID');
+    }
+    return await db.select().from(userPresets).where(eq(userPresets.userId, userId)).orderBy(userPresets.createdAt);
+  },
+
+  async createPreset(presetData: typeof userPresets.$inferInsert) {
+    const result = await db.insert(userPresets).values(presetData).returning();
+    return result[0];
+  },
+
+  async updatePreset(id: number, presetData: Partial<typeof userPresets.$inferInsert>) {
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new Error('Invalid preset ID');
+    }
+    const result = await db.update(userPresets).set(presetData).where(eq(userPresets.id, id)).returning();
+    return result[0];
+  },
+};

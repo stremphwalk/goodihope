@@ -15,6 +15,20 @@
       "when": 1750995697500,
       "tag": "0001_busy_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1750996000000,
+      "tag": "0002_add_custom_identifier",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1750997000000,
+      "tag": "0003_add_user_presets",
+      "breakpoints": true
     }
   ]
 }

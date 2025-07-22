@@ -1,8 +1,6 @@
-import React from 'react'
 import { WidgetInstance, PMHData, PMHEntry } from '../../types/widgets'
 
 export function PMHWidget({ 
-  id, 
   data, 
   onDataChange, 
   mode = 'interactive',

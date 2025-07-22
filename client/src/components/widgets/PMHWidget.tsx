@@ -7,6 +7,7 @@ import { FileText, Plus, X, History, Edit3 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { SmartTextEntry } from '../SmartTextEntry';
 import { WidgetInstance } from '@/types/widgets';
+import { formatStructuredMedicalText } from '@/lib/textFormatting';
 
 interface PMHData {
   items: string[];
@@ -132,7 +133,7 @@ export const PMHWidget: React.FC<PMHWidgetProps> = ({
     return (
       <div className="p-4 bg-gray-50 rounded border">
         <div className="text-sm whitespace-pre-wrap">
-          {generateFormattedText(pmhData.formattedText) || 'No past medical history documented'}
+          {formatStructuredMedicalText(pmhData.formattedText) || 'No past medical history documented'}
         </div>
       </div>
     );

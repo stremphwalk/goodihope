@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'fs';
 import { LabValue } from '../client/src/lib/labUtils';
 import { ExtractedMedication } from './types';
 import { extractMedicationsFromTextWithGemini, extractLabValuesFromTextWithGemini } from './gemini';
+import { createHash } from 'crypto';
 
 // Types for enhanced error handling
 interface ValidationResult {
@@ -25,6 +26,9 @@ let vision: ImageAnnotatorClient | null = null;
 let visionClientError: string | null = null;
 let visionInitAttempts = 0;
 let lastInitAttempt: Date | null = null;
+
+// In-memory cache for OCR results
+const ocrCache = new Map<string, { timestamp: number; result: any }>(); // Change 'any' to appropriate type if possible
 
 // Debug and monitoring
 const DEBUG_MODE = process.env.NODE_ENV === 'development';

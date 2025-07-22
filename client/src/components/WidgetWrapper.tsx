@@ -4,6 +4,7 @@ import { WidgetInstance } from '@/types/widgets';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Copy, Edit, Trash2, Maximize2, Minimize2 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface WidgetWrapperProps {
   widget: WidgetInstance;
@@ -75,31 +76,36 @@ export const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium">{widgetConfig.label}</CardTitle>
               <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleMode}
-                  className="h-6 w-6 p-0"
-                >
-                  <Edit className="h-3 w-3" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopyText}
-                  className="h-6 w-6 p-0"
-                >
-                  <Copy className="h-3 w-3" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm" onClick={toggleMode} className="h-6 w-6 p-0">
+                      <Edit className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Edit widget</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm" onClick={handleCopyText} className="h-6 w-6 p-0">
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Copy to clipboard</TooltipContent>
+                </Tooltip>
                 {onRemove && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onRemove}
-                    className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onRemove}
+                        className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Remove widget</TooltipContent>
+                  </Tooltip>
                 )}
               </div>
             </div>
@@ -121,39 +127,49 @@ export const WidgetWrapper: React.FC<WidgetWrapperProps> = ({
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">{widgetConfig.label}</CardTitle>
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="h-6 w-6 p-0"
-              >
-                {isExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleMode}
-                className="h-6 w-6 p-0"
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleCopyText}
-                className="h-6 w-6 p-0"
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="h-6 w-6 p-0"
+                  >
+                    {isExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{isExpanded ? 'Minimize' : 'Expand'}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={toggleMode} className="h-6 w-6 p-0">
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Copy to clipboard</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={handleCopyText} className="h-6 w-6 p-0">
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Copy to clipboard</TooltipContent>
+              </Tooltip>
               {onRemove && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onRemove}
-                  className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onRemove}
+                      className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Remove widget</TooltipContent>
+                </Tooltip>
               )}
             </div>
           </div>

@@ -206,7 +206,7 @@ function calculateFuzzyScore(query: string, target: string): number {
 }
 
 export function searchMedications(query: string, limit: number = 10): MedicationData[] {
-  const medications = createMedicationFromCSV();
+  const medications = medicationData;
   const searchTerm = query.toLowerCase().trim();
   
   if (!searchTerm || searchTerm.length < 1) {
@@ -288,7 +288,7 @@ export function searchMedications(query: string, limit: number = 10): Medication
 }
 
 export function getCommonDosages(medicationName: string): string[] {
-  const medications = createMedicationFromCSV();
+  const medications = medicationData;
   const searchTerm = medicationName.toLowerCase();
   
   // Search by both generic name and brand name to get all dosages

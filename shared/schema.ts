@@ -6,6 +6,7 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  customIdentifier: text("custom_identifier").unique(), // 4 letters + 2 numbers format
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -24,8 +25,6 @@ export const dotPhrases = pgTable("dot_phrases", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-
-
 export const rosNotes = pgTable("ros_notes", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
@@ -36,6 +35,17 @@ export const rosNotes = pgTable("ros_notes", {
   medications: jsonb("medications").notNull().default('{"homeMedications":[],"hospitalMedications":[]}'),
   generatedNote: text("generated_note").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// New table for user presets
+export const userPresets = pgTable("user_presets", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  title: text("title").notNull().unique(),  // Unique titles per user (enforced in API)
+  isFavorite: boolean("is_favorite").default(false),
+  symptoms: jsonb("symptoms").notNull(),  // JSONB for symptoms object
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -49,6 +59,14 @@ export const insertDotPhraseSchema = createInsertSchema(dotPhrases).pick({
   content: true,
   description: true,
   category: true,
+});
+
+// New insert schema for presets
+export const insertUserPresetSchema = createInsertSchema(userPresets).pick({
+  userId: true,
+  title: true,
+  isFavorite: true,
+  symptoms: true,
 });
 
 export const insertRosNoteSchema = createInsertSchema(rosNotes).pick({
@@ -81,6 +99,8 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertDotPhrase = z.infer<typeof insertDotPhraseSchema>;
 export type DotPhrase = typeof dotPhrases.$inferSelect;
+// New types for presets
+export type InsertUserPreset = z.infer<typeof insertUserPresetSchema>;
+export type UserPreset = typeof userPresets.$inferSelect;
 export type InsertRosNote = z.infer<typeof insertRosNoteSchema>;
 export type RosNote = typeof rosNotes.$inferSelect;
-

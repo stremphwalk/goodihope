@@ -32,7 +32,7 @@ export function DotPhraseManager() {
     return allPhrases.filter(phrase => {
       const matchesCategory = selectedCategory === 'all' || 
         phrase.category === selectedCategory ||
-        (selectedCategory === 'custom' && phrase.type === 'custom')
+        (selectedCategory === 'custom' && 'type' in phrase && phrase.type === 'custom')
       
       const matchesSearch = !searchTerm || 
         phrase.trigger.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -149,11 +149,11 @@ export function DotPhraseManager() {
                     {phrase.trigger}
                   </span>
                   <span className={`text-xs px-2 py-1 rounded-full ${
-                    phrase.type === 'custom' 
+                    ('type' in phrase) && phrase.type === 'custom' 
                       ? 'bg-blue-100 text-blue-800' 
                       : 'bg-green-100 text-green-800'
                   }`}>
-                    {phrase.type === 'custom' ? 'Custom' : 'Built-in'}
+                    {('type' in phrase) && phrase.type === 'custom' ? 'Custom' : 'Built-in'}
                   </span>
                   {phrase.category && (
                     <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
@@ -171,7 +171,7 @@ export function DotPhraseManager() {
                 </div>
               </div>
               
-              {phrase.type === 'custom' && (
+              {('type' in phrase) && phrase.type === 'custom' && (
                 <div className="flex gap-2 ml-4">
                   <button
                     onClick={() => setEditingPhrase(phrase as DotPhrase)}
@@ -180,7 +180,7 @@ export function DotPhraseManager() {
                     Edit
                   </button>
                   <button
-                    onClick={() => phrase.id && deleteDotPhrase(phrase.id)}
+                    onClick={() => ('id' in phrase) && typeof phrase.id === 'number' && deleteDotPhrase(phrase.id)}
                     disabled={isDeleting}
                     className="text-red-600 hover:text-red-800 transition-colors text-sm"
                   >

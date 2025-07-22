@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Home, Hospital, Pill, X, ChevronUp, ChevronDown, RotateCcw, Hash, CheckCircle } from 'lucide-react';
+import { Home, Hospital, Pill, X, ChevronUp, ChevronDown, RotateCcw, Hash, CheckCircle, Loader2 } from 'lucide-react';
 import { MedicationAutoComplete } from '@/components/MedicationAutoComplete';
 import { MedicationImageUpload } from '@/components/MedicationImageUpload';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -37,6 +37,7 @@ interface MedicationItemProps {
   queuePosition?: number;
   isReorderMode: boolean;
   isSelected: boolean;
+  loadingDosages: Set<string>;
 }
 
 function MedicationItem({ 
@@ -51,7 +52,8 @@ function MedicationItem({
   position,
   queuePosition,
   isReorderMode,
-  isSelected
+  isSelected,
+  loadingDosages
 }: MedicationItemProps) {
   const handleCardClick = () => {
     if (isReorderMode) {
@@ -118,22 +120,28 @@ function MedicationItem({
         </div>
         
         {/* Common Dosages Bubbles */}
-        {!medication.isCustom && availableDosages.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {availableDosages.slice(0, 3).map(dosage => (
-              <button
-                key={dosage}
-                onClick={(e) => { e.stopPropagation(); onDosageChange(medication.id, dosage); }}
-                className={`px-1.5 py-0.5 text-xs rounded-full border transition-all hover:scale-105 ${
-                  medication.dosage === dosage 
-                    ? 'bg-blue-500 text-white border-blue-500' 
-                    : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-blue-400'
-                }`}
-              >
-                {dosage}
-              </button>
-            ))}
-          </div>
+        {!medication.isCustom && (
+          loadingDosages.has(medication.name) ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            availableDosages.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {availableDosages.slice(0, 3).map(dosage => (
+                  <button
+                    key={dosage}
+                    onClick={(e) => { e.stopPropagation(); onDosageChange(medication.id, dosage); }}
+                    className={`px-1.5 py-0.5 text-xs rounded-full border transition-all hover:scale-105 ${
+                      medication.dosage === dosage 
+                        ? 'bg-blue-500 text-white border-blue-500' 
+                        : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                    }`}
+                  >
+                    {dosage}
+                  </button>
+                ))}
+              </div>
+            )
+          )
         )}
         
         {/* Common Frequencies Bubbles */}
@@ -185,6 +193,7 @@ export const MedicationWidget: React.FC<MedicationWidgetProps> = ({
   const [medicationDosages, setMedicationDosages] = useState<Record<string, string[]>>({});
   const [reorderMode, setReorderMode] = useState(false);
   const [orderingQueue, setOrderingQueue] = useState<string[]>([]);
+  const [loadingDosages, setLoadingDosages] = useState<Set<string>>(new Set());
   const { language } = useLanguage();
 
   // Initialize with default data structure if empty
@@ -197,9 +206,11 @@ export const MedicationWidget: React.FC<MedicationWidgetProps> = ({
   useEffect(() => {
     const loadDosages = async () => {
       const allMeds = [...medications.homeMedications, ...medications.hospitalMedications];
-      const newMeds = allMeds.filter(med => !med.isCustom && !medicationDosages[med.name]);
+      const newMeds = allMeds.filter(med => !med.isCustom && !medicationDosages[med.name] && !loadingDosages.has(med.name));
       
       if (newMeds.length === 0) return;
+      
+      newMeds.forEach(med => setLoadingDosages(prev => new Set([...Array.from(prev), med.name])));
       
       const dosagePromises = newMeds.map(async (med) => {
         const dosages = await getCommonDosages(med.name);
@@ -485,6 +496,7 @@ export const MedicationWidget: React.FC<MedicationWidgetProps> = ({
               queuePosition={queuePosition}
               isReorderMode={reorderMode}
               isSelected={isSelected}
+              loadingDosages={loadingDosages}
             />
           );
         })}

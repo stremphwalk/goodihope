@@ -29,6 +29,7 @@ widgetRegistry.register('allergies', {
   validateData: (data: Record<string, any>) => {
     return data && 
            typeof data.hasAllergies === 'boolean' && 
-           Array.isArray(data.allergiesList);
+           Array.isArray(data.allergiesList) &&
+           data.allergiesList.every(allergy => typeof allergy === 'string' && allergy.trim() !== '');
   }
 });

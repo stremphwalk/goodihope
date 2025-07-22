@@ -18,12 +18,12 @@ widgetRegistry.register('medication', {
     category: 'clinical',
     tags: ['medication', 'pharmacy', 'treatment']
   },
-  generateText: (data: MedicationData) => {
+  generateText: (data: Record<string, any>) => {
     const sections: string[] = []
     
     if (data.homeMedications && data.homeMedications.length > 0) {
       sections.push('Home Medications:')
-      data.homeMedications.forEach(med => {
+      data.homeMedications.forEach((med: { name: string; dosage: string; frequency: string }) => {
         let line = `- ${med.name}`
         if (med.dosage) line += ` ${med.dosage}`
         if (med.frequency) line += ` (${med.frequency})`
@@ -34,7 +34,7 @@ widgetRegistry.register('medication', {
     if (data.hospitalMedications && data.hospitalMedications.length > 0) {
       if (sections.length > 0) sections.push('')
       sections.push('Hospital Medications:')
-      data.hospitalMedications.forEach(med => {
+      data.hospitalMedications.forEach((med: { name: string; dosage: string; frequency: string }) => {
         let line = `- ${med.name}`
         if (med.dosage) line += ` ${med.dosage}`
         if (med.frequency) line += ` (${med.frequency})`
@@ -67,19 +67,19 @@ widgetRegistry.register('allergies', {
     category: 'clinical',
     tags: ['allergy', 'safety', 'reactions']
   },
-  generateText: (data: AllergyData) => {
+  generateText: (data: Record<string, any>) => {
     if (data.nkda) {
       return 'Allergies: No known drug allergies (NKDA)'
     }
     
     if (data.allergies && data.allergies.length > 0) {
-      const allergyStrings = data.allergies.map(allergy => {
+      const allergyStrings = data.allergies.map((allergy: { name: string; reaction: string; severity?: string }) => {
         let text = allergy.name
         if (allergy.reaction) text += ` - ${allergy.reaction}`
         if (allergy.severity && allergy.severity !== 'Unknown') text += ` (${allergy.severity})`
         return text
       })
-      return `Allergies:\n${allergyStrings.map(a => `- ${a}`).join('\n')}`
+      return `Allergies:\n${allergyStrings.map((a: string) => `- ${a}`).join('\n')}`
     }
     
     return 'Allergies: None recorded'
@@ -106,16 +106,17 @@ widgetRegistry.register('pmh', {
     category: 'clinical',
     tags: ['history', 'medical', 'background']
   },
-  generateText: (data: PMHData) => {
+  generateText: (data: Record<string, any>) => {
     if (data.entries && data.entries.length > 0) {
-      const entryStrings = data.entries.map(entry => {
+      const entryStrings = data.entries.map((entry: { condition: string; year?: number; resolved?: boolean; details?: string; notes?: string }) => {
         let text = entry.condition
         if (entry.year) text += ` (${entry.year})`
-        if (entry.resolved) text += ' - Resolved'
+        if (entry.resolved) text += ' (resolved)'
+        if (entry.details) text += `: ${entry.details}`
         if (entry.notes) text += ` - ${entry.notes}`
         return text
       })
-      return `Past Medical History:\n${entryStrings.map(e => `- ${e}`).join('\n')}`
+      return `Past Medical History:\n${entryStrings.map((e: string) => `- ${e}`).join('\n')}`
     }
     
     return 'Past Medical History: None significant'

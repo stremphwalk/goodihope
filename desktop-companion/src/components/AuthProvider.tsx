@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { Amplify } from 'aws-amplify'
 import { signIn, signOut, getCurrentUser, fetchAuthSession } from 'aws-amplify/auth'
 
@@ -71,6 +71,10 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [idToken, setIdToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [signingIn, setSigningIn] = useState(false)
+  const [error, setError] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
 
   useEffect(() => {
     checkAuthState()
@@ -80,7 +84,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     const code = urlParams.get('code')
     if (code) {
       console.log('OAuth callback detected with code:', code)
-      handleOAuthCallback(code)
+      handleOAuthCallback()
     }
   }, [])
 
@@ -88,7 +92,7 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
     onAuthChange(isAuthenticated)
   }, [isAuthenticated, onAuthChange])
 
-  const handleOAuthCallback = async (code: string) => {
+  const handleOAuthCallback = async () => {
     try {
       console.log('Processing OAuth callback...')
       // For now, we'll store the auth code and show success
@@ -243,4 +247,10 @@ export function AuthProvider({ children, onAuthChange }: AuthProviderProps) {
       )}
     </AuthContext.Provider>
   )
+}
+
+declare global {
+  interface Window {
+    electronEnv?: Record<string, string>;
+  }
 }

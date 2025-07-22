@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Suspense } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DotPhraseManager } from './components/DotPhraseManager'
 import { GlobalListener } from './components/GlobalListener'
@@ -12,13 +12,14 @@ import { startupOptimizer, withPerformanceTracking } from './lib/startupOptimize
 
 import { cacheManager } from './lib/intelligentCache'
 import './lib/registerWidgets' // Initialize widgets
+import { useMediaQuery } from 'usehooks-ts';
 
 // Optimized query client with performance settings
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 300000, // 5 minutes
-      cacheTime: 600000, // 10 minutes
+      gcTime: 600000, // 10 minutes
       refetchOnWindowFocus: false,
       retry: 1,
     },
@@ -36,6 +37,7 @@ const LoadingFallback = ({ componentName }: { componentName: string }) => (
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
+  const isDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -117,7 +119,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider onAuthChange={setIsAuthenticated}>
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className={`min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 ${isDarkMode ? 'dark' : ''}`}>
           <div className="container mx-auto px-4 py-8">
             <header className="text-center mb-8">
               <h1 className="text-4xl font-bold text-gray-900 mb-2">

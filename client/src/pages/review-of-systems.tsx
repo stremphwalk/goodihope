@@ -1,5 +1,5 @@
 import { MainLayout } from "../components/MainLayout";
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import { rosSymptomOptions } from "@/constants/rosSymptomOptions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -83,6 +83,7 @@ import { ChiefComplaintSection, type ChiefComplaintData } from "@/components/Chi
 import { type MedicationData, formatMedicationsForNote } from "@/lib/medicationUtils";
 import { LabImageUpload } from "@/components/LabImageUpload";
 import { LabValuesDisplay } from "@/components/LabValuesDisplay";
+import { ImprovedLabInterface } from "@/components/ImprovedLabInterface";
 import { processLabValues, formatLabValuesForNote, type LabValue, type ProcessedLabValue } from "@/lib/labUtils";
 import * as DiffMatchPatch from 'diff-match-patch';
 import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
@@ -209,37 +210,47 @@ import {
   shouldFormatSection 
 } from '@/utils/textFormatting';
 import { formatMedicalNote, applyMedicalStandards } from '@/utils/noteFormatting';
+import { AnimatePresence, motion } from 'framer-motion';
 
-function ReviewOfSystems() {
+interface SidebarStateProps {
+  selectedMenu: string;
+  setSelectedMenu: (menu: string) => void;
+  selectedSubOption: string;
+  setSelectedSubOption: (option: string) => void;
+}
+
+function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, setSelectedSubOption }: SidebarStateProps) {
   // Note state with diff-patch-merge tracking
   const [note, setNote] = useState("");
   const [initialGeneratedText, setInitialGeneratedText] = useState("");
-  const [selectedSubOption, setSelectedSubOption] = useState("note-type");
   const [currentText, setCurrentText] = useState("");
   const dmp = useRef(new DiffMatchPatch.diff_match_patch());
   
-  const [noteType, setNoteType] = useState<"admission" | "progress" | "consultation" | "custom" | null>(null);
+  const [noteType, setNoteType] = useState<NoteType>(null);
   const [customNoteText, setCustomNoteText] = useState<string>("");
-  const [admissionType, setAdmissionType] = useState<"general" | "icu">("general");
-  const [progressType, setProgressType] = useState<"general" | "icu">("general");
+  const [admissionType, setAdmissionType] = useState<NoteSubtype>("general");
+  const [progressType, setProgressType] = useState<NoteSubtype>("general");
   
-  // Template context
   // Template state management
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const isTemplateActive = selectedTemplate !== null;
   
-  // Template-related state (keeping local for loading/error states)
+  // Template-related state
   const [availableTemplates, setAvailableTemplates] = useState<Template[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   
-  // New ROS symptom-level selection state
+  // ROS state
   const [selectedSystem, setSelectedSystem] = useState<string | null>(null);
-  const [selectedSymptoms, setSelectedSymptoms] = useState<Record<string, Set<string>>>({}); // systemKey -> Set of symptom keys
-
+  interface SymptomObject {
+    key: string;
+    severity?: 'mild' | 'moderate' | 'severe';
+    note?: string;
+  }
+  const [selectedSymptoms, setSelectedSymptoms] = useState<Record<string, Set<SymptomObject>>>({});
   const [selectedPeSystems, setSelectedPeSystems] = useState<Set<string>>(new Set());
   
-  // ICU intubation parameters
+  // ICU intubation
   const [intubationValues, setIntubationValues] = useState<Record<string, { current: string; past: string[] }>>({});
   
   const [medications, setMedications] = useState<MedicationData>({ 
@@ -256,23 +267,21 @@ function ReviewOfSystems() {
     drugs: { status: false, details: "" }
   });
 
-  // Local state for social history details to prevent focus loss during typing
+  // Local state for social details
   const [smokingDetails, setSmokingDetails] = useState("");
   const [alcoholDetails, setAlcoholDetails] = useState("");
   const [drugsDetails, setDrugsDetails] = useState("");
 
-  // Sync local state with main state when social history changes externally
+  // Sync local state
   useEffect(() => {
     setSmokingDetails(socialHistory.smoking.details);
     setAlcoholDetails(socialHistory.alcohol.details);
     setDrugsDetails(socialHistory.drugs.details);
-  }, [socialHistory.smoking.details, socialHistory.alcohol.details, socialHistory.drugs.details]);
-  
-  // Use refs to store current values for note generation without triggering re-renders
+  }, [socialHistory]);
+
+  // Refs for note generation
   const allergiesRef = useRef(allergies);
   const socialHistoryRef = useRef(socialHistory);
-  
-  // Update refs when values change - ensure refs are always current
   allergiesRef.current = allergies;
   socialHistoryRef.current = socialHistory;
   
@@ -287,7 +296,6 @@ function ReviewOfSystems() {
     previousTreatment: ""
   });
 
-  // HPI/HMA state
   const [hpiText, setHpiText] = useState<string>("");
 
   const [pmhText, setPmhText] = useState<string>('');
@@ -296,21 +304,17 @@ function ReviewOfSystems() {
   const [labValues, setLabValues] = useState<LabValue[]>([]);
   const [processedLabValues, setProcessedLabValues] = useState<ProcessedLabValue[]>([]);
   const [selectedLabTests, setSelectedLabTests] = useState<Set<string>>(new Set());
+  const [selectedPanel, setSelectedPanel] = useState('bmp');
   
-  // Active tab state for keyboard navigation
   const [activeTab, setActiveTab] = useState("note-type");
   
-  // Reset confirmation dialog state
   const [showResetDialog, setShowResetDialog] = useState(false);
 
   const { toast } = useToast();
   const { language, setLanguage, t } = useLanguage();
   const auth = useAuth();
 
-  // Sidebar navigation state
-  const [selectedMenu, setSelectedMenu] = useState("medical-notes");
-
-  // Imagery section state (move to top-level)
+  // Imagery state
   const imagerySystems = [
     { key: "neuro", label: "Neuro", modalities: ["CT Scan", "MRI", "Angio Scan"] },
     { key: "cardiac", label: "Cardiac", modalities: ["Echo", "CT Angio", "MRI"] },
@@ -320,17 +324,15 @@ function ReviewOfSystems() {
     { key: "spine", label: "Spine", modalities: ["X-Ray", "CT Scan", "MRI"] },
     { key: "limb", label: "Limb", modalities: ["X-Ray", "CT Scan", "MRI"] },
   ];
-  const [imageryStudies, setImageryStudies] = React.useState<{ system: string; modality: string; result: string }[]>([]);
-  const [newSystem, setNewSystem] = React.useState("");
-  const [newModality, setNewModality] = React.useState("");
-  const [newResult, setNewResult] = React.useState("");
+  const [imageryStudies, setImageryStudies] = useState<{ system: string; modality: string; result: string }[]>([]);
+  const [newSystem, setNewSystem] = useState("");
+  const [newModality, setNewModality] = useState("");
+  const [newResult, setNewResult] = useState("");
   
-  // UI state for imagery section - moved to top level to avoid conditional hooks
-  const [expandedSystem, setExpandedSystem] = React.useState<string | null>(null);
-  const [selectedModality, setSelectedModality] = React.useState<string>("");
-  const [resultInput, setResultInput] = React.useState<string>("");
+  const [expandedSystem, setExpandedSystem] = useState<string | null>(null);
+  const [selectedModality, setSelectedModality] = useState<string>("");
+  const [resultInput, setResultInput] = useState<string>("");
 
-  // Template API functions
   const getApiHeaders = useCallback((id_token: string) => ({
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${id_token}`,
@@ -347,7 +349,6 @@ function ReviewOfSystems() {
       setTemplateError(null);
       
       const params = new URLSearchParams();
-      // Add filtering parameters for template compatibility
       params.append('compatible_note_type', noteType);
       params.append('compatible_subtype', subtype);
       
@@ -366,7 +367,6 @@ function ReviewOfSystems() {
         updatedAt: new Date(template.updatedAt)
       }));
       
-      // Filter templates based on compatibility
       const compatibleTemplates = templates.filter((template: Template) => {
         const noteTypes = template.compatibleNoteTypes as string[] || [];
         const subtypes = template.compatibleSubtypes as string[] || [];
@@ -385,44 +385,34 @@ function ReviewOfSystems() {
     }
   }, [auth.user?.id_token, getApiHeaders]);
 
-  // Get default content for a section from selected template
   const getSectionDefaultContent = useCallback((sectionId: string): string => {
     if (!selectedTemplate || !selectedTemplate.content) return '';
     
     try {
       let templateContent: TemplateContent;
       
-      // Handle object content
       if (typeof selectedTemplate.content === 'object' && selectedTemplate.content !== null) {
         templateContent = selectedTemplate.content as TemplateContent;
-      } 
-      // Handle string content
-      else if (typeof selectedTemplate.content === 'string' && selectedTemplate.content.trim()) {
+      } else if (typeof selectedTemplate.content === 'string' && selectedTemplate.content.trim()) {
         const parsed = JSON.parse(selectedTemplate.content);
-        // Validate parsed content has expected structure
         if (!parsed || typeof parsed !== 'object') {
           console.warn('Invalid template content structure:', parsed);
           return '';
         }
         templateContent = parsed as TemplateContent;
-      } 
-      // Handle other types
-      else {
+      } else {
         console.warn('Unsupported template content type:', typeof selectedTemplate.content);
         return '';
       }
       
-      // Validate templateContent structure
       if (!templateContent || !Array.isArray(templateContent.sections)) {
         console.warn('Template content missing sections array:', templateContent);
         return '';
       }
       
-      // Find the section in the template
       const section = templateContent.sections.find(s => s && s.sectionId === sectionId);
       const content = section?.customContent;
       
-      // Return content if it's a string, empty string otherwise
       return typeof content === 'string' ? content : '';
     } catch (error) {
       console.error('Error accessing section defaults for sectionId:', sectionId, error);
@@ -430,7 +420,6 @@ function ReviewOfSystems() {
     }
   }, [selectedTemplate]);
 
-  // Track template usage
   const trackTemplateUsage = useCallback(async (template: Template) => {
     if (!auth.user?.id_token) return;
     
@@ -450,11 +439,9 @@ function ReviewOfSystems() {
       });
     } catch (error) {
       console.error('Failed to track template usage:', error);
-      // Don't throw error as this is not critical for functionality
     }
   }, [auth.user?.id_token, getApiHeaders, noteType, admissionType, progressType]);
 
-  // Handle template selection with usage tracking
   const handleTemplateSelection = useCallback((template: Template | null) => {
     setSelectedTemplate(template);
     if (template) {
@@ -476,14 +463,39 @@ function ReviewOfSystems() {
     setImageryStudies(imageryStudies.filter((_, i) => i !== idx));
   };
 
-  // Comprehensive reset function
+  const handleManualLabAdd = useCallback((newLabValues: LabValue[]) => {
+    if (!Array.isArray(newLabValues) || newLabValues.length === 0) {
+      console.warn('Invalid lab values provided to handleManualLabAdd:', newLabValues);
+      return;
+    }
+    setLabValues(prev => [...prev, ...newLabValues]);
+  }, []);
+
+  const handleLabRemove = useCallback((testName: string) => {
+    if (!testName) {
+      console.warn('Invalid test name provided to handleLabRemove:', testName);
+      return;
+    }
+    setLabValues(prev => prev.filter(lab => 
+      lab.testName.toLowerCase() !== testName.toLowerCase()
+    ));
+  }, []);
+
+  useEffect(() => {
+    console.log('🔬 Lab values state changed:', labValues);
+    if (labValues.length > 0) {
+      const processed = processLabValues(labValues);
+      setProcessedLabValues(processed);
+    } else {
+      setProcessedLabValues([]);
+    }
+  }, [labValues]);
+
   const handleCompleteReset = useCallback(() => {
-    // Reset all note type selections
     setNoteType(null);
     setAdmissionType("general");
     setProgressType("general");
     
-    // Reset all form data
     setAllergies({ hasAllergies: false, allergiesList: [] });
     setSocialHistory({
       smoking: { status: false, details: "" },
@@ -494,7 +506,7 @@ function ReviewOfSystems() {
       homeMedications: [],
       hospitalMedications: []
     });
-    setSelectedSymptoms({} as Record<string, Set<string>>);
+    setSelectedSymptoms({} as Record<string, Set<SymptomObject>>);
     setSelectedPeSystems(new Set());
     setIntubationValues({});
     setPmhText('');
@@ -513,24 +525,19 @@ function ReviewOfSystems() {
     setProcessedLabValues([]);
     setSelectedLabTests(new Set());
     
-    // Reset text fields
     setCurrentText("");
     setInitialGeneratedText("");
     
-    // Return to note type selection tab
     setActiveTab("note-type");
     
-    // Close the dialog
     setShowResetDialog(false);
     
-    // Show confirmation toast
     toast({
       title: language === 'fr' ? 'Réinitialisation complète' : 'Complete Reset',
       description: language === 'fr' ? 'Toutes les données ont été effacées' : 'All data has been cleared',
     });
   }, [language, toast]);
 
-  // Define tab order for keyboard navigation
   const getTabOrder = useCallback(() => {
     const baseTabs = ["note-type", "pmh", "allergies-social", "hpi", "meds", "ros"];
     const icuTabs = ((noteType === "admission" && admissionType === "icu") || (noteType === "progress" && progressType === "icu")) 
@@ -540,31 +547,22 @@ function ReviewOfSystems() {
   }, [noteType, admissionType, progressType]);
   const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
   
-  // Calculate documented systems
   const documentedSystems = Object.keys(selectedSymptoms).length + selectedPeSystems.size;
   const totalSystems = Object.keys(rosOptions).length + Object.keys(physicalExamOptions).length;
 
-  // --- PASTE THIS CORRECTED CODE IN ITS PLACE ---
-
-  // Handle lab values extraction
   const handleLabValuesExtracted = useCallback((newLabValues: LabValue[]) => {
-    // This is the fix: It REPLACES the old data with the new data
     setLabValues(newLabValues);
   }, []);
 
-  // Update processed lab values when labValues changes
   useEffect(() => {
     if (labValues && labValues.length > 0) {
       const processed = processLabValues(labValues);
       setProcessedLabValues(processed);
     } else {
-      // This makes sure the display clears if there are no labs
       setProcessedLabValues([]);
     }
   }, [labValues]);
 
-  // --- END OF CORRECTED CODE ---
-  // Generate text from current options
   const generateTextFromOptions = useCallback(() => {
     if (noteType === null) {
       return language === 'fr' 
@@ -572,7 +570,6 @@ function ReviewOfSystems() {
         : 'Select a note type (Admission, Progress, or Consultation) to start generating your clinical note.';
     }
 
-    // Check if template is active and get template content
     const templateContent = selectedTemplate ? (() => {
       try {
         if (typeof selectedTemplate.content === 'object') {
@@ -588,45 +585,32 @@ function ReviewOfSystems() {
       }
     })() : null;
 
-    // If template is active, use template-based generation
     if (templateContent && templateContent.sections && Array.isArray(templateContent.sections)) {
       try {
         return generateTemplateBasedNote(templateContent);
       } catch (error) {
         console.error('Template-based generation failed, falling back to default:', error);
-        // Fall through to default generation
       }
     }
 
-    // Fallback to default note generation
     return generateDefaultNote();
   }, [noteType, selectedTemplate, language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, admissionType, progressType]);
 
-  // Template-based note generation
   const generateTemplateBasedNote = useCallback((templateContent: any) => {
     try {
       const sections: string[] = [];
       
-      // Validate template content structure
       if (!templateContent || !Array.isArray(templateContent.sections)) {
         console.error('Invalid template content structure');
         throw new Error('Invalid template content structure');
       }
 
       const enabledSections = templateContent.sections
-        .filter((section: any) => {
-          // More robust filtering with validation
-          return section && 
-                 section.sectionId && 
-                 section.isEnabled !== false &&
-                 getSectionById(section.sectionId); // Ensure section exists in library
-        })
+        .filter((section: any) => section && section.sectionId && section.isEnabled !== false && getSectionById(section.sectionId))
         .sort((a: any, b: any) => {
-          // More robust ordering with fallbacks
           const orderA = typeof a.order === 'number' ? a.order : 999;
           const orderB = typeof b.order === 'number' ? b.order : 999;
           
-          // If orders are equal, sort by section ID for consistency
           if (orderA === orderB) {
             return a.sectionId.localeCompare(b.sectionId);
           }
@@ -634,14 +618,12 @@ function ReviewOfSystems() {
           return orderA - orderB;
         });
 
-      // Log section ordering for debugging
       console.log('Template sections order:', enabledSections.map((s: any) => `${s.order}: ${s.sectionId}`));
 
       enabledSections.forEach((templateSection: any, index: number) => {
         try {
           const sectionContent = generateSectionContent(templateSection.sectionId, templateSection.customContent);
           
-          // Validate generated content
           if (sectionContent && sectionContent.trim()) {
             sections.push(sectionContent);
           } else {
@@ -649,7 +631,6 @@ function ReviewOfSystems() {
           }
         } catch (error) {
           console.error(`Error generating section content for ${templateSection.sectionId}:`, error);
-          // Add placeholder rather than skipping completely
           try {
             const header = getSectionHeader(templateSection.sectionId);
             sections.push(`${header}:\n[Error generating ${templateSection.sectionId}]`);
@@ -659,20 +640,16 @@ function ReviewOfSystems() {
         }
       });
 
-      // Apply medical note formatting standards
       const validSections = sections.filter(section => section && section.trim());
       return formatMedicalNote(validSections);
     } catch (error) {
       console.error('Error in generateTemplateBasedNote:', error);
-      // Return a simple fallback without circular dependency
       return language === 'fr' ? 
         'Erreur lors de la génération de la note avec le modèle. Veuillez réessayer.' :
         'Error generating note with template. Please try again.';
     }
   }, [language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, noteType, admissionType, progressType]);
 
-  // Generate content for a specific section with template custom content
-  // Standardized content priority logic
   const getContentWithPriority = useCallback((
     userContent: string | undefined,
     customContent: string | undefined,
@@ -688,15 +665,11 @@ function ReviewOfSystems() {
     }
   }, [language]);
 
-  // Dynamic section header generation based on section library
   const getSectionHeader = useCallback((sectionId: string): string => {
-    // First try to get from section library
     const sectionDef = getSectionById(sectionId);
     if (sectionDef) {
-      // Convert section name to header format based on language
       const baseHeader = sectionDef.name.toUpperCase();
       
-      // Language-specific translations for common sections
       const translations: Record<string, { en: string; fr: string }> = {
         'NOTE TYPE': { en: 'NOTE TYPE', fr: 'TYPE DE NOTE' },
         'PAST MEDICAL HISTORY': { en: 'PAST MEDICAL HISTORY', fr: 'ANTÉCÉDENTS MÉDICAUX' },
@@ -719,19 +692,15 @@ function ReviewOfSystems() {
       return baseHeader;
     }
     
-    // Fallback for unknown sections
     return sectionId.toUpperCase().replace(/-/g, ' ');
   }, [language]);
 
-  // Generate plain section content without formatting
   const generatePlainSectionContent = useCallback((sectionId: string, customContent?: string): string => {
     try {
-      // If custom content is provided, use it without header
       if (customContent && customContent.trim()) {
         return customContent;
       }
       
-      // Generate content based on section type WITHOUT headers and WITHOUT smart text formatting
       switch (sectionId) {
         case 'note-type': {
           return noteType ? noteType.toUpperCase() : '[Enter note type]';
@@ -747,7 +716,6 @@ function ReviewOfSystems() {
         }
         
         case 'ventilation': {
-          // Generate intubation parameters text
           if (Object.keys(intubationValues).length === 0) {
             return language === 'fr' ? '[Entrer les paramètres de ventilation]' : '[Enter ventilation parameters]';
           }
@@ -764,7 +732,7 @@ function ReviewOfSystems() {
         
         case 'plan': {
           return getContentWithPriority(
-            undefined, // No user plan content captured yet
+            undefined,
             customContent,
             '[Enter treatment plan]',
             '[Entrer le plan de traitement]'
@@ -772,7 +740,6 @@ function ReviewOfSystems() {
         }
         
         case 'allergies-social': {
-          // Generate allergies text
           let allergiesText = '';
           const currentAllergies = allergiesRef.current;
           if (!currentAllergies) {
@@ -791,19 +758,16 @@ function ReviewOfSystems() {
             }
           }
 
-          // Generate social history text
           let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
           const socialItems = [];
           
-          // Always include smoking status
           const currentSocialHistory = socialHistoryRef.current;
           if (!currentSocialHistory) {
             socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
             socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
             socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
           } else {
-            // Smoking status
-            if (currentSocialHistory.smoking?.status) {
+            if (currentSocialHistory.smoking.status) {
               socialItems.push(language === 'fr' 
                 ? `Tabagisme: ${currentSocialHistory.smoking.details || ''}`
                 : `Smoking: ${currentSocialHistory.smoking.details || ''}`);
@@ -811,8 +775,7 @@ function ReviewOfSystems() {
               socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
             }
             
-            // Alcohol status
-            if (currentSocialHistory.alcohol?.status) {
+            if (currentSocialHistory.alcohol.status) {
               socialItems.push(language === 'fr' 
                 ? `Alcool: ${currentSocialHistory.alcohol.details || ''}`
                 : `Alcohol: ${currentSocialHistory.alcohol.details || ''}`);
@@ -820,8 +783,7 @@ function ReviewOfSystems() {
               socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
             }
             
-            // Drugs status
-            if (currentSocialHistory.drugs?.status) {
+            if (currentSocialHistory.drugs.status) {
               socialItems.push(language === 'fr' 
                 ? `Drogues: ${currentSocialHistory.drugs.details || ''}`
                 : `Drugs: ${currentSocialHistory.drugs.details || ''}`);
@@ -873,13 +835,12 @@ function ReviewOfSystems() {
         case 'hpi': {
           const content = hpiText || (language === 'fr' ? "[Entrer l'HMA]" : "[Enter HPI]");
           
-          // Generate ROS text
           let rosText = '';
           if (Object.keys(selectedSymptoms).length > 0) {
-            const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<string>]) => {
+            const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<SymptomObject>]) => {
               const symptomList = Array.from(symptoms);
               if (symptomList.length === 0) return '';
-              const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string}[]} >)[system];
+              const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string, description: {en: string, fr: string}}[]} >)[system];
               const getLabel = (key: string) => {
                 const found = systemObj?.symptoms.find((s: {key: string}) => s.key === key);
                 if (!found) return key.replace(/_/g, ' ');
@@ -887,9 +848,9 @@ function ReviewOfSystems() {
               };
               let sentence = '';
               if (language === 'fr') {
-                sentence = symptomList.map(symptom => `pas de ${getLabel(symptom)}`).join(', ');
+                sentence = symptomList.map(s => `pas de ${getLabel(s.key)}${s.severity ? ` (${s.severity})` : ''}${s.note ? `: ${s.note}` : ''}`).join(', ');
               } else {
-                sentence = symptomList.map(symptom => `no ${getLabel(symptom).charAt(0).toLowerCase() + getLabel(symptom).slice(1)}`).join(', ');
+                sentence = symptomList.map(s => `no ${getLabel(s.key).charAt(0).toLowerCase() + getLabel(s.key).slice(1)}${s.severity ? ` (${s.severity})` : ''}${s.note ? `: ${s.note}` : ''}`).join(', ');
               }
               sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
               if (!sentence.endsWith('.')) sentence += '.';
@@ -911,7 +872,6 @@ function ReviewOfSystems() {
             }
           }
           
-          // Add ROS if available
           const fullContent = rosText ? 
             (content.trim().endsWith('.') ? `${content} ${rosText}` : `${content}. ${rosText}`) : 
             content;
@@ -972,16 +932,12 @@ function ReviewOfSystems() {
     }
   }, [language, pmhText, medications, selectedPeSystems, processedLabValues, hpiText, impressionText, intubationValues, noteType, selectedSymptoms, imageryStudies]);
 
-  // Two-pass section content generation with headers and formatting
   const generateSectionContent = useCallback((sectionId: string, customContent?: string) => {
     try {
-      // Pass 1: Generate plain content
       const plainContent = generatePlainSectionContent(sectionId, customContent);
       
-      // Pass 2: Add header and apply section-specific formatting
       const header = getSectionHeader(sectionId);
       
-      // Apply section-specific formatting
       let formattedContent = plainContent;
       
       if (shouldFormatSection(sectionId)) {
@@ -999,7 +955,6 @@ function ReviewOfSystems() {
             formattedContent = formatHPIText(plainContent);
             break;
           case 'physical-exam':
-            // Physical exam might need different formatting
             formattedContent = formatSmartText(plainContent, { 
               sectionType: 'physical-exam',
               preserveFormatting: true 
@@ -1018,608 +973,237 @@ function ReviewOfSystems() {
     }
   }, [generatePlainSectionContent, getSectionHeader]);
 
-  // Default note generation (existing logic)
-  const generateDefaultNote = useCallback(() => {
-    let generatedText = "";
-    
-    // Generate allergies text
-    const generateAllergiesText = () => {
-      const currentAllergies = allergiesRef.current;
-      if (!currentAllergies) {
-        return language === 'fr' ? 'ALLERGIES :\nAucune allergie connue' : 'ALLERGIES:\nNKDA (No Known Drug Allergies)';
-      }
-      
-      if (language === 'fr') {
-        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
-          return `ALLERGIES :\n${currentAllergies.allergiesList.join(', ')}`;
-        } else {
-          return `ALLERGIES :\nAucune allergie connue`;
-        }
-      } else {
-        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
-          return `ALLERGIES:\n${currentAllergies.allergiesList.join(', ')}`;
-        } else {
-          return `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
-        }
-      }
-    };
-
-    // Generate past medical history text
-    const generatePMHText = () => {
-      if (!pmhText.trim()) {
-        return language === 'fr' 
-          ? "ANTÉCÉDENTS MÉDICAUX :\n[Entrer les antécédents médicaux]"
-          : "PAST MEDICAL HISTORY:\n[Enter past medical history]";
-      }
-      
-      // Format the smart text entry input
-      const lines = pmhText.split('\n');
-      const formatted: string[] = [];
-      let conditionCount = 0;
-
-      for (let line of lines) {
-        line = line.trim();
-        if (!line) continue;
-
-        if (line.startsWith('#')) {
-          conditionCount++;
-          const condition = line.replace('#', '').trim();
-          formatted.push(`${conditionCount}. ${condition}`);
-        } else if (line.startsWith('-')) {
-          const detail = line.replace('-', '').trim();
-          formatted.push(`     - ${detail}`);
-        } else {
-          conditionCount++;
-          formatted.push(`${conditionCount}. ${line}`);
-        }
-      }
-      
-      const header = language === 'fr' ? "ANTÉCÉDENTS MÉDICAUX :\n" : "PAST MEDICAL HISTORY:\n";
-      return header + formatted.join('\n');
-    };
-
-    // Generate impression text
-    const generateImpressionText = () => {
-      if (!impressionText.trim()) {
-        return language === 'fr' 
-          ? "IMPRESSION CLINIQUE :\n[Entrer les impressions cliniques]"
-          : "CLINICAL IMPRESSION:\n[Enter clinical impressions]";
-      }
-      
-      // Format the smart text entry input
-      const lines = impressionText.split('\n');
-      const formatted: string[] = [];
-      let conditionCount = 0;
-
-      for (let line of lines) {
-        line = line.trim();
-        if (!line) continue;
-
-        if (line.startsWith('#')) {
-          conditionCount++;
-          const condition = line.replace('#', '').trim();
-          formatted.push(`${conditionCount}. ${condition}`);
-        } else if (line.startsWith('-')) {
-          const detail = line.replace('-', '').trim();
-          formatted.push(`     - ${detail}`);
-        } else {
-          conditionCount++;
-          formatted.push(`${conditionCount}. ${line}`);
-        }
-      }
-      
-      const header = language === 'fr' ? "IMPRESSION CLINIQUE :\n" : "CLINICAL IMPRESSION:\n";
-      return header + formatted.join('\n');
-    };
-
-    // Generate social history text
-    const generateSocialHistoryText = () => {
-      let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
-      const socialItems = [];
-      const currentSocialHistory = socialHistoryRef.current;
-      
-      if (!currentSocialHistory) {
-        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
-        socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
-        socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
-      } else {
-        // Always include smoking status
-        if (currentSocialHistory.smoking?.status) {
-        socialItems.push(language === 'fr' 
-          ? `Tabagisme: ${currentSocialHistory.smoking.details}`
-          : `Smoking: ${currentSocialHistory.smoking.details}`);
-      } else {
-        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
-      }
-      
-        // Always include alcohol status
-        if (currentSocialHistory.alcohol?.status) {
-          socialItems.push(language === 'fr' 
-            ? `Alcool: ${currentSocialHistory.alcohol.details || ''}`
-            : `Alcohol: ${currentSocialHistory.alcohol.details || ''}`);
-        } else {
-          socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
-        }
-        
-        // Always include drugs status
-        if (currentSocialHistory.drugs?.status) {
-          socialItems.push(language === 'fr' 
-            ? `Drogues: ${currentSocialHistory.drugs.details || ''}`
-            : `Drugs: ${currentSocialHistory.drugs.details || ''}`);
-        } else {
-          socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
-        }
-      }
-      
-      socialText += socialItems.join('\n');
-      return socialText.trim();
-    };
-
-    // Generate medications text
-    const generateMedicationsText = () => {
-      let medicationsText = "";
-      
-      if (language === 'fr') {
-        if (medications.homeMedications.length > 0) {
-          const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'fr');
-          medicationsText += `MÉDICAMENTS À DOMICILE :\n${organizedHomeMeds}\n\n`;
-        } else {
-          medicationsText += `MÉDICAMENTS À DOMICILE :\n[Aucun médicament à domicile]\n\n`;
-        }
-        
-        if (medications.hospitalMedications.length > 0) {
-          const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'fr');
-          medicationsText += `MÉDICAMENTS HOSPITALIERS :\n${organizedHospitalMeds}`;
-        } else {
-          medicationsText += `MÉDICAMENTS HOSPITALIERS :\n[Aucun médicament hospitalier]`;
-        }
-      } else {
-        if (medications.homeMedications.length > 0) {
-          const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'en');
-          medicationsText += `HOME MEDICATIONS:\n${organizedHomeMeds}\n\n`;
-        } else {
-          medicationsText += `HOME MEDICATIONS:\n[No home medications]\n\n`;
-        }
-        
-        if (medications.hospitalMedications.length > 0) {
-          const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'en');
-          medicationsText += `HOSPITAL MEDICATIONS:\n${organizedHospitalMeds}`;
-        } else {
-          medicationsText += `HOSPITAL MEDICATIONS:\n[No hospital medications]`;
-        }
-      }
-      
-      return medicationsText;
-    };
-
-    // Generate ROS text
-    const generateRosText = () => {
-      if (Object.keys(selectedSymptoms).length === 0) return "";
-      // Each system gets its own sentence. Sentence case for first word, period at end.
-      const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<string>]) => {
-        const symptomList = Array.from(symptoms);
-        if (symptomList.length === 0) return '';
-        const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string}[]} >)[system];
-        const getLabel = (key: string) => {
-          const found = systemObj?.symptoms.find((s: {key: string}) => s.key === key);
-          if (!found) return key.replace(/_/g, ' ');
-          return language === 'fr' ? found.fr : found.en;
-        };
-        let sentence = '';
-        if (language === 'fr') {
-          sentence = symptomList.map(symptom => `pas de ${getLabel(symptom)}`).join(', ');
-        } else {
-          sentence = symptomList.map(symptom => `no ${getLabel(symptom).charAt(0).toLowerCase() + getLabel(symptom).slice(1)}`).join(', ');
-        }
-        // Sentence case: only first letter capitalized
-        sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
-        // Ensure sentence ends with a period
-        if (!sentence.endsWith('.')) sentence += '.';
-        return sentence;
-      }).filter(Boolean);
-
-      let rosText = '';
-      if (language === 'fr') {
-        rosText = rosSentences.join(' ');
-        const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
-        if (uncoveredSystems.length > 0) {
-          rosText += ' Tous les autres systèmes révisés et négatifs.';
-        }
-      } else {
-        rosText = rosSentences.join(' ');
-        const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
-        if (uncoveredSystems.length > 0) {
-          rosText += ' All other systems reviewed and negative.';
-        }
-      }
-      return rosText;
-    };
-
-    // Generate Physical Exam text
-    const generatePhysicalExamText = () => {
-      if (selectedPeSystems.size === 0) return "";
-      
-      const peEntries = Array.from(selectedPeSystems).map(system => {
-        const findings = physicalExamOptions[system as keyof typeof physicalExamOptions];
-        return language === 'fr' ? findings : `${system}: ${findings}`;
-      });
-      
-      return language === 'fr' 
-        ? `EXAMEN PHYSIQUE :\n${peEntries.join("\n")}`
-        : `PHYSICAL EXAMINATION:\n${peEntries.join("\n")}`;
-    };
-
-    // Generate intubation parameters text for ICU notes (without header)
-    const generateIntubationText = () => {
-      if (Object.keys(intubationValues).length === 0) return "";
-      
-      let intubationText = "";
-      Object.entries(intubationValues).forEach(([param, data]) => {
-        if (data.current) {
-          intubationText += `${param}: ${data.current}\n`;
-        }
-      });
-      return intubationText.trim();
-    };
-
-    // Generate lab values text
-    const generateLabValuesText = () => {
-      if (processedLabValues.length === 0) return "";
-      
-      const labText = formatLabValuesForNote(processedLabValues);
-      return labText ? (language === 'fr' ? `RÉSULTATS DE LABORATOIRE:\n${labText}` : `LABORATORY RESULTS:\n${labText}`) : "";
-    };
-
-    // Build note based on type and subtype
-    const sections: string[] = [];
-    const isICU = (noteType === "admission" && admissionType === "icu") || (noteType === "progress" && progressType === "icu");
-    
-    if (noteType === "admission") {
-      if (isICU) {
-        // ICU Admission Note Template - Same as general but with systems instead of lab/imaging
-        if (language === 'fr') {
-          sections.push(`MOTIF D'ADMISSION :\n[Entrer le motif d'admission]`);
-          sections.push(generatePMHText());
-          sections.push(generateAllergiesText());
-          sections.push(generateSocialHistoryText());
-          sections.push(generateMedicationsText());
-          let hpiWithRosFr = hpiText || "[Entrer l'HMA]";
-          const rosText = generateRosText();
-          if (rosText) hpiWithRosFr = hpiWithRosFr.trim().endsWith('.') ? hpiWithRosFr + ' ' + rosText : hpiWithRosFr + '. ' + rosText;
-          sections.push(`HISTOIRE DE LA MALADIE ACTUELLE :
-${hpiWithRosFr}`); // ROS now integrated into HPI section; no separate ROS section.;
-          
-          const peText = generatePhysicalExamText();
-          if (peText) sections.push(peText);
-          
-          // ICU Systems sections instead of lab/imaging
-          sections.push(`NEURO :\n[État neurologique]`);
-          sections.push(`HÉMODYNAMIQUE :\n[État cardiovasculaire]`);
-          
-          // RESPIRATOIRE section with integrated ventilation parameters
-          const intubationText = generateIntubationText();
-          const respiratoryContent = intubationText ? 
-            `RESPIRATOIRE :\n[État respiratoire]\n\nParamètres de ventilation:\n${intubationText}` : 
-            `RESPIRATOIRE :\n[État respiratoire]`;
-          sections.push(respiratoryContent);
-          
-          sections.push(`GASTRO-INTESTINAL :\n[État gastro-intestinal]`);
-          sections.push(`NÉPHRO-MÉTABOLIQUE :\n[État rénal et métabolique]`);
-          sections.push(`HÉMATO-INFECTIEUX :\n[État hématologique et infectieux]`);
-          
-          sections.push(generateImpressionText());
-          sections.push(`PLAN :\n[Entrer le plan de traitement]`);
-        } else {
-          sections.push(`REASON FOR ADMISSION:\n[Enter reason for admission]`);
-          sections.push(generatePMHText());
-          sections.push(generateAllergiesText());
-          sections.push(generateSocialHistoryText());
-          sections.push(generateMedicationsText());
-          let hpiWithRos = hpiText || "[Enter HPI]";
-          const rosText = generateRosText();
-          if (rosText) hpiWithRos = hpiWithRos.trim().endsWith('.') ? hpiWithRos + ' ' + rosText : hpiWithRos + '. ' + rosText;
-          sections.push(`HISTORY OF PRESENTING ILLNESS:
-${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section.
-          
-          const peText = generatePhysicalExamText();
-          if (peText) sections.push(peText);
-          
-          // ICU Systems sections instead of lab/imaging
-          sections.push(`NEURO:\n[Neurological status]`);
-          sections.push(`HEMODYNAMIC:\n[Cardiovascular status]`);
-          
-          // RESPIRATORY section with integrated ventilation parameters
-          const intubationText = generateIntubationText();
-          const respiratoryContent = intubationText ? 
-            `RESPIRATORY:\n[Respiratory status]\n\nVentilation parameters:\n${intubationText}` : 
-            `RESPIRATORY:\n[Respiratory status]`;
-          sections.push(respiratoryContent);
-          
-          sections.push(`GASTROINTESTINAL:\n[Gastrointestinal status]`);
-          sections.push(`NEPHRO-METABOLIC:\n[Renal and metabolic status]`);
-          sections.push(`HEMATO-INFECTIOUS:\n[Hematologic and infectious status]`);
-          
-          sections.push(generateImpressionText());
-          sections.push(`PLAN:\n[Enter treatment plan]`);
-        }
-      } else {
-        // General Admission Note Template
-        if (language === 'fr') {
-          sections.push(`MOTIF D'ADMISSION :\n[Entrer le motif d'admission]`);
-          sections.push(generatePMHText());
-          sections.push(generateAllergiesText());
-          sections.push(generateSocialHistoryText());
-          sections.push(generateMedicationsText());
-          sections.push(`HISTOIRE DE LA MALADIE ACTUELLE :\n${hpiText || "[Entrer l'HMA]"}`);
-          
-          const rosText = generateRosText();
-          if (rosText) sections.push(rosText);
-          
-          const peText = generatePhysicalExamText();
-          if (peText) sections.push(peText);
-          
-          const labText = generateLabValuesText();
-          sections.push(labText || `RÉSULTATS DE LABORATOIRE :\n[Entrer les résultats de laboratoire]`);
-          sections.push(`IMAGERIE :\n[Entrer les résultats d'imagerie]`);
-          sections.push(generateImpressionText());
-          sections.push(`PLAN :\n[Entrer le plan de traitement]`);
-        } else {
-          sections.push(`REASON FOR ADMISSION:\n[Enter reason for admission]`);
-          sections.push(generatePMHText());
-          sections.push(generateAllergiesText());
-          sections.push(generateSocialHistoryText());
-          sections.push(generateMedicationsText());
-          sections.push(`HISTORY OF PRESENTING ILLNESS:\n${hpiText || "[Enter HPI]"}`);
-          
-          const rosText = generateRosText();
-          if (rosText) sections.push(rosText);
-          
-          const peText = generatePhysicalExamText();
-          if (peText) sections.push(peText);
-          
-          const labText = generateLabValuesText();
-          sections.push(labText || `LABORATORY RESULTS:\n[Enter laboratory results]`);
-          sections.push(`IMAGING:\n[Enter imaging results]`);
-          sections.push(generateImpressionText());
-          sections.push(`PLAN:\n[Enter treatment plan]`);
-        }
-      }
-    } else if (noteType === "progress") {
-      if (isICU) {
-        // ICU Progress Note Template - Same as general but with systems instead of lab/imaging
-        if (language === 'fr') {
-          sections.push(`HISTOIRE DE LA MALADIE ACTUELLE:\n${hpiText || "[Entrer le statut actuel et l'historique de l'intervalle]"}`);
-          
-          const rosText = generateRosText();
-          if (rosText) sections.push(rosText);
-          
-          const peText = generatePhysicalExamText();
-          if (peText) sections.push(peText);
-          
-          // ICU Systems sections instead of lab/imaging
-          sections.push(`NEURO :\n[État neurologique]`);
-          sections.push(`HÉMODYNAMIQUE :\n[État cardiovasculaire]`);
-          
-          // RESPIRATOIRE section with integrated ventilation parameters
-          const intubationTextFr = generateIntubationText();
-          const respiratoryContentFr = intubationTextFr ? 
-            `RESPIRATOIRE :\n[État respiratoire]\n\nParamètres de ventilation:\n${intubationTextFr}` : 
-            `RESPIRATOIRE :\n[État respiratoire]`;
-          sections.push(respiratoryContentFr);
-          
-          sections.push(`GASTRO-INTESTINAL :\n[État gastro-intestinal]`);
-          sections.push(`NÉPHRO-MÉTABOLIQUE :\n[État rénal et métabolique]`);
-          sections.push(`HÉMATO-INFECTIEUX :\n[État hématologique et infectieux]`);
-          
-          sections.push(`ÉVALUATION ET PLAN:\n[Entrer l'évaluation et le plan]`);
-        } else {
-          sections.push(`HISTORY OF PRESENTING ILLNESS:\n${hpiText || "[Enter current status and interval history]"}`);
-          
-          const rosText = generateRosText();
-          if (rosText) sections.push(rosText);
-          
-          const peText = generatePhysicalExamText();
-          if (peText) sections.push(peText);
-          
-          // ICU Systems sections instead of lab/imaging
-          sections.push(`NEURO:\n[Neurological status]`);
-          sections.push(`HEMODYNAMIC:\n[Cardiovascular status]`);
-          
-          // RESPIRATORY section with integrated ventilation parameters
-          const intubationTextEn = generateIntubationText();
-          const respiratoryContentEn = intubationTextEn ? 
-            `RESPIRATORY:\n[Respiratory status]\n\nVentilation parameters:\n${intubationTextEn}` : 
-            `RESPIRATORY:\n[Respiratory status]`;
-          sections.push(respiratoryContentEn);
-          
-          sections.push(`GASTROINTESTINAL:\n[Gastrointestinal status]`);
-          sections.push(`NEPHRO-METABOLIC:\n[Renal and metabolic status]`);
-          sections.push(`HEMATO-INFECTIOUS:\n[Hematologic and infectious status]`);
-          
-          sections.push(`ASSESSMENT AND PLAN:\n[Enter assessment and plan]`);
-        }
-      } else {
-        // General Progress Note Template
-        if (language === 'fr') {
-          sections.push(`HISTOIRE DE LA MALADIE ACTUELLE:\n${hpiText || "[Entrer le statut actuel et l'historique de l'intervalle]"}`);
-          
-          const rosText = generateRosText();
-          if (rosText) sections.push(rosText);
-          
-          const peText = generatePhysicalExamText();
-          if (peText) sections.push(peText);
-          
-          const labText = generateLabValuesText();
-          if (labText) {
-            sections.push(labText);
-          } else {
-            sections.push(`RÉSULTATS DE LABORATOIRE:\n[Entrer les résultats de laboratoire]`);
-          }
-          sections.push(`IMAGERIE:\n[Entrer les résultats d'imagerie]`);
-          sections.push(`ÉVALUATION ET PLAN:\n[Entrer l'évaluation et le plan]`);
-        } else {
-          sections.push(`HISTORY OF PRESENTING ILLNESS:\n${hpiText || "[Enter current status and interval history]"}`);
-          
-          const rosText = generateRosText();
-          if (rosText) sections.push(rosText);
-          
-          const peText = generatePhysicalExamText();
-          if (peText) sections.push(peText);
-          
-          const labText = generateLabValuesText();
-          if (labText) {
-            sections.push(labText);
-          } else {
-            sections.push(`LABORATORY RESULTS:\n[Enter laboratory results]`);
-          }
-          sections.push(`IMAGING:\n[Enter imaging results]`);
-          sections.push(`ASSESSMENT AND PLAN:\n[Enter assessment and plan]`);
-        }
-      }
-    } else if (noteType === "consultation") {
-      sections.push(`CONSULTATION NOTE:\n[Consultation sections to be defined]`);
-    }
-
-    // Apply consistent medical note formatting
-    const validSections = sections.filter(section => section.trim());
-    return formatMedicalNote(validSections);
-  }, [noteType, admissionType, progressType, language, medications, selectedPeSystems, intubationValues, processedLabValues, pmhText, impressionText, chiefComplaint, hpiText, selectedSymptoms, socialHistory, allergies]);
-
-  // Additional helper functions for template sections
-  const generateAllergiesSocialText = useCallback((customContent?: string) => {
-    if (customContent && customContent.trim()) {
-      return customContent;
+  // Move all generate* functions here, before generateDefaultNote
+  const generateAllergiesText = useCallback(() => {
+    const currentAllergies = allergiesRef.current;
+    if (!currentAllergies) {
+      return language === 'fr' ? 'ALLERGIES :\nAucune allergie connue' : 'ALLERGIES:\nNKDA (No Known Drug Allergies)';
     }
     
-    // Generate allergies text
-    const generateAllergiesText = () => {
-      const currentAllergies = allergiesRef.current;
-      if (!currentAllergies) {
-        return language === 'fr' ? 'ALLERGIES :\nAucune allergie connue' : 'ALLERGIES:\nNKDA (No Known Drug Allergies)';
-      }
-      
-      if (language === 'fr') {
-        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
-          return `ALLERGIES :\n${currentAllergies.allergiesList.join(', ')}`;
-        } else {
-          return `ALLERGIES :\nAucune allergie connue`;
-        }
+    if (language === 'fr') {
+      if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+        return `ALLERGIES :\n${currentAllergies.allergiesList.join(', ')}`;
       } else {
-        if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
-          return `ALLERGIES:\n${currentAllergies.allergiesList.join(', ')}`;
-        } else {
-          return `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
-        }
+        return `ALLERGIES :\nAucune allergie connue`;
       }
-    };
-
-    // Generate social history text
-    const generateSocialHistoryText = () => {
-      let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
-      const socialItems = [];
-      const currentSocialHistory = socialHistoryRef.current;
-      
-      if (!currentSocialHistory) {
-        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
-        socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
-        socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+    } else {
+      if (currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+        return `ALLERGIES:\n${currentAllergies.allergiesList.join(', ')}`;
       } else {
-        // Always include smoking status
-        if (currentSocialHistory.smoking?.status) {
-        socialItems.push(language === 'fr' 
-          ? `Tabagisme: ${currentSocialHistory.smoking.details}`
-          : `Smoking: ${currentSocialHistory.smoking.details}`);
-      } else {
-        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+        return `ALLERGIES:\nNKDA (No Known Drug Allergies)`;
       }
-      
-        // Always include alcohol status
-        if (currentSocialHistory.alcohol?.status) {
-          socialItems.push(language === 'fr' 
-            ? `Alcool: ${currentSocialHistory.alcohol.details || ''}`
-            : `Alcohol: ${currentSocialHistory.alcohol.details || ''}`);
-        } else {
-          socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
-        }
-        
-        // Always include drugs status
-        if (currentSocialHistory.drugs?.status) {
-          socialItems.push(language === 'fr' 
-            ? `Drogues: ${currentSocialHistory.drugs.details || ''}`
-            : `Drugs: ${currentSocialHistory.drugs.details || ''}`);
-        } else {
-          socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
-        }
-      }
-      
-      socialText += socialItems.join('\n');
-      return socialText.trim();
-    };
-    
-    const allergiesText = generateAllergiesText();
-    const socialText = generateSocialHistoryText();
-    return `${allergiesText}\n\n${socialText}`;
+    }
   }, [language]);
 
-  const generateHPIText = useCallback((customContent?: string) => {
-    if (customContent && customContent.trim()) {
-      return customContent;
+  const generatePMHText = useCallback(() => {
+    if (!pmhText.trim()) {
+      return language === 'fr' 
+        ? "ANTÉCÉDENTS MÉDICAUX :\n[Entrer les antécédents médicaux]"
+        : "PAST MEDICAL HISTORY:\n[Enter past medical history]";
     }
     
-    const header = language === 'fr' ? "HISTOIRE DE LA MALADIE ACTUELLE :" : "HISTORY OF PRESENT ILLNESS:";
-    const content = hpiText || (language === 'fr' ? "[Entrer l'HMA]" : "[Enter HPI]");
-    
-    // Generate ROS text
-    const generateRosText = () => {
-      if (Object.keys(selectedSymptoms).length === 0) return "";
-      // Each system gets its own sentence. Sentence case for first word, period at end.
-      const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<string>]) => {
-        const symptomList = Array.from(symptoms);
-        if (symptomList.length === 0) return '';
-        const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string}[]} >)[system];
-        const getLabel = (key: string) => {
-          const found = systemObj?.symptoms.find((s: {key: string}) => s.key === key);
-          if (!found) return key.replace(/_/g, ' ');
-          return language === 'fr' ? found.fr : found.en;
-        };
-        let sentence = '';
-        if (language === 'fr') {
-          sentence = symptomList.map(symptom => `pas de ${getLabel(symptom)}`).join(', ');
-        } else {
-          sentence = symptomList.map(symptom => `no ${getLabel(symptom).charAt(0).toLowerCase() + getLabel(symptom).slice(1)}`).join(', ');
-        }
-        // Sentence case: only first letter capitalized
-        sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
-        // Ensure sentence ends with a period
-        if (!sentence.endsWith('.')) sentence += '.';
-        return sentence;
-      }).filter(Boolean);
+    const lines = pmhText.split('\n');
+    const formatted: string[] = [];
+    let conditionCount = 0;
 
-      let rosText = '';
-      if (language === 'fr') {
-        rosText = rosSentences.join(' ');
-        const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
-        if (uncoveredSystems.length > 0) {
-          rosText += ' Tous les autres systèmes révisés et négatifs.';
-        }
+    for (let line of lines) {
+      line = line.trim();
+      if (!line) continue;
+
+      if (line.startsWith('#')) {
+        conditionCount++;
+        const condition = line.replace('#', '').trim();
+        formatted.push(`${conditionCount}. ${condition}`);
+      } else if (line.startsWith('-')) {
+        const detail = line.replace('-', '').trim();
+        formatted.push(`     - ${detail}`);
       } else {
-        rosText = rosSentences.join(' ');
-        const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
-        if (uncoveredSystems.length > 0) {
-          rosText += ' All other systems reviewed and negative.';
-        }
+        conditionCount++;
+        formatted.push(`${conditionCount}. ${line}`);
       }
-      return rosText;
-    };
+    }
     
-    // Add ROS if available
-    const rosText = generateRosText();
-    const fullContent = rosText ? 
-      (content.trim().endsWith('.') ? `${content} ${rosText}` : `${content}. ${rosText}`) : 
-      content;
+    const header = language === 'fr' ? "ANTÉCÉDENTS MÉDICAUX :\n" : "PAST MEDICAL HISTORY:\n";
+    return header + formatted.join('\n');
+  }, [language, pmhText]);
+
+  const generateImpressionText = useCallback(() => {
+    if (!impressionText.trim()) {
+      return language === 'fr' 
+        ? "IMPRESSION CLINIQUE :\n[Entrer les impressions cliniques]"
+        : "CLINICAL IMPRESSION:\n[Enter clinical impressions]";
+    }
     
-    return `${header}\n${fullContent}`;
-  }, [hpiText, selectedSymptoms, language]);
+    const lines = impressionText.split('\n');
+    const formatted: string[] = [];
+    let conditionCount = 0;
+
+    for (let line of lines) {
+      line = line.trim();
+      if (!line) continue;
+
+      if (line.startsWith('#')) {
+        conditionCount++;
+        const condition = line.replace('#', '').trim();
+        formatted.push(`${conditionCount}. ${condition}`);
+      } else if (line.startsWith('-')) {
+        const detail = line.replace('-', '').trim();
+        formatted.push(`     - ${detail}`);
+      } else {
+        conditionCount++;
+        formatted.push(`${conditionCount}. ${line}`);
+      }
+    }
+    
+    const header = language === 'fr' ? "IMPRESSION CLINIQUE :\n" : "CLINICAL IMPRESSION:\n";
+    return header + formatted.join('\n');
+  }, [language, impressionText]);
+
+  const generateSocialHistoryText = useCallback(() => {
+    let socialText = language === 'fr' ? "HISTOIRE SOCIALE :\n" : "SOCIAL HISTORY:\n";
+    const socialItems = [];
+    const currentSocialHistory = socialHistoryRef.current;
+    
+    if (!currentSocialHistory) {
+      socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+      socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+      socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+    } else {
+      if (currentSocialHistory.smoking.status) {
+        socialItems.push(language === 'fr' 
+          ? `Tabagisme: ${currentSocialHistory.smoking.details || ''}`
+          : `Smoking: ${currentSocialHistory.smoking.details || ''}`);
+      } else {
+        socialItems.push(language === 'fr' ? "Non-fumeur" : "No smoking");
+      }
+    
+      if (currentSocialHistory.alcohol.status) {
+        socialItems.push(language === 'fr' 
+          ? `Alcool: ${currentSocialHistory.alcohol.details || ''}`
+          : `Alcohol: ${currentSocialHistory.alcohol.details || ''}`);
+      } else {
+        socialItems.push(language === 'fr' ? "Pas d'alcool" : "No alcohol");
+      }
+      
+      if (currentSocialHistory.drugs.status) {
+        socialItems.push(language === 'fr' 
+          ? `Drogues: ${currentSocialHistory.drugs.details || ''}`
+          : `Drugs: ${currentSocialHistory.drugs.details || ''}`);
+      } else {
+        socialItems.push(language === 'fr' ? "Pas de drogues" : "No drugs");
+      }
+    }
+    
+    socialText += socialItems.join('\n');
+    return socialText.trim();
+  }, [language]);
+
+  const generateMedicationsText = useCallback(() => {
+    let medicationsText = "";
+    
+    if (language === 'fr') {
+      if (medications.homeMedications.length > 0) {
+        const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'fr');
+        medicationsText += `MÉDICAMENTS À DOMICILE :\n${organizedHomeMeds}\n\n`;
+      } else {
+        medicationsText += `MÉDICAMENTS À DOMICILE :\n[Aucun médicament à domicile]\n\n`;
+      }
+      
+      if (medications.hospitalMedications.length > 0) {
+        const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'fr');
+        medicationsText += `MÉDICAMENTS HOSPITALIERS :\n${organizedHospitalMeds}`;
+      } else {
+        medicationsText += `MÉDICAMENTS HOSPITALIERS :\n[Aucun médicament hospitalier]`;
+      }
+    } else {
+      if (medications.homeMedications.length > 0) {
+        const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'en');
+        medicationsText += `HOME MEDICATIONS:\n${organizedHomeMeds}\n\n`;
+      } else {
+        medicationsText += `HOME MEDICATIONS:\n[No home medications]\n\n`;
+      }
+      
+      if (medications.hospitalMedications.length > 0) {
+        const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'en');
+        medicationsText += `HOSPITAL MEDICATIONS:\n${organizedHospitalMeds}`;
+      } else {
+        medicationsText += `HOSPITAL MEDICATIONS:\n[No hospital medications]`;
+      }
+    }
+    
+    return medicationsText;
+  }, [language, medications]);
+
+  const generateRosText = useCallback(() => {
+    if (Object.keys(selectedSymptoms).length === 0) return "";
+    const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<SymptomObject>]) => {
+      const symptomList = Array.from(symptoms);
+      if (symptomList.length === 0) return '';
+      const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string, description: {en: string, fr: string}}[]} >)[system];
+      const getLabel = (key: string) => {
+        const found = systemObj?.symptoms.find((s: {key: string}) => s.key === key);
+        if (!found) return key.replace(/_/g, ' ');
+        return language === 'fr' ? found.fr : found.en;
+      };
+      let sentence = '';
+      if (language === 'fr') {
+        sentence = symptomList.map(s => `pas de ${getLabel(s.key)}${s.severity ? ` (${s.severity})` : ''}${s.note ? `: ${s.note}` : ''}`).join(', ');
+      } else {
+        sentence = symptomList.map(s => `no ${getLabel(s.key).charAt(0).toLowerCase() + getLabel(s.key).slice(1)}${s.severity ? ` (${s.severity})` : ''}${s.note ? `: ${s.note}` : ''}`).join(', ');
+      }
+      sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+      if (!sentence.endsWith('.')) sentence += '.';
+      return sentence;
+    }).filter(Boolean);
+  
+    let rosText = '';
+    if (language === 'fr') {
+      rosText = rosSentences.join(' ');
+      const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+      if (uncoveredSystems.length > 0) {
+        rosText += ' Tous les autres systèmes révisés et négatifs.';
+      }
+    } else {
+      rosText = rosSentences.join(' ');
+      const uncoveredSystems = Object.keys(rosSymptomOptions).filter(system => !selectedSymptoms[system] || selectedSymptoms[system].size === 0);
+      if (uncoveredSystems.length > 0) {
+        rosText += ' All other systems reviewed and negative.';
+      }
+    }
+    return rosText;
+  }, [language, selectedSymptoms]);
+
+  const generatePhysicalExamText = useCallback(() => {
+    if (selectedPeSystems.size === 0) return "";
+    
+    const peEntries = Array.from(selectedPeSystems).map(system => {
+      const findings = physicalExamOptions[system as keyof typeof physicalExamOptions];
+      return language === 'fr' ? findings : `${system}: ${findings}`;
+    });
+    
+    return language === 'fr' 
+      ? `EXAMEN PHYSIQUE :\n${peEntries.join("\n")}`
+      : `PHYSICAL EXAMINATION:\n${peEntries.join("\n")}`;
+  }, [language, selectedPeSystems]);
+
+  const generateIntubationText = useCallback(() => {
+    if (Object.keys(intubationValues).length === 0) return "";
+    
+    let intubationText = "";
+    Object.entries(intubationValues).forEach(([param, data]) => {
+      if (data.current) {
+        intubationText += `${param}: ${data.current}\n`;
+      }
+    });
+    return intubationText.trim();
+  }, [intubationValues]);
+
+  const generateLabValuesText = useCallback(() => {
+    if (processedLabValues.length === 0) return "";
+    
+    const labText = formatLabValuesForNote(processedLabValues);
+    return labText ? (language === 'fr' ? `RÉSULTATS DE LABORATOIRE:\n${labText}` : `LABORATORY RESULTS:\n${labText}`) : "";
+  }, [language, processedLabValues]);
 
   const generateImageryText = useCallback((customContent?: string) => {
     if (customContent && customContent.trim()) {
@@ -1636,7 +1220,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     ).join('\n');
     
     return `${header}\n${studies}`;
-  }, [imageryStudies, language]);
+  }, [language, imageryStudies]);
 
   const generateVentilationText = useCallback((customContent?: string) => {
     if (customContent && customContent.trim()) {
@@ -1645,23 +1229,10 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     
     const header = language === 'fr' ? "PARAMÈTRES DE VENTILATION :" : "VENTILATION PARAMETERS:";
     
-    // Generate intubation parameters text
-    const generateIntubationText = () => {
-      if (Object.keys(intubationValues).length === 0) return "";
-      
-      let intubationText = "";
-      Object.entries(intubationValues).forEach(([param, data]) => {
-        if (data.current) {
-          intubationText += `${param}: ${data.current}\n`;
-        }
-      });
-      return intubationText.trim();
-    };
-    
     const intubationText = generateIntubationText();
     
     return intubationText ? `${header}\n${intubationText}` : "";
-  }, [intubationValues, language]);
+  }, [language, generateIntubationText]);
 
   const generatePlanText = useCallback((customContent?: string) => {
     if (customContent && customContent.trim()) {
@@ -1671,17 +1242,86 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     return language === 'fr' ? "PLAN :\n[Entrer le plan de traitement]" : "PLAN:\n[Enter treatment plan]";
   }, [language]);
 
-  // Handle option changes with diff-patch-merge
+  const generateHPIText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    const header = language === 'fr' ? "HISTOIRE DE LA MALADIE ACTUELLE :" : "HISTORY OF PRESENT ILLNESS:";
+    const content = hpiText || (language === 'fr' ? "[Entrer l'HMA]" : "[Enter HPI]");
+    
+    const rosText = generateRosText();
+    const fullContent = rosText ? 
+      (content.trim().endsWith('.') ? `${content} ${rosText}` : `${content}. ${rosText}`) : 
+      content;
+    
+    return `${header}\n${fullContent}`;
+  }, [language, hpiText, generateRosText]);
+
+  const generateAllergiesSocialText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
+    
+    const allergiesText = generateAllergiesText();
+    const socialText = generateSocialHistoryText();
+    return `${allergiesText}\n\n${socialText}`;
+  }, [generateAllergiesText, generateSocialHistoryText]);
+
+  // Now define generateDefaultNote after all helper functions
+  const generateDefaultNote = useCallback(() => {
+    let generatedText = "";
+    
+    const sections: string[] = [];
+    const isICU = (noteType === "admission" && admissionType === "icu") || (noteType === "progress" && progressType === "icu");
+    
+    if (noteType === "admission") {
+      if (isICU) {
+        if (language === 'fr') {
+          sections.push(`MOTIF D'ADMISSION :\n${chiefComplaint.customComplaint || '[Entrer le motif d\'admission]'}\n\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        } else {
+          sections.push(`CHIEF COMPLAINT:\n${chiefComplaint.customComplaint || '[Enter chief complaint]'}\n\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        }
+      } else {
+        if (language === 'fr') {
+          sections.push(`MOTIF D'ADMISSION :\n${chiefComplaint.customComplaint || '[Entrer le motif d\'admission]'}\n\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        } else {
+          sections.push(`CHIEF COMPLAINT:\n${chiefComplaint.customComplaint || '[Enter chief complaint]'}\n\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        }
+      }
+    } else if (noteType === "progress") {
+      if (isICU) {
+        if (language === 'fr') {
+          sections.push(`NOTE D'ÉVOLUTION :\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        } else {
+          sections.push(`PROGRESS NOTE:\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        }
+      } else {
+        if (language === 'fr') {
+          sections.push(`NOTE D'ÉVOLUTION :\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        } else {
+          sections.push(`PROGRESS NOTE:\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        }
+      }
+    } else if (noteType === "consultation") {
+      if (language === 'fr') {
+        sections.push(`NOTE DE CONSULTATION :\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+      } else {
+        sections.push(`CONSULTATION NOTE:\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+      }
+    }
+
+    return sections.join('\n\n');
+  }, [noteType, language, chiefComplaint, generateHPIText, generatePMHText, generateAllergiesText, generateSocialHistoryText, generateMedicationsText, generateRosText, generatePhysicalExamText, generateIntubationText, generateLabValuesText, generateImageryText, generateImpressionText, admissionType, progressType]);
+
   const handleOptionChange = useCallback(() => {
     const newGeneratedText = generateTextFromOptions();
     
     if (initialGeneratedText === "") {
-      // First generation
       setInitialGeneratedText(newGeneratedText);
       setCurrentText(newGeneratedText);
       setNote(newGeneratedText);
     } else {
-      // Apply diff-patch-merge
       const diff = dmp.current.diff_main(initialGeneratedText, currentText);
       dmp.current.diff_cleanupSemantic(diff);
       const patch = dmp.current.patch_make(diff);
@@ -1693,13 +1333,11 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   }, [generateTextFromOptions, initialGeneratedText, currentText]);
 
-  // Handle manual text changes
   const handleNoteChange = (newText: string) => {
     setCurrentText(newText);
     setNote(newText);
   };
 
-  // Reset to generated text
   const resetToGenerated = () => {
     const newGeneratedText = generateTextFromOptions();
     setInitialGeneratedText(newGeneratedText);
@@ -1707,7 +1345,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     setNote(newGeneratedText);
   };
 
-  // Toggle functions (PE only)
   const togglePeSystem = (system: string) => {
     setSelectedPeSystems(prev => {
       const newSet = new Set(prev);
@@ -1720,12 +1357,10 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     });
   };
 
-  // ROS system-level select all removed. Use symptom-level logic instead.
   const selectAllPeSystems = () => {
     setSelectedPeSystems(new Set(Object.keys(physicalExamOptions)));
   };
 
-  // Allergy functions
   const addAllergy = () => {
     if (newAllergy.trim() && !allergies.allergiesList.includes(newAllergy.trim())) {
       setAllergies(prev => ({
@@ -1746,7 +1381,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     });
   };
 
-  // Copy to clipboard
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(note);
@@ -1763,7 +1397,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   };
 
-  // Load templates when note type or subtype changes
   useEffect(() => {
     if (noteType) {
       const subtype = noteType === "admission" ? admissionType : 
@@ -1775,19 +1408,12 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   }, [noteType, admissionType, progressType, loadTemplatesForNoteType]);
 
-  // Update note when options change - removed infinite loop useEffect
-
-
-
-  // Controlled effect to trigger note updates for major changes
   useEffect(() => {
     handleOptionChange();
   }, [medications, processedLabValues, pmhText, noteType, admissionType, progressType, chiefComplaint, selectedPeSystems, intubationValues, impressionText, selectedSymptoms, selectedTemplate]);
 
-  // Update note on blur for allergies and social history to prevent focus issues
   const timeoutRef = useRef<NodeJS.Timeout[]>([]);
   
-  // Add confirmation handlers that only update the note when explicitly called
   const handleAllergiesConfirm = useCallback(() => {
     try {
       handleOptionChange();
@@ -1804,7 +1430,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   }, [handleOptionChange]);
   
-  // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
       timeoutRef.current.forEach(timeout => clearTimeout(timeout));
@@ -1812,11 +1437,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     };
   }, []);
 
-  // Removed redundant useEffect hooks that were causing re-renders
-
-  // Template state persistence
   useEffect(() => {
-    // Load saved template selection on component mount
     const savedTemplateId = localStorage.getItem('selectedTemplateId');
     if (savedTemplateId && availableTemplates.length > 0) {
       const savedTemplate = availableTemplates.find(t => t.id.toString() === savedTemplateId);
@@ -1826,7 +1447,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   }, [availableTemplates]);
 
-  // Save selected template to localStorage
   useEffect(() => {
     if (selectedTemplate) {
       localStorage.setItem('selectedTemplateId', selectedTemplate.id.toString());
@@ -1835,19 +1455,14 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   }, [selectedTemplate]);
 
-  // Template changes are now handled by the main useEffect
-
-  // Keyboard navigation for tabs
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Only handle arrow keys when not typing in input fields
       if (event.target instanceof HTMLInputElement || 
           event.target instanceof HTMLTextAreaElement || 
           event.target instanceof HTMLSelectElement) {
         return;
       }
       
-      // Don't handle navigation if we're in the allergies-social section
       if (selectedSubOption === 'allergies-social') {
         return;
       }
@@ -1870,10 +1485,8 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [activeTab, getTabOrder]);
 
-  // Detect if text was manually edited
   const isManuallyEdited = currentText !== initialGeneratedText && initialGeneratedText !== "";
 
-  // Add a mapping of subOption keys to their icons (matching MainLayout)
   const sectionIcons: Record<string, React.ReactNode> = {
     "note-type": <FileText className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" />,
     "pmh": <Stethoscope className="w-6 h-6 text-emerald-600 bg-emerald-100 rounded-full p-1" />,
@@ -1888,7 +1501,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     "impression": <Brain className="w-6 h-6 text-gray-700 bg-gray-100 rounded-full p-1" />,
   };
 
-  // In SectionWrapper, allow rendering of controls in the header
   const SectionWrapper = ({ title, sectionKey, controls, children }: { title: string; sectionKey: string; controls?: React.ReactNode; children: React.ReactNode }) => (
     <div className="medical-section-wrapper">
       <div className="medical-card-header flex items-center justify-between">
@@ -1904,7 +1516,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     </div>
   );
 
-  // Clear PMH function for the new simple component
   const clearAllPmhEntries = () => {
     setPmhText('');
   };
@@ -1918,7 +1529,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     </button>
   );
 
-  // Render the main content based on selectedSubOption
   const renderMainContent = () => {
     const sectionTitle: Record<string, string> = {
       "note-type": "Note Type",
@@ -1951,7 +1561,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                     <FileText className="w-5 h-5 text-blue-600" />
                     <span className="font-medium text-gray-900">Admission</span>
                   </div>
-                  <p className="text-sm text-gray-600">For new patient admissions.</p>
+                  <p className="text-sm text-gray-600 whitespace-normal text-wrap">For new patient admissions.</p>
                 </div>
                 <div
                   className={`max-w-xs w-full p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
@@ -1965,7 +1575,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                     <TrendingUp className="w-5 h-5 text-green-600" />
                     <span className="font-medium text-gray-900">Progress</span>
                   </div>
-                  <p className="text-sm text-gray-600">For daily or interval progress updates.</p>
+                  <p className="text-sm text-gray-600 whitespace-normal text-wrap">For daily or interval progress updates.</p>
                 </div>
                 <div
                   className={`max-w-xs w-full p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
@@ -1979,7 +1589,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                     <Users className="w-5 h-5 text-purple-600" />
                     <span className="font-medium text-gray-900">Consultation</span>
                   </div>
-                  <p className="text-sm text-gray-600">For specialist or consult notes.</p>
+                  <p className="text-sm text-gray-600 whitespace-normal text-wrap">For specialist or consult notes.</p>
                 </div>
                 <div
                   className={`max-w-xs w-full p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
@@ -1993,7 +1603,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                     <Edit3 className="w-5 h-5 text-orange-600" />
                     <span className="font-medium text-gray-900">{language === 'fr' ? 'Personnalisé' : 'Custom'}</span>
                   </div>
-                  <p className="text-sm text-gray-600">{language === 'fr' ? 'Note libre avec phrases-points.' : 'Free-form note with dot phrases.'}</p>
+                  <p className="text-sm text-gray-600 whitespace-normal text-wrap">{language === 'fr' ? 'Note libre avec phrases-points.' : 'Free-form note with dot phrases.'}</p>
                 </div>
               </div>
               {noteType === "progress" && (
@@ -2012,7 +1622,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                         <div className={`w-3 h-3 rounded-full ${progressType === "general" ? "bg-green-500" : "bg-gray-300"}`} />
                         <span className="font-medium text-gray-900">General</span>
                       </div>
-                      <p className="text-sm text-gray-500 ml-5">Standard progress note.</p>
+                      <p className="text-sm text-gray-500 ml-5 whitespace-normal text-wrap">Standard progress note.</p>
                     </div>
                     <div
                       className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
@@ -2026,7 +1636,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                         <div className={`w-3 h-3 rounded-full ${progressType === "icu" ? "bg-green-500" : "bg-gray-300"}`} />
                         <span className="font-medium text-gray-900">ICU</span>
                       </div>
-                      <p className="text-sm text-gray-500 ml-5">ICU-specific progress note.</p>
+                      <p className="text-sm text-gray-500 ml-5 whitespace-normal text-wrap">ICU-specific progress note.</p>
                     </div>
                   </div>
                 </div>
@@ -2047,7 +1657,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                         <div className={`w-3 h-3 rounded-full ${admissionType === "general" ? "bg-blue-500" : "bg-gray-300"}`} />
                         <span className="font-medium text-gray-900">General</span>
                       </div>
-                      <p className="text-sm text-gray-500 ml-5">Standard admission note.</p>
+                      <p className="text-sm text-gray-500 ml-5 whitespace-normal text-wrap">Standard admission note.</p>
                     </div>
                     <div
                       className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
@@ -2061,18 +1671,16 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                         <div className={`w-3 h-3 rounded-full ${admissionType === "icu" ? "bg-blue-500" : "bg-gray-300"}`} />
                         <span className="font-medium text-gray-900">ICU</span>
                       </div>
-                      <p className="text-sm text-gray-500 ml-5">ICU-specific admission note.</p>
+                      <p className="text-sm text-gray-500 ml-5 whitespace-normal text-wrap">ICU-specific admission note.</p>
                     </div>
                   </div>
                 </div>
               )}
               
-              {/* Template Selection Section */}
               {noteType && (
                 <div className="border-t pt-4 mt-4">
                   <h4 className="font-medium text-gray-900 mb-3">Template Selection</h4>
                   <div className="space-y-3">
-                    {/* Standard Note Option */}
                     <div
                       className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
                         selectedTemplate === null
@@ -2088,10 +1696,9 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                           <span className="font-medium text-gray-900">Standard Note</span>
                         </div>
                       </div>
-                      <p className="text-sm text-gray-500 ml-6">Use the default medical note format with all sections</p>
+                      <p className="text-sm text-gray-500 ml-6 whitespace-normal text-wrap">Use the default medical note format with all sections</p>
                     </div>
 
-                    {/* Loading State */}
                     {loadingTemplates && (
                       <div className="p-3 border rounded-lg bg-gray-50">
                         <div className="flex items-center space-x-2">
@@ -2101,7 +1708,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                       </div>
                     )}
 
-                    {/* Template Error */}
                     {templateError && (
                       <div className="p-3 border border-red-200 rounded-lg bg-red-50">
                         <div className="flex items-center space-x-2">
@@ -2111,7 +1717,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                       </div>
                     )}
 
-                    {/* Available Templates */}
                     {!loadingTemplates && availableTemplates.map((template) => (
                       <div
                         key={template.id}
@@ -2137,7 +1742,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                           </div>
                         </div>
                         {template.description && (
-                          <p className="text-sm text-gray-500 ml-6 mt-1">{template.description}</p>
+                          <p className="text-sm text-gray-500 ml-6 mt-1 whitespace-normal text-wrap">{template.description}</p>
                         )}
                         <div className="flex items-center space-x-4 ml-6 mt-2 text-xs text-gray-400">
                           <span>Category: {template.category}</span>
@@ -2151,18 +1756,16 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                       </div>
                     ))}
 
-                    {/* No Templates Message */}
                     {!loadingTemplates && !templateError && availableTemplates.length === 0 && (
                       <div className="p-3 border border-dashed rounded-lg bg-gray-50">
                         <div className="text-center">
                           <ClipboardList className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                          <p className="text-sm text-gray-600 mb-1">No templates available for this note type</p>
-                          <p className="text-xs text-gray-500">Create templates in Smart Functions → Templates</p>
+                          <p className="text-sm text-gray-600 mb-1 whitespace-normal text-wrap">No templates available for this note type</p>
+                          <p className="text-xs text-gray-500 whitespace-normal text-wrap">Create templates in Smart Functions → Templates</p>
                         </div>
                       </div>
                     )}
 
-                    {/* Browse All Templates Link */}
                     {!loadingTemplates && availableTemplates.length > 0 && (
                       <div className="text-center pt-2">
                         <Button
@@ -2170,7 +1773,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                           size="sm"
                           className="text-blue-600 hover:text-blue-700"
                           onClick={() => {
-                            // This would typically navigate to template manager
                             toast({
                               title: "Template Manager",
                               description: "Go to Smart Functions → Templates to manage all templates",
@@ -2192,16 +1794,15 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
           <SectionWrapper title={sectionTitle["hpi"]} sectionKey="hpi">
             <HpiSection
               selectedSymptoms={selectedSymptoms}
-              setSelectedSymptoms={setSelectedSymptoms}
+              setSelectedSymptoms={handleSetSelectedSymptoms}
             />
           </SectionWrapper>
         );
       case "ros":
         return (
           <SectionWrapper title={sectionTitle["ros"]} sectionKey="ros">
-            {/* Review of Systems UI will go here */}
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">Review of systems examination.</p>
+              <p className="text-sm text-gray-600 whitespace-normal text-wrap">Review of systems examination.</p>
             </div>
           </SectionWrapper>
         );
@@ -2224,8 +1825,26 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       case "labs":
         return (
           <SectionWrapper title={sectionTitle["labs"]} sectionKey="labs">
-            <div className="space-y-4">
-              <LabImageUpload onLabValuesExtracted={handleLabValuesExtracted} />
+            <div className="space-y-6">
+              <ImprovedLabInterface
+                processedLabs={processedLabValues}
+                onLabsChange={setProcessedLabValues}
+                onLabAdd={handleManualLabAdd}
+                selectedLabs={Array.from(selectedLabTests)}
+                onLabRemove={handleLabRemove}
+                onLabValuesExtracted={handleLabValuesExtracted}
+                selectedPanel={selectedPanel}
+                setSelectedPanel={setSelectedPanel}
+              />
+              
+              <div className="bg-gray-50 border rounded-lg p-4">
+                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                  <Camera className="w-4 h-4" />
+                  {language === 'fr' ? 'Extraction d\'image' : 'Image Extraction'}
+                </h4>
+                <LabImageUpload onLabValuesExtracted={handleLabValuesExtracted} />
+              </div>
+
               {processedLabValues.length > 0 && (
                 <div className="medical-card">
                   <div className="medical-card-header">
@@ -2246,14 +1865,18 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       case "allergies-social":
         return (
           <SectionWrapper title={sectionTitle["allergies-social"]} sectionKey="allergies">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 h-full">
               <AllergiesSection
-                allergies={allergies}
+                allergies={allergies || { hasAllergies: false, allergiesList: [] }}
                 onAllergiesChange={setAllergies}
                 onConfirm={handleAllergiesConfirm}
               />
               <SocialHistorySection
-                socialHistory={socialHistory}
+                socialHistory={socialHistory || {
+                  smoking: { status: false, details: "" },
+                  alcohol: { status: false, details: "" },
+                  drugs: { status: false, details: "" }
+                }}
                 onSocialHistoryChange={setSocialHistory}
                 onConfirm={handleSocialHistoryConfirm}
               />
@@ -2262,7 +1885,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
         );
 
       case "imagery": {
-        // --- Icons for systems ---
         const systemIcons: Record<string, React.ReactNode> = {
           neuro: <Brain className="w-5 h-5 text-indigo-600 bg-indigo-100 rounded-full p-1" />,
           cardiac: <HeartPulse className="w-5 h-5 text-rose-600 bg-rose-100 rounded-full p-1" />,
@@ -2272,9 +1894,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
           spine: <Bone className="w-5 h-5 text-orange-600 bg-orange-100 rounded-full p-1" />,
           limb: <Activity className="w-5 h-5 text-blue-600 bg-blue-100 rounded-full p-1" />,
         };
-        // UI state is now defined at component top level
 
-        // --- Add study handler ---
         const handleAddStudy = () => {
           if (!expandedSystem || !selectedModality) return;
           setImageryStudies([
@@ -2285,13 +1905,11 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
           setSelectedModality("");
           setResultInput("");
         };
-        // --- Remove study handler (already defined above) ---
 
         return (
           <SectionWrapper title={sectionTitle["imagery"]} sectionKey="imagery">
             <div className="space-y-4">
-              <div className="text-sm text-gray-600 mb-2">Select the system, exam type, and enter the result for each imaging study. All entries will be included in your note.</div>
-              {/* Organ system cards */}
+              <div className="text-sm text-gray-600 mb-2 whitespace-normal text-wrap">Select the system, exam type, and enter the result for each imaging study. All entries will be included in your note.</div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-2">
                 {imagerySystems.map(sys => (
                   <div
@@ -2304,11 +1922,10 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                     }}
                   >
                     {systemIcons[sys.key]}
-                    <span className="mt-2 text-sm font-medium text-gray-900">{sys.label}</span>
+                    <span className="mt-2 text-sm font-medium text-gray-900 whitespace-normal text-wrap">{sys.label}</span>
                   </div>
                 ))}
               </div>
-              {/* Modalities and result input for expanded system */}
               {expandedSystem && (
                 <div className="bg-gray-50 border rounded-xl p-4 flex flex-col gap-2 max-w-xl mx-auto">
                   <div className="flex flex-wrap gap-2 mb-2">
@@ -2326,7 +1943,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                   {selectedModality && (
                     <div className="flex gap-2 items-end">
                       <input
-                        className="border rounded px-2 py-1 text-sm flex-1"
+                        className="border rounded px-2 py-1 text-sm flex-1 whitespace-normal text-wrap"
                         type="text"
                         placeholder="Type result or impression..."
                         value={resultInput}
@@ -2344,17 +1961,16 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                   )}
                 </div>
               )}
-              {/* List of added studies */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {Array.isArray(imageryStudies) && imageryStudies.map((study: { system: string; modality: string; result: string }, idx: number) => (
                   <div key={idx} className="bg-gray-50 border rounded-lg p-3 flex flex-col gap-1 relative">
                     <div className="flex items-center gap-2 text-sm font-medium">
                       {systemIcons[study.system]}
-                      <span className="text-gray-700">{imagerySystems.find(s => s.key === study.system)?.label}</span>
+                      <span className="text-gray-700 whitespace-normal text-wrap">{imagerySystems.find(s => s.key === study.system)?.label}</span>
                       <span className="text-gray-400">/</span>
-                      <span className="text-gray-700">{study.modality}</span>
+                      <span className="text-gray-700 whitespace-normal text-wrap">{study.modality}</span>
                     </div>
-                    <div className="text-xs text-gray-600">{study.result || <span className="italic text-gray-400">No result entered</span>}</div>
+                    <div className="text-xs text-gray-600 whitespace-normal text-wrap">{study.result || <span className="italic text-gray-400">No result entered</span>}</div>
                     <button
                       className="absolute top-2 right-2 text-xs text-red-500 hover:text-red-700"
                       onClick={() => handleRemoveStudy(idx)}
@@ -2371,7 +1987,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
             </div>
           </SectionWrapper>
         );
-      } // <-- This fixes your syntax error!
+      }
       case "impression": 
         return (
           <SectionWrapper title={sectionTitle["impression"]} sectionKey="impression">
@@ -2385,9 +2001,8 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       case "ventilation":
         return (
           <SectionWrapper title={sectionTitle["ventilation"]} sectionKey="ventilation">
-            {/* Ventilation Parameters UI will go here */}
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">Configure ventilation parameters for ICU notes.</p>
+              <p className="text-sm text-gray-600 whitespace-normal text-wrap">Configure ventilation parameters for ICU notes.</p>
             </div>
           </SectionWrapper>
         );
@@ -2403,7 +2018,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
               </div>
               <div className="medical-section-content">
                 <div className="space-y-4">
-                  <p className="text-sm text-gray-600">Dot phrases functionality will be implemented here.</p>
+                  <p className="text-sm text-gray-600 whitespace-normal text-wrap">Dot phrases functionality will be implemented here.</p>
                 </div>
               </div>
             </div>
@@ -2413,22 +2028,18 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     }
   };
 
-  // Collect all note data for template preview
   const getNoteData = () => {
     const noteData: Record<string, string> = {};
     
     try {
-      // Note type section
       if (noteType) {
         noteData['note-type'] = `Note Type: ${noteType.charAt(0).toUpperCase() + noteType.slice(1)}`;
       }
       
-      // PMH section
       if (pmhText && pmhText.trim()) {
         noteData['pmh'] = pmhText;
       }
       
-      // Medications section
       if (medications && Array.isArray(medications.homeMedications) && Array.isArray(medications.hospitalMedications)) {
         const allMeds = [...medications.homeMedications, ...medications.hospitalMedications];
         if (allMeds.length > 0) {
@@ -2436,13 +2047,11 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
         }
       }
       
-      // Allergies section  
       const currentAllergies = allergiesRef.current;
       if (currentAllergies && currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
         noteData['allergies-social'] = `Allergies: ${currentAllergies.allergiesList.join(', ')}`;
       }
       
-      // HPI section
       if (chiefComplaint || hpiText) {
         const hpiContent = [
           chiefComplaint?.customComplaint?.trim() || '',
@@ -2453,7 +2062,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
         }
       }
       
-      // Physical exam
       if (selectedPeSystems && selectedPeSystems.size > 0) {
         const peEntries = Array.from(selectedPeSystems).map(system => {
           const findings = physicalExamOptions[system as keyof typeof physicalExamOptions] || 'Normal';
@@ -2462,12 +2070,10 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
         noteData['physical-exam'] = peEntries.join("\n");
       }
       
-      // Labs
       if (processedLabValues && Array.isArray(processedLabValues) && processedLabValues.length > 0) {
         noteData['labs'] = formatLabValuesForNote(processedLabValues);
       }
       
-      // Imagery studies
       if (imageryStudies && Array.isArray(imageryStudies) && imageryStudies.length > 0) {
         const imageryText = imageryStudies.map(study => 
           `${study.system} ${study.modality}: ${study.result}`
@@ -2475,12 +2081,10 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
         noteData['imagery'] = imageryText;
       }
       
-      // Impression
       if (impressionText && impressionText.trim()) {
         noteData['impression'] = impressionText;
       }
       
-      // ROS section
       if (selectedSymptoms && Object.keys(selectedSymptoms).length > 0) {
         const rosEntries = Object.entries(selectedSymptoms)
           .filter(([, symptoms]) => symptoms && symptoms.size > 0)
@@ -2500,14 +2104,10 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
     return noteData;
   };
 
-  // Handler to sync labs from note text on blur
   const handleNoteBlur = useCallback(() => {
-    // Parse the note for lab values section
-    // Example: LABORATORY RESULTS:\nWBC 5.2 (5.0, 5.1)\nHemoglobin 13.2\n...
     const labSectionMatch = note.match(/LABORATORY RESULTS:\n([\s\S]*?)(\n\w+:|$)/i);
     if (!labSectionMatch) return;
     const labLines = labSectionMatch[1].split('\n').map(l => l.trim()).filter(Boolean);
-    // Parse each lab line: e.g., "WBC 5.2 (5.0, 5.1)"
     const newLabs: LabValue[] = [];
     labLines.forEach(line => {
       const match = line.match(/^(\w[\w\s\-\/]+)\s+([\d\.]+)(?:\s*\(([^)]+)\))?/);
@@ -2515,7 +2115,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
         const testName = match[1].trim();
         const mainValue = match[2];
         const trended = match[3] ? match[3].split(',').map(v => v.trim()) : [];
-        // Add main value
         newLabs.push({
           testName,
           value: mainValue,
@@ -2524,7 +2123,6 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
           timestamp: new Date().toISOString(),
           referenceRange: '',
         });
-        // Add trended values
         trended.forEach(val => {
           newLabs.push({
             testName,
@@ -2537,19 +2135,21 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
         });
       }
     });
-    // If parsed labs differ from current, update processedLabValues
     if (newLabs.length > 0) {
       const processedLabs = newLabs.map(lab => ({
-        ...lab,
-        id: `${lab.testName}-${Date.now()}` // Add a unique ID
+        testName: lab.testName,
+        category: lab.category,
+        mostRecent: lab,
+        trending: [],
+        showTrending: false,
+        trendCount: 0,
+        showInNote: true
       }));
       setProcessedLabValues(processedLabs);
     }
   }, [note, setProcessedLabValues]);
 
-  // Render the live preview panel content with template awareness
   const renderLivePreview = () => {
-    // Safely format note data with fallbacks
     const safeNoteData = {
       'note-type': noteType || '',
       'pmh': pmhText || '',
@@ -2596,12 +2196,28 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
         totalSystems={totalSystems || 0}
         generatedNote={note || ''}
         className="h-full"
-        onBlur={handleNoteBlur} // FIXED PROP NAME
+        onBlur={handleNoteBlur}
       />
     );
   };
 
-  // Custom note mode - full width live preview only
+  // Scroll preservation additions
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [scrollPosition, setScrollPosition] = useState(0);
+
+  const handleSetSelectedSymptoms = useCallback((updater: (prev: Record<string, Set<SymptomObject>>) => Record<string, Set<SymptomObject>>) => {
+    if (contentRef.current) {
+      setScrollPosition(contentRef.current.scrollTop);
+    }
+    setSelectedSymptoms(updater);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (contentRef.current) {
+      contentRef.current.scrollTop = scrollPosition;
+    }
+  }, [selectedSymptoms, scrollPosition]);
+
   if (noteType === "custom") {
     return (
       <MainLayout
@@ -2636,7 +2252,7 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
                 placeholder={language === 'fr' 
                   ? 'Commencez à taper votre note... Utilisez /phrase pour les phrases-points.'
                   : 'Start typing your note... Use /phrase for dot phrases.'}
-                className="w-full h-full resize-none border-0 focus:ring-0 text-base leading-relaxed"
+                className="w-full h-full resize-none border-0 focus:ring-0 text-base leading-relaxed whitespace-normal text-wrap"
                 rows={25}
               />
             </div>
@@ -2661,16 +2277,26 @@ ${hpiWithRos}`); // ROS now integrated into HPI section; no separate ROS section
       <div className="flex flex-1 h-full min-h-[600px] bg-gray-50">
         <div className="flex-1 min-w-0 flex flex-col p-0">
           <div className="w-full h-full min-h-[600px] flex flex-col rounded-none shadow-none bg-white border-0">
-            <div className="flex-1 overflow-y-auto px-6 py-4 text-base text-gray-800">
-              {renderMainContent() || (
-                <div className="text-center text-gray-400 py-12">
-                  Please select a section from the sidebar to begin.
-                </div>
-              )}
+            <div className="flex-1 overflow-y-auto px-6 py-4 text-base text-gray-800" ref={contentRef}>
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={selectedSubOption}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full"
+                >
+                  {renderMainContent() || (
+                    <div className="text-center text-gray-400 py-12 whitespace-normal text-wrap">
+                      Please select a section from the sidebar to begin.
+                    </div>
+                  )}
+                </motion.div>
+              </AnimatePresence>
             </div>
           </div>
         </div>
-        {/* Divider for desktop */}
         <div className="hidden lg:block w-px bg-gray-200 h-full mx-0" />
       </div>
     </MainLayout>

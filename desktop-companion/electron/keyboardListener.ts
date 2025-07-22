@@ -1,5 +1,7 @@
 import { EventEmitter } from 'events'
 import { screen, globalShortcut, app } from 'electron'
+import { normalize } from 'electron-shortcut-normalizer';
+import { execSync } from 'child_process';
 
 export class GlobalKeyboardListener extends EventEmitter {
   private isListening = false
@@ -94,10 +96,10 @@ export class GlobalKeyboardListener extends EventEmitter {
   private registerShortcuts() {
     // Try multiple shortcut variations for better compatibility
     const shortcuts = [
-      'CommandOrControl+/',
-      'CmdOrCtrl+/',
-      'Command+/',
-      'Ctrl+/'
+      normalize('CommandOrControl+/', process.platform),
+      normalize('CmdOrCtrl+/', process.platform),
+      normalize('Command+/', process.platform),
+      normalize('Ctrl+/', process.platform)
     ]
     
     let registered = false
@@ -122,18 +124,31 @@ export class GlobalKeyboardListener extends EventEmitter {
     }
     
     if (!registered) {
-      console.error('❌ [KEYBOARD] Failed to register any shortcuts!')
+      console.error('❌ [KEYBOARD] Failed to register any shortcuts!');
       console.log('🔧 [KEYBOARD] This might be due to:')
       console.log('   - macOS accessibility permissions not granted')
       console.log('   - Another app using the same shortcut')
       console.log('   - System restrictions')
       
-      // Show a notification to the user about permissions
+      // Enhanced: Add retry logic or more detailed notification
       this.emit('shortcutRegistrationFailed', {
-        message: 'Please grant accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility',
+        message: 'Failed to register keyboard shortcuts. Please grant accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility and restart the application.',
         platform: process.platform
-      })
+      });
+
+      // Optionally, add a retry after a delay if needed
+      setTimeout(() => this.registerShortcuts(), 5000); // Retry once after 5 seconds
     }
+    if (process.platform === 'darwin') {
+      this.requestAccessibilityPermissions();
+    }
+  }
+
+  private async requestAccessibilityPermissions() {
+    const { exec } = require('child_process');
+    exec('tccutil reset Accessibility "com.electron.arinote-companion"'); // Reset permissions to prompt again
+    // Then show dialog to guide user
+    this.emit('shortcutRegistrationFailed', { platform: 'darwin' });
   }
 
   private async showDotPhraseWindow() {
@@ -233,7 +248,7 @@ export class GlobalKeyboardListener extends EventEmitter {
 
   private checkForSlashPhrase() {
     // Look for slash phrases in the current text
-    const slashMatch = this.currentText.match(/\/[a-zA-Z0-9_]*$/)
+    const slashMatch = this.currentText.match(/\/[a-zA-Z0-9_]{2,}$/) // Require at least 2 chars after /
     
     if (slashMatch) {
       const phrase = slashMatch[0]
@@ -249,14 +264,32 @@ export class GlobalKeyboardListener extends EventEmitter {
   }
 
   async getCursorPosition(): Promise<{ x: number; y: number }> {
-    // For now, use a smart position near the mouse cursor
-    // In the future, we can implement more sophisticated text cursor detection
-    const point = screen.getCursorScreenPoint()
-    
-    // Position slightly offset from mouse cursor to avoid overlapping
-    return { 
-      x: point.x + 20, 
-      y: point.y + 20 
+    if (process.platform === 'darwin') {
+      try {
+        const script = `
+use framework "ApplicationServices"
+use scripting additions
+set sys to current application's AXUIElementCreateSystemWide()
+set focusedElem to sys's attributeValue_("AXFocusedUIElement")
+set range to focusedElem's attributeValue_("AXSelectedTextRange")
+set bounds = focusedElem's parameterizedAttributeValue_("AXBoundsForRange", range)
+set x to (bounds's origin's x) as integer
+set y to (bounds's origin's y) as integer
+return x & "," & y
+`;
+        const output = execSync(`osascript -e '${script.replace(/\n/g, ' ')}'`).toString().trim();
+        const [x, y] = output.split(',').map(Number);
+        return { x: x + 20, y: y + 20 };
+      } catch (error) {
+        console.error('Error getting text cursor position via accessibility:', error);
+        // Fallback to mouse position
+        const point = screen.getCursorScreenPoint();
+        return { x: point.x + 20, y: point.y + 20 };
+      }
+    } else {
+      // For other platforms, fallback to mouse position
+      const point = screen.getCursorScreenPoint();
+      return { x: point.x + 20, y: point.y + 20 };
     }
   }
 

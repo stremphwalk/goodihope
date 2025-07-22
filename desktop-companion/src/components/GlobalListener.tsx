@@ -1,6 +1,23 @@
 import React, { useEffect, useState } from 'react'
 import { useDotPhrases } from '../hooks/useDotPhrases'
 import Fuse from 'fuse.js'
+import { debounce } from 'lodash';
+
+declare global {
+  interface Window {
+    electronAPI: {
+      onSlashPhraseDetected: (cb: (data: any) => void) => void;
+      onTextChange: (cb: (data: any) => void) => void;
+      showSuggestion: (suggestions: any[], position: any) => void;
+      hideSuggestion: () => void;
+      onShowSmartOptions: (cb: (data: any) => void) => void;
+      completeSmartOptions: (expansionId: string, selections: any[]) => void;
+      cancelSmartOptions: (expansionId: string) => void;
+      getCursorPosition: () => Promise<{ x: number; y: number }>;
+      removeAllListeners: (channel: string) => void;
+    };
+  }
+}
 
 export function GlobalListener() {
   const { dotPhrases, builtInPhrases } = useDotPhrases()
@@ -31,6 +48,16 @@ export function GlobalListener() {
     })
   }, [allPhrases])
 
+  const debouncedSearch = debounce((phrase) => {
+    const searchResults = fuse.search(phrase)
+    const topResults = searchResults.slice(0, 8).map(result => ({
+      ...result.item,
+      score: result.score,
+      matchedOn: result.matches?.[0]?.key || 'trigger'
+    }))
+    setSuggestions(topResults)
+  }, 200);
+
   useEffect(() => {
     if (!window.electronAPI) return
 
@@ -41,18 +68,11 @@ export function GlobalListener() {
       
       if (phrase.length > 1) {
         // Search for matching phrases
-        const searchResults = fuse.search(phrase.substring(1)) // Remove the '/' prefix
-        const topResults = searchResults.slice(0, 8).map(result => ({
-          ...result.item,
-          score: result.score,
-          matchedOn: result.matches?.[0]?.key || 'trigger'
-        }))
+        debouncedSearch(phrase.substring(1)) // Remove the '/' prefix
         
-        setSuggestions(topResults)
-        
-        if (topResults.length > 0) {
+        if (suggestions.length > 0) {
           // Show suggestion window
-          window.electronAPI.showSuggestion(topResults, position)
+          window.electronAPI.showSuggestion(suggestions, position)
         } else {
           window.electronAPI.hideSuggestion()
         }
@@ -78,7 +98,7 @@ export function GlobalListener() {
       window.electronAPI.removeAllListeners('slash-phrase-detected')
       window.electronAPI.removeAllListeners('text-change')
     }
-  }, [fuse])
+  }, [fuse, suggestions]) // Added suggestions to dependency array
 
   // This component doesn't render anything visible in the main window
   // It just handles the global text detection logic

@@ -3,6 +3,8 @@
  * Optimizes application boot time and initial loading performance
  */
 
+import React from 'react';
+
 interface StartupMetrics {
   startTime: number
   authTime?: number
@@ -84,26 +86,6 @@ class StartupOptimizer {
     }
   }
 
-  private initializePerformanceMonitoring() {
-    // Set up basic performance observers
-    if ('PerformanceObserver' in window) {
-      const observer = new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          if (entry.entryType === 'navigation') {
-            console.log('Navigation timing:', entry)
-          }
-        }
-      })
-      
-      try {
-        observer.observe({ entryTypes: ['navigation', 'resource'] })
-      } catch (error) {
-        // Performance API not fully supported
-        console.warn('Performance Observer not supported')
-      }
-    }
-  }
-
   private async validateAuthToken() {
     // Validate auth token in background
     try {
@@ -180,12 +162,12 @@ class StartupOptimizer {
   }
 
   // Lazy loading utilities
-  createLazyComponent<T>(importFn: () => Promise<{ default: T }>) {
+  createLazyComponent<T extends React.ComponentType<any>>(importFn: () => Promise<{ default: T }>) {
     return React.lazy(() => 
       importFn().catch(error => {
         console.error('Lazy component loading failed:', error)
-        // Return fallback component
-        return { default: () => React.createElement('div', null, 'Component failed to load') as any }
+        const Fallback = () => React.createElement('div', null, 'Component failed to load');
+        return { default: Fallback as unknown as T };
       })
     )
   }
@@ -245,9 +227,6 @@ class StartupOptimizer {
     })
   }
 }
-
-// Import React for lazy loading
-import React from 'react'
 
 // Export singleton
 export const startupOptimizer = new StartupOptimizer()

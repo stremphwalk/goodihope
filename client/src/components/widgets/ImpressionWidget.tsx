@@ -7,6 +7,7 @@ import { ClipboardList, Plus, X, Target, Edit3 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { SmartTextEntry } from '../SmartTextEntry';
 import { WidgetInstance } from '@/types/widgets';
+import { formatStructuredMedicalText } from '@/lib/textFormatting';
 
 interface ImpressionData {
   items: string[];
@@ -143,7 +144,7 @@ export const ImpressionWidget: React.FC<ImpressionWidgetProps> = ({
     return (
       <div className="p-4 bg-gray-50 rounded border">
         <div className="text-sm whitespace-pre-wrap">
-          {generateFormattedText(impressionData.formattedText) || 'No clinical impression documented'}
+          {formatStructuredMedicalText(impressionData.formattedText) || 'No clinical impression documented'}
         </div>
       </div>
     );

@@ -6,6 +6,7 @@ import { GlobalKeyboardListener } from './keyboardListener.js'
 import { TextExpansionEngine } from './textExpansion.js'
 import { SuggestionWindow } from './suggestionWindow.js'
 import { performanceManager } from './performanceManager.js'
+import { autoUpdater } from 'electron-updater';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -56,27 +57,20 @@ class AriNoteCompanion {
     this.setupTextExpansion()
     
     // Defer heavy operations
-    setTimeout(() => {
-      this.createSuggestionWindow()
-      this.setupTray()
-      this.setupIPC()
-      
-      // Test window creation after a delay
+    await new Promise<void>(resolve => {
       setTimeout(() => {
-        console.log('🧪 [MAIN] Testing window creation on startup...')
-        this.createTestWindow({ x: 100, y: 100 })
-      }, 2000)
-    }, 100)
+        this.createSuggestionWindow();
+        this.setupTray();
+        this.setupIPC();
+        resolve();
+      }, 100);
+    });
     
-    // Immediate test window creation
+    // Test window creation after a delay
     setTimeout(() => {
-      console.log('🧪 [MAIN] Creating immediate test window...')
-      this.createTestWindow({ x: 50, y: 50 })
-    }, 1000)
-    
-    // SIMPLE TEST: Create a basic window immediately
-    console.log('🧪 [MAIN] Creating basic test window immediately...')
-    this.createBasicTestWindow()
+      console.log('🧪 [MAIN] Testing window creation on startup...')
+      this.createTestWindow({ x: 100, y: 100 })
+    }, 2000)
     
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -93,6 +87,12 @@ class AriNoteCompanion {
     app.on('will-quit', () => {
       this.cleanup()
     })
+
+    autoUpdater.logger = console;
+    autoUpdater.checkForUpdatesAndNotify();
+    autoUpdater.on('update-available', () => { console.log('Update available'); });
+    autoUpdater.on('update-not-available', () => { console.log('Update not available'); });
+    autoUpdater.on('error', (err) => { console.error('Error in auto-updater:', err); });
   }
 
   private createMainWindow() {

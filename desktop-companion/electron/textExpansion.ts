@@ -1,4 +1,5 @@
 import { clipboard, BrowserWindow } from 'electron'
+import robot from 'robotjs';
 
 export interface DotPhrase {
   trigger: string
@@ -82,56 +83,8 @@ export class TextExpansionEngine {
   }
 
   private async simulatePaste(): Promise<void> {
-    try {
-      // Platform-specific paste simulation
-      if (process.platform === 'darwin') {
-        await this.simulateMacPaste()
-      } else if (process.platform === 'win32') {
-        await this.simulateWindowsPaste()
-      } else {
-        await this.simulateLinuxPaste()
-      }
-    } catch (error) {
-      console.error('Error simulating paste:', error)
-    }
-  }
-
-  private async simulateMacPaste(): Promise<void> {
-    const { exec } = await import('child_process')
-    const { promisify } = await import('util')
-    const execAsync = promisify(exec)
-    
-    // Use AppleScript to simulate Cmd+V
-    const script = `
-      tell application "System Events"
-        keystroke "v" using command down
-      end tell
-    `
-    
-    await execAsync(`osascript -e '${script}'`)
-  }
-
-  private async simulateWindowsPaste(): Promise<void> {
-    const { exec } = await import('child_process')
-    const { promisify } = await import('util')
-    const execAsync = promisify(exec)
-    
-    // Use PowerShell to simulate Ctrl+V
-    const script = `
-      Add-Type -AssemblyName System.Windows.Forms
-      [System.Windows.Forms.SendKeys]::SendWait("^v")
-    `
-    
-    await execAsync(`powershell -Command "${script}"`)
-  }
-
-  private async simulateLinuxPaste(): Promise<void> {
-    const { exec } = await import('child_process')
-    const { promisify } = await import('util')
-    const execAsync = promisify(exec)
-    
-    // Use xdotool to simulate Ctrl+V
-    await execAsync('xdotool key ctrl+v')
+    const modifier = process.platform === 'darwin' ? 'command' : 'control';
+    robot.keyTap('v', [modifier]);
   }
 
   async expandPhraseWithSmartOptions(phraseData: DotPhrase): Promise<boolean> {

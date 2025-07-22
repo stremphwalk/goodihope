@@ -5,10 +5,11 @@ import { searchMedications, getCommonDosages } from "./parseCSVMedications";
 import { extractLabValuesFromImage, extractMedicationsFromImage } from "./vision";
 import { sanitizeString, validateBase64Image, SECURITY_CONFIG } from "./security";
 import { db } from "./database";
-import { dotPhrases, users } from "../shared/schema";
-import { eq, and, ne } from "drizzle-orm";
+import { dotPhrases, users, userPresets } from "../shared/schema";
+import { eq, desc, and, ne, sql } from "drizzle-orm";
 import { checkJwt } from './auth';
 import { generateUniqueShareCode, isValidShareCode, normalizeShareCode } from './shareCodeUtils';
+import { generateUniqueCustomIdentifier, isValidCustomIdentifier, formatCustomIdentifier } from './customIdentifierUtils';
 
 // Extend the Express Request type to include the auth payload
 interface AuthenticatedRequest extends Request {
@@ -18,20 +19,56 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
+// Simple in-memory cache for user lookups (clears every 5 minutes)
+const userCache = new Map<string, { user: any; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+const clearExpiredCache = () => {
+  const now = Date.now();
+  Array.from(userCache.entries()).forEach(([key, value]) => {
+    if (now - value.timestamp > CACHE_TTL) {
+      userCache.delete(key);
+    }
+  });
+};
+
+// Clear expired cache entries every minute
+setInterval(clearExpiredCache, 60 * 1000);
+
 // Function to get or create a user in your local database
 const getOrCreateUser = async (cognitoSub: string) => {
+  // Check cache first
+  const cached = userCache.get(cognitoSub);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.user;
+  }
+
   let user = await db.select().from(users).where(eq(users.username, cognitoSub)).limit(1);
 
   if (user.length === 0) {
-    // If user doesn't exist, create a new one
-    // Note: You might want to handle user creation more robustly
-    // depending on your application's logic.
-    const newUser = await db.insert(users).values({
-      username: cognitoSub,
-      password: 'cognito-user', // Password is required but not used for Cognito logins
-    }).returning();
-    return newUser[0];
+    // If user doesn't exist, create a new one with a custom identifier
+    try {
+      const customIdentifier = await generateUniqueCustomIdentifier();
+      const newUser = await db.insert(users).values({
+        username: cognitoSub,
+        password: 'cognito-user', // Password is required but not used for Cognito logins
+        customIdentifier: customIdentifier,
+      }).returning();
+      user = newUser;
+    } catch (error) {
+      console.error('Error creating user with custom identifier:', error);
+      // Fallback: create user without custom identifier
+      const newUser = await db.insert(users).values({
+        username: cognitoSub,
+        password: 'cognito-user',
+      }).returning();
+      user = newUser;
+    }
   }
+
+  // Cache the user
+  userCache.set(cognitoSub, { user: user[0], timestamp: Date.now() });
+  
   return user[0];
 };
 
@@ -490,7 +527,224 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    // Template API endpoints removed - focusing on dot phrases
+    // Custom Identifier API endpoints
+    
+    // GET /api/user/identifier - Get current user's custom identifier
+    app.get("/api/user/identifier", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        
+        if (!user.customIdentifier) {
+          // Generate custom identifier for existing users who don't have one
+          try {
+            const customIdentifier = await generateUniqueCustomIdentifier();
+            const updatedUser = await db
+              .update(users)
+              .set({ customIdentifier })
+              .where(eq(users.id, user.id))
+              .returning();
+            
+            return res.json({
+              customIdentifier,
+              formattedIdentifier: formatCustomIdentifier(customIdentifier),
+              isNew: true
+            });
+          } catch (error) {
+            console.error('Error generating custom identifier for existing user:', error);
+            return res.status(500).json({ error: 'Failed to generate custom identifier' });
+          }
+        }
+        
+        res.json({
+          customIdentifier: user.customIdentifier,
+          formattedIdentifier: formatCustomIdentifier(user.customIdentifier),
+          isNew: false
+        });
+      } catch (error) {
+        console.error('Error fetching user identifier:', error);
+        res.status(500).json({ error: 'Failed to fetch user identifier' });
+      }
+    });
+
+
+    // GET /api/users/by-identifier/:identifier - Get user by custom identifier (for team features)
+    app.get("/api/users/by-identifier/:identifier", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        const { identifier } = req.params;
+        
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        if (!isValidCustomIdentifier(identifier)) {
+          return res.status(400).json({ error: 'Invalid custom identifier format' });
+        }
+        
+        const targetUser = await db
+          .select({
+            id: users.id,
+            username: users.username,
+            customIdentifier: users.customIdentifier,
+            createdAt: users.createdAt
+          })
+          .from(users)
+          .where(eq(users.customIdentifier, identifier))
+          .limit(1);
+        
+        if (targetUser.length === 0) {
+          return res.status(404).json({ error: 'User not found with this custom identifier' });
+        }
+        
+        // Don't return sensitive information, just basic user info
+        res.json({
+          customIdentifier: targetUser[0].customIdentifier,
+          formattedIdentifier: formatCustomIdentifier(targetUser[0].customIdentifier!),
+          createdAt: targetUser[0].createdAt
+        });
+      } catch (error) {
+        console.error('Error fetching user by identifier:', error);
+        res.status(500).json({ error: 'Failed to fetch user by identifier' });
+      }
+    });
+
+    // User Presets API endpoints
+
+    // GET /api/user-presets - Get all presets for the current user
+    app.get("/api/user-presets", checkJwt, async (req: AuthenticatedRequest, res) => {
+      const startTime = Date.now();
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const userStartTime = Date.now();
+        const user = await getOrCreateUser(req.auth.sub);
+        const userTime = Date.now() - userStartTime;
+        console.log(`[PERF] User lookup took ${userTime}ms`);
+        
+        // Use the optimized query function from database.ts
+        const presetsStartTime = Date.now();
+        const userPresetsData = await db
+          .select()
+          .from(userPresets)
+          .where(eq(userPresets.userId, user.id))
+          .orderBy(userPresets.updatedAt);
+        const presetsTime = Date.now() - presetsStartTime;
+        console.log(`[PERF] Presets query took ${presetsTime}ms`);
+        
+        const totalTime = Date.now() - startTime;
+        console.log(`[PERF] Total /api/user-presets took ${totalTime}ms`);
+        
+        res.json(userPresetsData);
+      } catch (error: any) {
+        console.error('Error fetching user presets:', error);
+        // Specific check for table not exist
+        if (error.code === '42P01') {
+          return res.status(500).json({ error: 'Database table "user_presets" does not exist. Please run migrations.' });
+        }
+        res.status(500).json({ error: 'Failed to fetch user presets' });
+      }
+    });
+
+    // POST /api/user-presets - Create a new preset
+    app.post("/api/user-presets", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        const { title, isFavorite, symptoms } = req.body;
+        
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        
+        if (!title || typeof symptoms !== 'object') {
+          return res.status(400).json({ error: 'Title and symptoms are required' });
+        }
+        
+        // Check for duplicate title for this user
+        const existing = await db
+          .select()
+          .from(userPresets)
+          .where(and(eq(userPresets.userId, user.id), eq(userPresets.title, title)));
+        
+        if (existing.length > 0) {
+          return res.status(409).json({ error: 'A preset with this title already exists' });
+        }
+        
+        // Count current presets to enforce max 20
+        const countResult = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(userPresets)
+          .where(eq(userPresets.userId, user.id));
+        const count = countResult[0]?.count || 0;
+        if (count >= 20) {
+          return res.status(400).json({ error: 'Maximum 20 presets allowed' });
+        }
+        
+        const newPreset = await db
+          .insert(userPresets)
+          .values({
+            userId: user.id,
+            title,
+            isFavorite: isFavorite || false,
+            symptoms
+          })
+          .returning();
+        
+        res.status(201).json(newPreset[0]);
+      } catch (error: any) {
+        console.error('Error creating preset:', error);
+        if (error.code === '42P01') {
+          return res.status(500).json({ error: 'Database table "user_presets" does not exist. Please run migrations.' });
+        }
+        res.status(500).json({ error: 'Failed to create preset' });
+      }
+    });
+
+    // PUT /api/user-presets/:id - Update preset (for favorite toggle)
+    app.put("/api/user-presets/:id", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        const { id } = req.params;
+        const { isFavorite } = req.body;
+        
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth.sub);
+        
+        // Check if preset exists and belongs to user
+        const existing = await db
+          .select()
+          .from(userPresets)
+          .where(and(eq(userPresets.id, parseInt(id)), eq(userPresets.userId, user.id)));
+        
+        if (existing.length === 0) {
+          return res.status(404).json({ error: 'Preset not found' });
+        }
+        
+        const updatedPreset = await db
+          .update(userPresets)
+          .set({
+            isFavorite,
+            updatedAt: new Date()
+          })
+          .where(and(eq(userPresets.id, parseInt(id)), eq(userPresets.userId, user.id)))
+          .returning();
+        
+        res.json(updatedPreset[0]);
+      } catch (error: any) {
+        console.error('Error updating preset:', error);
+        if (error.code === '42P01') {
+          return res.status(500).json({ error: 'Database table "user_presets" does not exist. Please run migrations.' });
+        }
+        res.status(500).json({ error: 'Failed to update preset' });
+      }
+    });
 
     // Fallback medication data for when search fails
     const fallbackMedications = [

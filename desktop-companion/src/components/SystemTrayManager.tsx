@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { SettingsModal } from './SettingsModal'
 import { useAuth } from './AuthProvider'
 
@@ -27,7 +27,7 @@ const DEFAULT_SETTINGS: Settings = {
 export function SystemTrayManager() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [showSettings, setShowSettings] = useState(false)
-  const [isMinimized, setIsMinimized] = useState(false)
+  const [isMinimized] = useState(false)
   const { user, signOut } = useAuth()
 
   useEffect(() => {
@@ -43,31 +43,30 @@ export function SystemTrayManager() {
     }
 
     // Listen for system tray events from main process
-    if (window.electronAPI) {
-      // These would be implemented in the main process
-      const handleTrayEvent = (event: string) => {
-        switch (event) {
-          case 'show-settings':
-            setShowSettings(true)
-            break
-          case 'toggle-expansion':
-            setSettings(prev => ({ 
-              ...prev, 
-              enableGlobalExpansion: !prev.enableGlobalExpansion 
-            }))
-            break
-          case 'show-window':
-            setIsMinimized(false)
-            break
-          case 'hide-window':
-            setIsMinimized(true)
-            break
-        }
-      }
+    // if (window.electronAPI) {
+    //   const handleTrayEvent = (event: string) => {
+    //     switch (event) {
+    //       case 'show-settings':
+    //         setShowSettings(true)
+    //         break
+    //       case 'toggle-expansion':
+    //         setSettings(prev => ({ 
+    //           ...prev, 
+    //           enableGlobalExpansion: !prev.enableGlobalExpansion 
+    //         }))
+    //         break
+    //       case 'show-window':
+    //         setIsMinimized(false)
+    //         break
+    //       case 'hide-window':
+    //         setIsMinimized(true)
+    //         break
+    //     }
+    //   }
 
-      // Note: These event listeners would need to be properly implemented
-      // in the main process and preload script
-    }
+    //   // Note: These event listeners would need to be properly implemented
+    //   // in the main process and preload script
+    // }
   }, [])
 
   const saveSettings = (newSettings: Settings) => {

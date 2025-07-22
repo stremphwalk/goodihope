@@ -88,3 +88,47 @@ export function formatList(items: string[], indent: number = 0): string {
     .map(item => wrapText(item, indent))
     .join('\n');
 } 
+
+export function formatStructuredMedicalText(text: string): string {
+  if (!text) return '';
+  
+  const lines = text.split('\n');
+  const formatted: string[] = [];
+  let conditionCount = 0;
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line) continue;
+
+    if (line.startsWith('#')) {
+      conditionCount++;
+      const condition = line.replace('#', '').trim();
+      if (conditionCount > 1) formatted.push('');
+      formatted.push(`${conditionCount}. ${condition}`);
+    } else if (line.startsWith('-')) {
+      const detail = line.replace('-', '').trim();
+      formatted.push(`     - ${detail}`);
+    } else if (line.startsWith('--')) {
+      const subDetail = line.replace('--', '').trim();
+      formatted.push(`       - ${subDetail}`);
+    } else if (/^\d+\./.test(line)) {
+      const match = line.match(/^(\d+)\./);
+      if (match) {
+        const num = parseInt(match[1]);
+        if (num > conditionCount) {
+          conditionCount = num;
+          if (conditionCount > 1) formatted.push('');
+        }
+      }
+      formatted.push(line);
+    } else if (line.match(/^\s+/)) {
+      formatted.push(line);
+    } else {
+      conditionCount++;
+      if (conditionCount > 1) formatted.push('');
+      formatted.push(`${conditionCount}. ${line}`);
+    }
+  }
+
+  return formatted.join('\n');
+} 

@@ -1,8 +1,7 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { WidgetInstance, MedicationData, Medication } from '../../types/widgets'
 
 export function MedicationWidget({ 
-  id, 
   data, 
   onDataChange, 
   mode = 'interactive',
