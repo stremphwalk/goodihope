@@ -2228,7 +2228,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         livePreview={null}
         isICU={false}
       >
-        <div className="flex flex-1 h-full min-h-[600px] bg-gray-50">
+        <div className="flex flex-1 h-full bg-gray-50">
           <div className="flex-1 min-w-0 flex flex-col p-4">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -2245,14 +2245,14 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
                 {language === 'fr' ? 'Retour' : 'Back'}
               </Button>
             </div>
-            <div className="flex-1 bg-white rounded-lg border border-gray-200 shadow-sm">
+            <div className="flex-1 flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm">
               <DotPhraseTextarea
                 value={customNoteText}
                 onChange={setCustomNoteText}
                 placeholder={language === 'fr' 
                   ? 'Commencez à taper votre note... Utilisez /phrase pour les phrases-points.'
                   : 'Start typing your note... Use /phrase for dot phrases.'}
-                className="w-full h-full resize-none border-0 focus:ring-0 text-base leading-relaxed whitespace-normal text-wrap"
+                className="flex-1 w-full h-full resize-none border-0 focus:ring-0 text-base leading-relaxed whitespace-normal text-wrap p-4"
                 rows={25}
               />
             </div>
