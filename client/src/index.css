@@ -195,6 +195,10 @@ body {
     flex-direction: column;
   }
 
+  .medical-main-content.no-right-margin {
+    margin-right: 0;
+  }
+
   .medical-preview-panel {
     @apply border-l border-gray-200 bg-white flex flex-col;
     width: 384px;

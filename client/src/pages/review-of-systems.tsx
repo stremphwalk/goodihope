@@ -219,6 +219,21 @@ interface SidebarStateProps {
   setSelectedSubOption: (option: string) => void;
 }
 
+const SectionWrapper = ({ title, sectionKey, controls, children }: { title: string; sectionKey: string; controls?: React.ReactNode; children: React.ReactNode }) => (
+  <div className="medical-section-wrapper">
+    <div className="medical-card-header flex items-center justify-between">
+      <h2 className="medical-section-title flex items-center gap-2">
+        {sectionIcons[sectionKey]}
+        {title}
+      </h2>
+      {controls && <div className="flex gap-2">{controls}</div>}
+    </div>
+    <div className="medical-section-content">
+      {children}
+    </div>
+  </div>
+);
+
 function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, setSelectedSubOption }: SidebarStateProps) {
   // Note state with diff-patch-merge tracking
   const [note, setNote] = useState("");
@@ -1499,6 +1514,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     "labs": <TestTube className="w-6 h-6 text-yellow-600 bg-yellow-100 rounded-full p-1" />,
     "imagery": <Image className="w-6 h-6 text-indigo-500 bg-indigo-100 rounded-full p-1" />,
     "impression": <Brain className="w-6 h-6 text-gray-700 bg-gray-100 rounded-full p-1" />,
+    "custom-note": <Edit3 className="w-6 h-6 text-orange-600 bg-orange-100 rounded-full p-1" />,
   };
 
   const SectionWrapper = ({ title, sectionKey, controls, children }: { title: string; sectionKey: string; controls?: React.ReactNode; children: React.ReactNode }) => (
@@ -1540,7 +1556,8 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       "allergies-social": "Allergies & Social History",
       "imagery": "Imagery",
       "impression": "Impression",
-      "ventilation": "Ventilation Parameters"
+      "ventilation": "Ventilation Parameters",
+      "custom": language === 'fr' ? 'Note Personnalisée' : 'Custom Note'
     };
 
     switch (selectedSubOption) {
@@ -1597,7 +1614,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
                       ? "border-orange-500 bg-orange-50"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
-                  onClick={() => setNoteType("custom")}
+                  onClick={() => { setNoteType("custom"); setSelectedSubOption("custom"); }}
                 >
                   <div className="flex items-center space-x-2 mb-2">
                     <Edit3 className="w-5 h-5 text-orange-600" />
@@ -1998,11 +2015,36 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
             />
           </SectionWrapper>
         );
-      case "ventilation":
+      case "custom":
         return (
-          <SectionWrapper title={sectionTitle["ventilation"]} sectionKey="ventilation">
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600 whitespace-normal text-wrap">Configure ventilation parameters for ICU notes.</p>
+          <SectionWrapper title={sectionTitle["custom"]} sectionKey="custom-note">
+            <div className="flex flex-col h-full flex-1">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Edit3 className="w-6 h-6 text-orange-600" />
+                  <h1 className="text-xl font-semibold text-gray-900">
+                    {language === 'fr' ? 'Note Personnalisée' : 'Custom Note'}
+                  </h1>
+                </div>
+                <Button
+                  onClick={() => setNoteType(null)}
+                  variant="outline"
+                  size="sm"
+                >
+                  {language === 'fr' ? 'Retour' : 'Back'}
+                </Button>
+              </div>
+              <div className="flex-1 flex flex-col rounded-lg border border-gray-200 shadow-sm">
+                <DotPhraseTextarea
+                  value={customNoteText}
+                  onChange={setCustomNoteText}
+                  placeholder={language === 'fr' 
+                    ? 'Commencez à taper votre note... Utilisez /phrase pour les phrases-points.'
+                    : 'Start typing your note... Use /phrase for dot phrases.'}
+                  className="flex-1 w-full h-full resize-none border-0 focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm p-4 bg-gray-50"
+                  rows={25}
+                />
+              </div>
             </div>
           </SectionWrapper>
         );
@@ -2218,49 +2260,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     }
   }, [selectedSymptoms, scrollPosition]);
 
-  if (noteType === "custom") {
-    return (
-      <MainLayout
-        selectedMenu={selectedMenu}
-        setSelectedMenu={setSelectedMenu}
-        selectedSubOption={selectedSubOption}
-        setSelectedSubOption={setSelectedSubOption}
-        livePreview={null}
-        isICU={false}
-      >
-        <div className="flex flex-1 h-full bg-gray-50">
-          <div className="flex-1 min-w-0 flex flex-col p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Edit3 className="w-6 h-6 text-orange-600" />
-                <h1 className="text-xl font-semibold text-gray-900">
-                  {language === 'fr' ? 'Note Personnalisée' : 'Custom Note'}
-                </h1>
-              </div>
-              <Button
-                onClick={() => setNoteType(null)}
-                variant="outline"
-                size="sm"
-              >
-                {language === 'fr' ? 'Retour' : 'Back'}
-              </Button>
-            </div>
-            <div className="flex-1 flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm">
-              <DotPhraseTextarea
-                value={customNoteText}
-                onChange={setCustomNoteText}
-                placeholder={language === 'fr' 
-                  ? 'Commencez à taper votre note... Utilisez /phrase pour les phrases-points.'
-                  : 'Start typing your note... Use /phrase for dot phrases.'}
-                className="flex-1 w-full h-full resize-none border-0 focus:ring-0 text-base leading-relaxed whitespace-normal text-wrap p-4"
-                rows={25}
-              />
-            </div>
-          </div>
-        </div>
-      </MainLayout>
-    );
-  }
+  
 
   return (
     <MainLayout
@@ -2273,6 +2273,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         (noteType === "admission" && admissionType === "icu") ||
         (noteType === "progress" && progressType === "icu")
       }
+      hasLivePreview={renderLivePreview() !== null}
     >
       <div className="flex flex-1 h-full min-h-[600px] bg-gray-50">
         <div className="flex-1 min-w-0 flex flex-col p-0">

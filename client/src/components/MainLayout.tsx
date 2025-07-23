@@ -29,6 +29,7 @@ interface MainLayoutProps {
   setSelectedSubOption: (option: string) => void;
   livePreview: React.ReactNode;
   isICU?: boolean;
+  hasLivePreview: boolean;
 }
 
 export function MainLayout({
@@ -39,6 +40,7 @@ export function MainLayout({
   setSelectedSubOption,
   livePreview,
   isICU = false,
+  hasLivePreview,
 }: MainLayoutProps & { children: React.ReactNode }) {
   const { language, setLanguage } = useLanguage();
   const [location, setLocation] = useLocation();
@@ -82,6 +84,12 @@ export function MainLayout({
       ],
     },
     {
+      key: "team-groups",
+      label: "Team Groups",
+      icon: <Users className="w-5 h-5" />,
+      subOptions: [],
+    },
+    {
       key: "calculations",
       label: "Calculations",
       icon: <Calculator className="w-5 h-5" />,
@@ -93,6 +101,19 @@ export function MainLayout({
   const currentMenu = MAIN_MENUS.find((m) => m.key === selectedMenu) || MAIN_MENUS[0];
   const [medicalNotesOpen, setMedicalNotesOpen] = useState(true); // Always start with medical notes open
   const [smartOptionsOpen, setSmartOptionsOpen] = useState(selectedMenu === 'smart-options');
+
+  // Synchronize selectedMenu with current route
+  useEffect(() => {
+    if (location === '/groups' && selectedMenu !== 'team-groups') {
+      setSelectedMenu('team-groups');
+    } else if (location === '/dot-phrases' && selectedMenu !== 'smart-options') {
+      setSelectedMenu('smart-options');
+    } else if (location === '/calculations' && selectedMenu !== 'calculations') {
+      setSelectedMenu('calculations');
+    } else if (location === '/' && selectedMenu !== 'medical-notes') {
+      setSelectedMenu('medical-notes');
+    }
+  }, [location, selectedMenu, setSelectedMenu]);
 
   // Synchronize open/close state and suboption selection with selectedMenu
   useEffect(() => {
@@ -130,6 +151,9 @@ export function MainLayout({
                       } else if (menu.key === "smart-options") {
                         setLocation('/dot-phrases');
                         return;
+                      } else if (menu.key === "team-groups") {
+                        setLocation('/groups');
+                        return;
                       } else if (menu.key === "calculations") {
                         setLocation('/calculations');
                         return;
@@ -137,13 +161,29 @@ export function MainLayout({
                     }
                     
                     setSelectedMenu(menu.key);
+                    
+                    // Handle navigation to different pages
                     if (menu.key === "medical-notes") {
                       setMedicalNotesOpen(true); // Always keep medical notes open when selected
                       if (menu.subOptions.length > 0) {
                         setSelectedSubOption(menu.subOptions[0].key);
                       }
+                      if (location !== '/') {
+                        setLocation('/');
+                      }
                     } else if (menu.key === "smart-options") {
                       setSmartOptionsOpen((open) => !open);
+                      if (location !== '/dot-phrases') {
+                        setLocation('/dot-phrases');
+                      }
+                    } else if (menu.key === "team-groups") {
+                      if (location !== '/groups') {
+                        setLocation('/groups');
+                      }
+                    } else if (menu.key === "calculations") {
+                      if (location !== '/calculations') {
+                        setLocation('/calculations');
+                      }
                     } else {
                       if (menu.subOptions.length > 0) {
                         setSelectedSubOption(menu.subOptions[0].key);
@@ -245,7 +285,7 @@ export function MainLayout({
           </div>
         </Sidebar>
         {/* Main content area */}
-        <main className="medical-main-content">
+        <main className={`medical-main-content ${!hasLivePreview ? 'no-right-margin' : ''}`}>
           {selectedMenu === 'smart-options' && selectedSubOption === 'dot-phrases' ? (
             <DotPhraseManager />
           ) : (
