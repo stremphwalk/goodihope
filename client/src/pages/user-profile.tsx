@@ -97,6 +97,7 @@ const UserProfilePage = ({ selectedMenu, setSelectedMenu, selectedSubOption, set
       selectedSubOption={selectedSubOption}
       setSelectedSubOption={setSelectedSubOption}
       livePreview={null}
+      hasLivePreview={false}
     >
       <div className="min-h-screen flex flex-col bg-[var(--arinote-beige)]">
         <div className="max-w-4xl mx-auto py-10 px-4">

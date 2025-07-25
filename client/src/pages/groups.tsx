@@ -102,6 +102,7 @@ export default function GroupsPage({ selectedMenu, setSelectedMenu, selectedSubO
         selectedSubOption={selectedSubOption}
         setSelectedSubOption={setSelectedSubOption}
         livePreview={calendarPreview}
+        hasLivePreview={calendarPreview !== null}
       >
         <div className="min-h-screen flex flex-col bg-[var(--arinote-beige)]">
           <div className="flex items-center justify-center h-64">
@@ -122,6 +123,7 @@ export default function GroupsPage({ selectedMenu, setSelectedMenu, selectedSubO
       selectedSubOption={selectedSubOption}
       setSelectedSubOption={setSelectedSubOption}
       livePreview={calendarPreview}
+      hasLivePreview={calendarPreview !== null}
     >
       <div className="min-h-screen flex flex-col bg-[var(--arinote-beige)]">
         {currentGroup ? (

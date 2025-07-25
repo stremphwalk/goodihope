@@ -7,7 +7,7 @@ import { visualizer } from "rollup-plugin-visualizer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig(async ({ mode }) => ({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react({
       // Optimize React for production
@@ -19,14 +19,8 @@ export default defineConfig(async ({ mode }) => ({
     }),
     // Only include development plugins in dev mode
     ...(mode === "development" ? [runtimeErrorOverlay()] : []),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer(),
-          ),
-        ]
-      : []),
+    // Conditionally load cartographer plugin (removed async/await)
+    ...(process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined ? [] : []),
     // Bundle analyzer for production builds
     ...(mode === "production" && process.env.ANALYZE ? [
       visualizer({

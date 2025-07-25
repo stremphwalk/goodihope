@@ -18,6 +18,7 @@ export default function NotFound({ selectedMenu, setSelectedMenu, selectedSubOpt
       selectedSubOption={selectedSubOption}
       setSelectedSubOption={setSelectedSubOption}
       livePreview={null}
+      hasLivePreview={false}
     >
       <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
         <Card className="w-full max-w-md mx-4">

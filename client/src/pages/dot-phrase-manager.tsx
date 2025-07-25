@@ -17,6 +17,7 @@ export default function DotPhraseManagerPage({ selectedMenu, setSelectedMenu, se
       selectedSubOption={selectedSubOption}
       setSelectedSubOption={setSelectedSubOption}
       livePreview={null}
+      hasLivePreview={false}
     >
       <div className="min-h-screen flex flex-col bg-[var(--arinote-beige)]">
         <DotPhraseManager />
