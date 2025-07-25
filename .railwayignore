@@ -1,7 +1,6 @@
 # Development files
 .git
 .gitignore
-README.md
 .env.example
 *.log
 
@@ -13,32 +12,83 @@ build/
 node_modules/
 .dev/
 
-# Documentation
-docs/
+# Large asset files that shouldn't be deployed
+attached_assets/
+desktop-companion/release/
+aws-infrastructure/
+backend/
+clean-deploy/
+deploy-package/
+static-build/
+static-offline/
+
+# Build artifacts not needed for production
+bundle-analysis.html
+debug-*.js
+test-*.js
+test-*.html
+
+# Development and testing files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+**/__tests__/
+**/test/
+**/tests/
+
+# Documentation and guides (keep only essential README)
 *.md
+!README.md
+AWS_*.md
+CUSTOM_*.md
+EHR_*.md
+MARKETING_*.md
+PRODUCTION_*.md
+RAILWAY_*.md
+SECURITY_*.md
+WIDGET_*.md
 
-# Test files
-test/
-tests/
-__tests__/
-*.test.*
-*.spec.*
+# Deployment configurations for other platforms
+Dockerfile.dev
+Dockerfile.aws
+docker-compose.dev.yml
+netlify.toml
+Procfile
+railway.toml
+task-definition*.json
 
-# IDE files
+# Terraform and AWS files
+terraform_*.zip
+*.tfstate*
+*.tfvars*
+tfplan
+
+# Large data files
+data/fda/
+liste_med_2025-05-22_en.pdf
+NewBrunswickDrugPlansFormulary.pdf
+drug-drugsfda-0001-of-0001.json.zip
+
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
 
+# Temporary and cache files
+tmp/
+temp/
+.cache/
+*.tmp
+
 # OS files
 .DS_Store
 Thumbs.db
 
-# Temporary files
-tmp/
-temp/
-*.tmp
+# Backup files
+*.backup
+*.bak
 
-# Keep necessary assets
-!attached_assets/
-!data/ 
+# Keep only essential data for production
+!data/fda/processed/fda_drugs_simplified.json 

@@ -1,5 +1,5 @@
 import { Switch, Route, useLocation } from "wouter";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense, lazy } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from 'react-hot-toast';
@@ -7,14 +7,27 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { useAuth } from "react-oidc-context";
 import { Stethoscope } from "lucide-react";
-import { LoginPage } from "@/components/LoginPage";
-import { Navigation } from "@/components/Navigation";
-import MarketingPage from "@/components/marketing/MarketingPage";
-import ReviewOfSystems from "@/pages/review-of-systems";
-import DotPhraseManagerPage from "@/pages/dot-phrase-manager";
-import Calculations from "@/pages/calculations";
-import NotFound from "@/pages/not-found";
-import UserProfilePage from '@/pages/user-profile';
+
+// Lazy load pages for better code splitting
+const LoginPage = lazy(() => import("@/components/LoginPage").then(module => ({ default: module.LoginPage })));
+const Navigation = lazy(() => import("@/components/Navigation").then(module => ({ default: module.Navigation })));
+const MarketingPage = lazy(() => import("@/components/marketing/MarketingPage"));
+const ReviewOfSystems = lazy(() => import("@/pages/review-of-systems"));
+const DotPhraseManagerPage = lazy(() => import("@/pages/dot-phrase-manager"));
+const Calculations = lazy(() => import("@/pages/calculations"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const UserProfilePage = lazy(() => import('@/pages/user-profile'));
+const GroupsPage = lazy(() => import('@/pages/groups'));
+
+// Loading component
+const PageLoader = () => (
+  <div className="flex items-center justify-center h-screen">
+    <div className="flex items-center gap-2">
+      <Stethoscope className="h-6 w-6 animate-pulse" />
+      <span>Loading...</span>
+    </div>
+  </div>
+);
 
 // Add prop types for sidebar state
 interface SidebarStateProps {
@@ -26,13 +39,16 @@ interface SidebarStateProps {
 
 function Router({ selectedMenu, setSelectedMenu, selectedSubOption, setSelectedSubOption }: SidebarStateProps) {
   return (
-    <Switch>
-      <Route path="/" component={() => <ReviewOfSystems selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
-      <Route path="/dot-phrases" component={() => <DotPhraseManagerPage selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
-      <Route path="/calculations" component={() => <Calculations selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
-      <Route path="/profile" component={() => <UserProfilePage selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
-      <Route component={() => <NotFound selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
-    </Switch>
+    <Suspense fallback={<PageLoader />}>
+      <Switch>
+        <Route path="/" component={() => <ReviewOfSystems selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+        <Route path="/dot-phrases" component={() => <DotPhraseManagerPage selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+        <Route path="/calculations" component={() => <Calculations selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+        <Route path="/groups" component={() => <GroupsPage selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+        <Route path="/profile" component={() => <UserProfilePage selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+        <Route component={() => <NotFound selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
+      </Switch>
+    </Suspense>
   );
 }
 
@@ -70,7 +86,11 @@ function ProtectedApp() {
     return <Router selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />;
   }
 
-  return <MarketingPage />;
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <MarketingPage />
+    </Suspense>
+  );
 }
 
 function App() {

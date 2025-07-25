@@ -1,12 +1,29 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import express, { type Request, Response, NextFunction } from "express";
+import compression from "compression";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { securityHeaders, corsMiddleware, createRateLimiter, errorHandler } from "./security";
 import 'dotenv/config';
 
 const app = express();
+
+// Apply compression middleware for better performance
+app.use(compression({
+  // Only compress files larger than 1kb
+  threshold: 1024,
+  // Compression level (1-9, 6 is default)
+  level: 6,
+  // Don't compress these file types
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    // Compress everything else
+    return compression.filter(req, res);
+  }
+}));
 
 // Apply security middleware
 app.use(securityHeaders);

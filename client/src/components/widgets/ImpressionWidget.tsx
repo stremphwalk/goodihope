@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +10,6 @@ import { WidgetInstance } from '@/types/widgets';
 import { formatStructuredMedicalText } from '@/lib/textFormatting';
 
 interface ImpressionData {
-  items: string[];
   formattedText: string;
 }
 
@@ -19,26 +18,8 @@ interface ImpressionWidgetProps extends Omit<WidgetInstance, 'data' | 'onDataCha
   onDataChange: (data: ImpressionData) => void;
 }
 
-const commonImpressions = [
-  'Acute upper respiratory infection',
-  'Hypertension, uncontrolled',
-  'Type 2 diabetes mellitus, well controlled',
-  'Anxiety disorder',
-  'Depression, stable',
-  'Acute bronchitis',
-  'Gastroesophageal reflux disease',
-  'Osteoarthritis, knee',
-  'Urinary tract infection',
-  'Migraine headache',
-  'Chronic back pain',
-  'Insomnia',
-  'Allergic rhinitis',
-  'Dyslipidemia',
-  'Chronic fatigue'
-];
-
 export const ImpressionWidget: React.FC<ImpressionWidgetProps> = ({
-  data,
+  data = { formattedText: '' },
   onDataChange,
   mode = 'interactive',
   isReadOnly = false
@@ -46,106 +27,63 @@ export const ImpressionWidget: React.FC<ImpressionWidgetProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const { language } = useLanguage();
 
-  // Initialize with default data structure if empty
-  const impressionData: ImpressionData = data?.items ? data : {
-    items: [],
-    formattedText: ''
-  };
+  // List of common diagnoses
+  const commonItems = [
+    'Diabetes mellitus',
+    'Hypertension',
+    'Hyperlipidemia',
+    'Coronary artery disease',
+    'Chronic kidney disease',
+    'Asthma',
+    'COPD',
+    'Heart failure',
+    'Atrial fibrillation',
+    'Obesity',
+    'Hypothyroidism',
+    'Depression',
+    'Anxiety',
+    'Osteoarthritis',
+    'Rheumatoid arthritis',
+    'UTI',
+    'Pneumonia',
+    'COVID-19',
+    'Anemia',
+    'Cancer',
+    'Stroke',
+    'Migraine',
+    'Gout',
+    'GERD',
+    'Peptic ulcer disease',
+    'Liver disease',
+    'Epilepsy',
+    'Dementia',
+    'Parkinson\'s disease',
+    'Other'
+  ];
 
-  // Update formatted text when items change
-  useEffect(() => {
-    if (impressionData.items.length > 0) {
-      const formatted = impressionData.items.map((item, index) => `${index + 1}. ${item}`).join('\n');
-      if (formatted !== impressionData.formattedText) {
-        onDataChange({
-          ...impressionData,
-          formattedText: formatted
-        });
-      }
-    }
-  }, [impressionData.items.length]);
-
-  const filteredCommonItems = commonImpressions.filter(item =>
+  // Filtered list based on searchTerm
+  const filteredCommonItems = commonItems.filter(item =>
     item.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const insertDiagnosis = (diagnosis: string) => {
-    const currentText = impressionData.formattedText || '';
-    const newText = currentText ? currentText + '\n' + diagnosis : diagnosis;
-    
-    // Parse the text into items for consistency
-    const items = newText
-      .split('\n')
-      .map(line => line.replace(/^\d+\.\s*/, '').trim())
-      .filter(line => line.length > 0);
-    
-    onDataChange({
-      items,
-      formattedText: newText
-    });
+    onDataChange({ formattedText: `${data.formattedText || ''}\n${diagnosis}` });
     setSearchTerm('');
   };
 
   const handleTextChange = (text: string) => {
-    // Store the raw text from SmartTextEntry
-    // The formatting will be applied when generating the final output
-    onDataChange({
-      items: [],
-      formattedText: text
-    });
+    onDataChange({ formattedText: text });
   };
 
-  // Generate properly formatted text for output
-  const generateFormattedText = (text: string): string => {
-    if (!text) return '';
-    
-    const lines = text.split('\n');
-    const formatted: string[] = [];
-    let conditionCount = 0;
 
-    for (let line of lines) {
-      line = line.trim();
-      if (!line) continue;
-
-      if (line.startsWith('#')) {
-        conditionCount++;
-        const condition = line.replace('#', '').trim();
-        if (conditionCount > 1) formatted.push("");
-        formatted.push(`${conditionCount}. ${condition}`);
-      } else if (line.startsWith('-')) {
-        const detail = line.replace('-', '').trim();
-        formatted.push(`     - ${detail}`);
-      } else if (line.startsWith('--')) {
-        const subDetail = line.replace('--', '').trim();
-        formatted.push(`       - ${subDetail}`);
-      } else if (/^\d+\./.test(line)) {
-        const match = line.match(/^(\d+)\./);
-        if (match) {
-          const num = parseInt(match[1]);
-          if (num > conditionCount) {
-            conditionCount = num;
-            if (conditionCount > 1) formatted.push("");
-          }
-        }
-        formatted.push(line);
-      } else if (line.match(/^\s+/)) {
-        formatted.push(line);
-      } else {
-        conditionCount++;
-        if (conditionCount > 1) formatted.push("");
-        formatted.push(`${conditionCount}. ${line}`);
-      }
-    }
-
-    return formatted.join('\n');
-  };
+  
 
   if (mode === 'text') {
     return (
       <div className="p-4 bg-gray-50 rounded border">
         <div className="text-sm whitespace-pre-wrap">
-          {formatStructuredMedicalText(impressionData.formattedText) || 'No clinical impression documented'}
-        </div>
+        {formatStructuredMedicalText(data.formattedText) || 'No clinical impression documented'}
+      </div>
       </div>
     );
   }
@@ -213,7 +151,7 @@ export const ImpressionWidget: React.FC<ImpressionWidgetProps> = ({
         <SmartTextEntry
           title={language === 'fr' ? 'Impression Clinique' : 'Clinical Impression'}
           placeholder={language === 'fr' ? 'Diabète de type 2 mal contrôlé\n- Ajuster les médicaments\n- Counseling sur le mode de vie\n\nHypertension non contrôlée\n- Augmenter les antihypertenseurs\n\nTapez: dm, htn, uti pour des modèles\nEntrée: nouvelle ligne\nTab: ajouter sous-point' : 'Diabetes mellitus type 2, poorly controlled\n- Adjust medications\n- Lifestyle counseling\n\nHypertension, uncontrolled\n- Increase antihypertensive\n\nType: dm, htn, uti for templates\nEnter: new line\nTab: add sub-point'}
-          value={impressionData.formattedText}
+          value={data.formattedText}
           onChange={handleTextChange}
         />
       </div>

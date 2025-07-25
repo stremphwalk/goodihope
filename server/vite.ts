@@ -81,10 +81,40 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // Serve static files with aggressive caching for hashed files
+  app.use(express.static(distPath, {
+    // Cache static assets for 1 year (they have hashes in filenames)
+    maxAge: '1y',
+    // Set proper cache headers
+    setHeaders: (res, filePath) => {
+      const fileName = path.basename(filePath);
+      
+      // Cache hashed files (JS, CSS with hashes) for 1 year
+      if (/\.[a-f0-9]{8,}\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|webp|ico)$/i.test(fileName)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+      // Cache non-hashed assets for shorter time
+      else if (/\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|webp|ico)$/i.test(fileName)) {
+        res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day
+      }
+      // Don't cache HTML files
+      else if (fileName.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+      
+      // Security headers for static files
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
+  }));
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {
+    // Don't cache the main HTML file
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }

@@ -39,7 +39,7 @@ export const SymptomDetailsModal: React.FC<SymptomDetailsModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md bg-white opacity-100 border border-gray-300 shadow-xl backdrop-blur-none">
         <DialogHeader>
           <DialogTitle>{language === 'fr' ? 'Détails du Symptôme' : 'Symptom Details'} - {symptomKey}</DialogTitle>
           <p className="text-sm text-gray-500 mt-1">{language === 'fr' ? description.fr : description.en}</p>

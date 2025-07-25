@@ -157,8 +157,8 @@ export function NoteTypeSection({
                 ? 'Ajoutez du contenu personnalisé pour cette section...' 
                 : 'Add custom content for this section...'
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              rows={3}
+              className="w-full h-64 p-4 bg-gray-50 border-0 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm transition-colors"
+              style={{ fontFamily: 'ui-monospace, monospace' }}
             />
             <p className="text-xs text-gray-500">
               {language === 'fr'

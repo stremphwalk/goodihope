@@ -80,6 +80,14 @@ export function NoteTypeSelector({ onSelect, selectedType }: NoteTypeSelectorPro
       icon: Stethoscope,
       category: 'consultation',
       sections: ['note-type', 'hpi', 'pmh', 'physical-exam', 'impression', 'plan']
+    },
+    {
+      id: 'custom',
+      name: language === 'fr' ? 'Note Personnalisée' : 'Custom Note',
+      description: language === 'fr' ? 'Note libre avec sections personnalisées' : 'Free form note with custom sections',
+      icon: Sparkles,
+      category: 'custom',
+      sections: ['note-type', 'hpi', 'pmh', 'meds', 'physical-exam', 'labs', 'impression', 'plan']
     }
   ];
 
@@ -88,8 +96,7 @@ export function NoteTypeSelector({ onSelect, selectedType }: NoteTypeSelectorPro
     { id: 'admission', name: language === 'fr' ? 'Admission' : 'Admission' },
     { id: 'progress', name: language === 'fr' ? 'Progression' : 'Progress' },
     { id: 'discharge', name: language === 'fr' ? 'Sortie' : 'Discharge' },
-    { id: 'consultation', name: language === 'fr' ? 'Consultation' : 'Consultation' },
-    { id: 'custom', name: language === 'fr' ? 'Personnalisés' : 'Custom' }
+    { id: 'consultation', name: language === 'fr' ? 'Consultation' : 'Consultation' }
   ];
 
   // Templates functionality removed - using only built-in types
@@ -102,23 +109,8 @@ export function NoteTypeSelector({ onSelect, selectedType }: NoteTypeSelectorPro
     selectedCategory === 'all' || type.category === selectedCategory
   );
 
-  const filteredCustomTemplates = templates.filter(template => 
-    selectedCategory === 'all' || 
-    selectedCategory === 'custom' || 
-    template.category === selectedCategory
-  );
-
-  const handleSelect = (type: any, isCustom = false) => {
-    if (isCustom) {
-      // For custom templates, use the sections from the template
-      const sections = type.content.sections
-        .filter((section: any) => section.isEnabled)
-        .map((section: any) => section.sectionId);
-      onSelect(`custom-${type.id}`, sections);
-    } else {
-      // For built-in types, use predefined sections
-      onSelect(type.id, type.sections);
-    }
+  const handleSelect = (type: any) => {
+    onSelect(type.id, type.sections);
   };
 
   const getSectionIcon = (sectionId: string) => {
@@ -135,8 +127,8 @@ export function NoteTypeSelector({ onSelect, selectedType }: NoteTypeSelectorPro
         </h2>
         <p className="text-gray-600">
           {language === 'fr' 
-            ? 'Choisissez un type de note prédéfini ou utilisez un de vos modèles personnalisés'
-            : 'Choose a predefined note type or use one of your custom templates'
+            ? 'Choisissez un type de note prédéfini'
+            : 'Choose a predefined note type'
           }
         </p>
       </div>
@@ -208,76 +200,7 @@ export function NoteTypeSelector({ onSelect, selectedType }: NoteTypeSelectorPro
         </div>
       )}
 
-      {/* Custom Templates */}
-      {filteredCustomTemplates.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Sparkles className="w-5 h-5" />
-            {language === 'fr' ? 'Modèles Personnalisés' : 'Custom Templates'}
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredCustomTemplates.map(template => (
-              <Card
-                key={template.id}
-                className={`cursor-pointer transition-all hover:shadow-md ${
-                  selectedType === `custom-${template.id}` ? 'ring-2 ring-blue-500 bg-blue-50' : ''
-                }`}
-                onClick={() => handleSelect(template, true)}
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-3">
-                    <Sparkles className="w-6 h-6 text-purple-600" />
-                    <div className="flex-1">
-                      <CardTitle className="text-lg">{template.name}</CardTitle>
-                      {template.description && (
-                        <p className="text-sm text-gray-600">{template.description}</p>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <Badge variant="outline" className="text-xs">
-                        {template.category}
-                      </Badge>
-                      {template.specialty && (
-                        <Badge variant="secondary" className="text-xs">
-                          {template.specialty}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {template.content.sections
-                        .filter(section => section.isEnabled)
-                        .slice(0, 4)
-                        .map(section => {
-                          const Icon = getSectionIcon(section.sectionId);
-                          return (
-                            <div key={section.id} className="flex items-center gap-1 text-xs text-gray-500">
-                              <Icon className="w-3 h-3" />
-                            </div>
-                          );
-                        })}
-                      {template.content.sections.filter(s => s.isEnabled).length > 4 && (
-                        <span className="text-xs text-gray-400">
-                          +{template.content.sections.filter(s => s.isEnabled).length - 4} more
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-400">
-                      {new Date(template.updatedAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {filteredBuiltInTypes.length === 0 && filteredCustomTemplates.length === 0 && !loading && (
+      {filteredBuiltInTypes.length === 0 && (
         <Card>
           <CardContent className="text-center py-12">
             <Sparkles className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -286,24 +209,10 @@ export function NoteTypeSelector({ onSelect, selectedType }: NoteTypeSelectorPro
             </h3>
             <p className="text-gray-600">
               {language === 'fr' 
-                ? 'Essayez de changer les filtres ou créez un nouveau modèle personnalisé'
-                : 'Try changing the filters or create a new custom template'
+                ? 'Essayez de changer les filtres'
+                : 'Try changing the filters'
               }
             </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Loading State */}
-      {loading && (
-        <Card>
-          <CardContent className="text-center py-12">
-            <div className="flex items-center justify-center gap-2">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-              <p className="text-gray-500">
-                {language === 'fr' ? 'Chargement des modèles...' : 'Loading templates...'}
-              </p>
-            </div>
           </CardContent>
         </Card>
       )}

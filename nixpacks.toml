@@ -2,13 +2,13 @@
 nixPkgs = ['nodejs_20', 'npm']
 
 [phases.install]
-cmds = ['npm ci']
+cmds = ['npm ci --include=dev']
 
 [phases.build]
 cmds = ['npm run build']
 
 [phases.postbuild]
-cmds = ['npm prune --production', 'npm install vite esbuild @vitejs/plugin-react']
+cmds = ['npm prune --production --silent', 'npm cache clean --force']
 
 [start]
 cmd = 'npm run start'

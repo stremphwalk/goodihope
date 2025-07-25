@@ -219,21 +219,6 @@ interface SidebarStateProps {
   setSelectedSubOption: (option: string) => void;
 }
 
-const SectionWrapper = ({ title, sectionKey, controls, children }: { title: string; sectionKey: string; controls?: React.ReactNode; children: React.ReactNode }) => (
-  <div className="medical-section-wrapper">
-    <div className="medical-card-header flex items-center justify-between">
-      <h2 className="medical-section-title flex items-center gap-2">
-        {sectionIcons[sectionKey]}
-        {title}
-      </h2>
-      {controls && <div className="flex gap-2">{controls}</div>}
-    </div>
-    <div className="medical-section-content">
-      {children}
-    </div>
-  </div>
-);
-
 function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, setSelectedSubOption }: SidebarStateProps) {
   // Note state with diff-patch-merge tracking
   const [note, setNote] = useState("");
@@ -347,6 +332,53 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   const [expandedSystem, setExpandedSystem] = useState<string | null>(null);
   const [selectedModality, setSelectedModality] = useState<string>("");
   const [resultInput, setResultInput] = useState<string>("");
+
+  // Define sectionIcons inside the component
+  const sectionIcons: Record<string, React.ReactNode> = {
+    "note-type": <FileText className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" />,
+    "pmh": <Stethoscope className="w-6 h-6 text-emerald-600 bg-emerald-100 rounded-full p-1" />,
+    "meds": <Pill className="w-6 h-6 text-purple-600 bg-purple-100 rounded-full p-1" />,
+    "allergies": <AlertCircle className="w-6 h-6 text-orange-500 bg-orange-100 rounded-full p-1" />,
+    "social": <Users className="w-6 h-6 text-pink-500 bg-pink-100 rounded-full p-1" />,
+    "hpi": <ClipboardList className="w-6 h-6 text-cyan-600 bg-cyan-100 rounded-full p-1" />,
+    "physical-exam": <HeartPulse className="w-6 h-6 text-red-500 bg-red-100 rounded-full p-1" />,
+    "ventilation": <Wind className="w-6 h-6 text-sky-500 bg-sky-100 rounded-full p-1" />,
+    "labs": <TestTube className="w-6 h-6 text-yellow-600 bg-yellow-100 rounded-full p-1" />,
+    "imagery": <Image className="w-6 h-6 text-indigo-500 bg-indigo-100 rounded-full p-1" />,
+    "impression": <Brain className="w-6 h-6 text-gray-700 bg-gray-100 rounded-full p-1" />,
+    "custom-note": <Edit3 className="w-6 h-6 text-orange-600 bg-orange-100 rounded-full p-1" />,
+  };
+
+  // Define SectionWrapper inside the component
+  const SectionWrapper = ({ title, sectionKey, controls, children }: { title: string; sectionKey: string; controls?: React.ReactNode; children: React.ReactNode }) => (
+    <div className="medical-section-wrapper">
+      <div className="medical-card-header flex items-center justify-between">
+        <h2 className="medical-section-title flex items-center gap-2">
+          {sectionIcons[sectionKey]}
+          {title}
+        </h2>
+        {controls && <div className="flex gap-2">{controls}</div>}
+      </div>
+      <div className="medical-section-content">
+        {children}
+      </div>
+    </div>
+  );
+
+  // Define clearAllPmhEntries inside the component
+  const clearAllPmhEntries = () => {
+    setPmhText('');
+  };
+
+  // Define pmhControls inside the component
+  const pmhControls = (
+    <button
+      onClick={clearAllPmhEntries}
+      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm transition-colors"
+    >
+      {language === 'fr' ? 'Effacer' : 'Clear'}
+    </button>
+  );
 
   const getApiHeaders = useCallback((id_token: string) => ({
     'Content-Type': 'application/json',
@@ -1502,49 +1534,6 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
 
   const isManuallyEdited = currentText !== initialGeneratedText && initialGeneratedText !== "";
 
-  const sectionIcons: Record<string, React.ReactNode> = {
-    "note-type": <FileText className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" />,
-    "pmh": <Stethoscope className="w-6 h-6 text-emerald-600 bg-emerald-100 rounded-full p-1" />,
-    "meds": <Pill className="w-6 h-6 text-purple-600 bg-purple-100 rounded-full p-1" />,
-    "allergies": <AlertCircle className="w-6 h-6 text-orange-500 bg-orange-100 rounded-full p-1" />,
-    "social": <Users className="w-6 h-6 text-pink-500 bg-pink-100 rounded-full p-1" />,
-    "hpi": <ClipboardList className="w-6 h-6 text-cyan-600 bg-cyan-100 rounded-full p-1" />,
-    "physical-exam": <HeartPulse className="w-6 h-6 text-red-500 bg-red-100 rounded-full p-1" />,
-    "ventilation": <Wind className="w-6 h-6 text-sky-500 bg-sky-100 rounded-full p-1" />,
-    "labs": <TestTube className="w-6 h-6 text-yellow-600 bg-yellow-100 rounded-full p-1" />,
-    "imagery": <Image className="w-6 h-6 text-indigo-500 bg-indigo-100 rounded-full p-1" />,
-    "impression": <Brain className="w-6 h-6 text-gray-700 bg-gray-100 rounded-full p-1" />,
-    "custom-note": <Edit3 className="w-6 h-6 text-orange-600 bg-orange-100 rounded-full p-1" />,
-  };
-
-  const SectionWrapper = ({ title, sectionKey, controls, children }: { title: string; sectionKey: string; controls?: React.ReactNode; children: React.ReactNode }) => (
-    <div className="medical-section-wrapper">
-      <div className="medical-card-header flex items-center justify-between">
-        <h2 className="medical-section-title flex items-center gap-2">
-          {sectionIcons[sectionKey]}
-          {title}
-        </h2>
-        {controls && <div className="flex gap-2">{controls}</div>}
-      </div>
-      <div className="medical-section-content">
-        {children}
-      </div>
-    </div>
-  );
-
-  const clearAllPmhEntries = () => {
-    setPmhText('');
-  };
-
-  const pmhControls = (
-    <button
-      onClick={clearAllPmhEntries}
-      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm transition-colors"
-    >
-      {language === 'fr' ? 'Effacer' : 'Clear'}
-    </button>
-  );
-
   const renderMainContent = () => {
     const sectionTitle: Record<string, string> = {
       "note-type": "Note Type",
@@ -1562,6 +1551,38 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
 
     switch (selectedSubOption) {
       case "note-type":
+  if ((noteType as string) === "custom") {
+    return (
+      <SectionWrapper title={language === 'fr' ? 'Note Personnalisée' : 'Custom Note'} sectionKey="note-type">
+        <div className="flex flex-col h-full flex-1">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Edit3 className="w-6 h-6 text-orange-600" />
+              <h1 className="text-xl font-semibold text-gray-900">
+                {language === 'fr' ? 'Note Personnalisée' : 'Custom Note'}
+              </h1>
+            </div>
+            <Button
+              onClick={() => setNoteType(null)}
+              variant="outline"
+              size="sm"
+            >
+              {language === 'fr' ? 'Retour' : 'Back'}
+            </Button>
+          </div>
+          <div className="flex-1 flex flex-col rounded-lg border border-gray-200 shadow-sm">
+            <DotPhraseTextarea
+              value={customNoteText}
+              onChange={setCustomNoteText}
+              placeholder={language === 'fr' ? 'Commencez à taper votre note personnalisée...' : 'Start typing your custom note...'}
+              rows={25}
+              className="flex-1 w-full h-full resize-none border-0 focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm p-4 bg-gray-50"
+            />
+          </div>
+        </div>
+      </SectionWrapper>
+    );
+  }
         return (
           <SectionWrapper title={sectionTitle["note-type"]} sectionKey="note-type">
             <div className="space-y-6">
@@ -1614,7 +1635,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
                       ? "border-orange-500 bg-orange-50"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
-                  onClick={() => { setNoteType("custom"); setSelectedSubOption("custom"); }}
+                  onClick={() => { setNoteType("custom"); }}
                 >
                   <div className="flex items-center space-x-2 mb-2">
                     <Edit3 className="w-5 h-5 text-orange-600" />
@@ -2013,39 +2034,6 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
               onChange={setImpressionText}
               defaultContent={getSectionDefaultContent("impression")}
             />
-          </SectionWrapper>
-        );
-      case "custom":
-        return (
-          <SectionWrapper title={sectionTitle["custom"]} sectionKey="custom-note">
-            <div className="flex flex-col h-full flex-1">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Edit3 className="w-6 h-6 text-orange-600" />
-                  <h1 className="text-xl font-semibold text-gray-900">
-                    {language === 'fr' ? 'Note Personnalisée' : 'Custom Note'}
-                  </h1>
-                </div>
-                <Button
-                  onClick={() => setNoteType(null)}
-                  variant="outline"
-                  size="sm"
-                >
-                  {language === 'fr' ? 'Retour' : 'Back'}
-                </Button>
-              </div>
-              <div className="flex-1 flex flex-col rounded-lg border border-gray-200 shadow-sm">
-                <DotPhraseTextarea
-                  value={customNoteText}
-                  onChange={setCustomNoteText}
-                  placeholder={language === 'fr' 
-                    ? 'Commencez à taper votre note... Utilisez /phrase pour les phrases-points.'
-                    : 'Start typing your note... Use /phrase for dot phrases.'}
-                  className="flex-1 w-full h-full resize-none border-0 focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm p-4 bg-gray-50"
-                  rows={25}
-                />
-              </div>
-            </div>
           </SectionWrapper>
         );
       default:

@@ -63,7 +63,7 @@ export function MainLayout({
       { key: "labs", label: "Labs", icon: <TestTube className="w-6 h-6 text-yellow-600 bg-yellow-100 rounded-full p-1" /> },
       { key: "imagery", label: "Imagery", icon: <Image className="w-6 h-6 text-indigo-500 bg-indigo-100 rounded-full p-1" /> },
       { key: "impression", label: "IMP", icon: <Brain className="w-6 h-6 text-gray-700 bg-gray-100 rounded-full p-1" /> },
-      { key: "custom", label: "Custom", icon: <FileText className="w-6 h-6 text-orange-600 bg-orange-100 rounded-full p-1" /> },
+      ,
     ];
   };
 

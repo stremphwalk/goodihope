@@ -76,7 +76,6 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
   const [customInputFocused, setCustomInputFocused] = useState(false);
   const customInputRef = useRef<HTMLInputElement>(null);
   const dropdownMouseDownRef = useRef(false);
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [dateObj, setDateObj] = useState<Date | null>(null);
   const [calendarIsOpen, setCalendarIsOpen] = useState(false);
   const justExpandedToSmartOption = useRef(false);
@@ -138,21 +137,12 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     }
   }, [localValue, isFocused, activeSmartIdx, hasUserEdited]);
 
-  // Only sync external value when not focused and user hasn't edited
+  // Sync external value with local state
   useEffect(() => {
-    if (!isFocused && !hasUserEdited) {
-      setLocalValue(value || '');
-    }
-  }, [value, isFocused, hasUserEdited]);
+    setLocalValue(value || '');
+  }, [value]);
 
-  // Detect when a new template is applied (significant value change when not focused)
-  useEffect(() => {
-    if (!isFocused && value !== localValue && (value || '').trim() !== '' && (localValue || '').trim() === '') {
-      // This looks like a template being applied to an empty field
-      setLocalValue(value || '');
-      setHasUserEdited(false); // Reset so template can work
-    }
-  }, [value, localValue, isFocused]);
+  
 
   const formatText = useCallback((text: string): string => {
     if (!text) return '';
@@ -255,16 +245,30 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         if (e.key === 'ArrowLeft') {
           e.preventDefault();
           const opt = smartOptions[activeSmartIdx];
-          opt.selectedIdx = (opt.selectedIdx - 1 + opt.options.length) % opt.options.length;
-          setSmartOptions([...smartOptions]);
+          // Only cycle within options if it's not a date
+          if (opt.options[0] !== 'DATE') {
+            opt.selectedIdx = (opt.selectedIdx - 1 + opt.options.length) % opt.options.length;
+            setSmartOptions([...smartOptions]);
+          }
           return;
         } else if (e.key === 'ArrowRight') {
           e.preventDefault();
           const opt = smartOptions[activeSmartIdx];
-          opt.selectedIdx = (opt.selectedIdx + 1) % opt.options.length;
-          setSmartOptions([...smartOptions]);
+          // Only cycle within options if it's not a date
+          if (opt.options[0] !== 'DATE') {
+            opt.selectedIdx = (opt.selectedIdx + 1) % opt.options.length;
+            setSmartOptions([...smartOptions]);
+          }
           return;
-        } else if (e.key === 'Enter' || e.key === 'Tab') {
+        } else if (e.key === 'Tab' && e.shiftKey) {
+          e.preventDefault();
+          setActiveSmartIdx((activeSmartIdx - 1 + smartOptions.length) % smartOptions.length);
+          return;
+        } else if (e.key === 'Tab' && !e.shiftKey) {
+          e.preventDefault();
+          setActiveSmartIdx((activeSmartIdx + 1) % smartOptions.length);
+          return;
+        } else if (e.key === 'Enter') {
           e.preventDefault();
           handleSmartOptionSelect(activeSmartIdx, smartOptions[activeSmartIdx].selectedIdx);
           return;
@@ -618,17 +622,14 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     }
   }, [activeSmartIdx, smartOptions, localValue]);
 
-  // Open date picker for DATE options
+  // Reset date object for DATE options
   useEffect(() => {
     if (
       activeSmartIdx !== null &&
       smartOptions[activeSmartIdx] &&
       smartOptions[activeSmartIdx].options[0] === 'DATE'
     ) {
-      setDatePickerOpen(true);
       setDateObj(null);
-    } else {
-      setDatePickerOpen(false);
     }
   }, [activeSmartIdx, smartOptions]);
 
@@ -641,7 +642,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     onBlur?.();
     
     setTimeout(() => {
-      if (!dropdownMouseDownRef.current && !(activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options[0] === 'DATE' && (datePickerOpen || calendarIsOpen))) {
+      if (!dropdownMouseDownRef.current && !(activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options[0] === 'DATE' && calendarIsOpen)) {
         setActiveSmartIdx(null);
         setShowSuggestions(false);
         setCurrentDot(null);
@@ -669,7 +670,6 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     ) {
       if (activeSmartIdx !== 0) setActiveSmartIdx(0);
       if (smartOptions[0].options[0] === 'DATE') {
-        setDatePickerOpen(true);
         setCalendarIsOpen(true);
       }
     }
@@ -688,9 +688,8 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
       const opts = smartOptions[activeSmartIdx].options;
       const numOptions = opts.length;
       const isDate = opts[0] === 'DATE';
-      if (isDate) return;
       let selIdx = smartOptions[activeSmartIdx].selectedIdx ?? 0;
-      if (e.key === 'ArrowDown') {
+      if (e.key === 'ArrowDown' && !isDate) {
         e.preventDefault();
         if (customInputFocused) {
           setCustomInputFocused(false);
@@ -700,7 +699,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         } else {
           setCustomInputFocused(true);
         }
-      } else if (e.key === 'ArrowUp') {
+      } else if (e.key === 'ArrowUp' && !isDate) {
         e.preventDefault();
         if (customInputFocused) {
           setCustomInputFocused(false);
@@ -803,26 +802,52 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
           onMouseDown={() => { dropdownMouseDownRef.current = true; }}
           onMouseUp={() => { dropdownMouseDownRef.current = false; }}
         >
+          {/* Smart Options Counter */}
+          <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 rounded-t-lg">
+            <div className="text-xs text-gray-600 text-center font-medium">
+              {smartOptions.length - activeSmartIdx}/{smartOptions.length} remaining
+              {smartOptions[activeSmartIdx]?.options[0] === 'DATE' ? ' (Date Picker)' : 
+               smartOptions[activeSmartIdx]?.options[0]?.startsWith('WIDGET:') ? ' (Widget)' : 
+               smartOptions[activeSmartIdx]?.options[0]?.startsWith('CALC:') ? ' (Calculator)' : 
+               ' (Options)'}
+            </div>
+          </div>
           {/* Date Picker for DATE options */}
-          {smartOptions[activeSmartIdx].options[0] === 'DATE' && (
+          {activeSmartIdx !== null && smartOptions[activeSmartIdx]?.options?.includes('DATE') && (
             <div className="p-3">
               <div className="text-sm font-medium text-gray-700 mb-2">Select Date:</div>
               <DatePicker
                 selected={dateObj}
                 onChange={(date) => {
                   setDateObj(date);
-                  if (date) {
+                  if (date && activeSmartIdx !== null) {
                     const formattedDate = date.toLocaleDateString();
-                    handleSmartOptionSelect(activeSmartIdx, 0);
+                    
                     // Replace the DATE placeholder with the actual date
                     const before = (localValue || '').slice(0, smartOptions[activeSmartIdx].start);
                     const after = (localValue || '').slice(smartOptions[activeSmartIdx].end);
                     const newValue = before + formattedDate + after;
+                    
+                    // Update the value first
                     setLocalValue(newValue);
+                    
+                    // Call onChange if provided
+                    if (onChange) {
+                      onChange(newValue);
+                    }
+                    
+                    // Move to next smart option or close
+                    setTimeout(() => {
+                      const newOptions = parseSmartOptions(newValue);
+                      if (newOptions.length > 0) {
+                        setActiveSmartIdx(0);
+                      } else {
+                        setActiveSmartIdx(null);
+                      }
+                    }, 0);
                   }
                 }}
                 inline
-                open={datePickerOpen}
                 onCalendarOpen={() => setCalendarIsOpen(true)}
                 onCalendarClose={() => setCalendarIsOpen(false)}
                 dateFormat="MM/dd/yyyy"
@@ -833,7 +858,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
           )}
 
           {/* Regular Options Dropdown */}
-          {smartOptions[activeSmartIdx].options[0] !== 'DATE' && (
+          {activeSmartIdx !== null && smartOptions[activeSmartIdx] && !smartOptions[activeSmartIdx]?.options?.includes('DATE') && (
             <>
               {/* Options List */}
               {smartOptions[activeSmartIdx].options.map((option: string, optIdx: number) => (

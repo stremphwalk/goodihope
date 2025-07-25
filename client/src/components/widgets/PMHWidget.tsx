@@ -10,7 +10,6 @@ import { WidgetInstance } from '@/types/widgets';
 import { formatStructuredMedicalText } from '@/lib/textFormatting';
 
 interface PMHData {
-  items: string[];
   formattedText: string;
 }
 
@@ -27,7 +26,7 @@ const commonPMHItems = [
 ];
 
 export const PMHWidget: React.FC<PMHWidgetProps> = ({
-  data,
+  data = { formattedText: '' },
   onDataChange,
   mode = 'interactive',
   isReadOnly = false
@@ -35,106 +34,29 @@ export const PMHWidget: React.FC<PMHWidgetProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const { language } = useLanguage();
 
-  // Initialize with default data structure if empty
-  const pmhData: PMHData = data?.items ? data : {
-    items: [],
-    formattedText: ''
-  };
+  
 
-  // Update formatted text when items change
-  useEffect(() => {
-    if (pmhData.items.length > 0) {
-      const formatted = pmhData.items.map((item, index) => `${index + 1}. ${item}`).join('\n');
-      if (formatted !== pmhData.formattedText) {
-        onDataChange({
-          ...pmhData,
-          formattedText: formatted
-        });
-      }
-    }
-  }, [pmhData.items.length]);
+  
 
   const filteredCommonItems = commonPMHItems.filter(item =>
     item.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const insertCondition = (condition: string) => {
-    const currentText = pmhData.formattedText || '';
-    const newText = currentText ? currentText + '\n' + condition : condition;
-    
-    // Parse the text into items for consistency
-    const items = newText
-      .split('\n')
-      .map(line => line.replace(/^\d+\.\s*/, '').trim())
-      .filter(line => line.length > 0);
-    
-    onDataChange({
-      items,
-      formattedText: newText
-    });
-    setSearchTerm('');
-  };
+  const insertCondition = (condition: string) => {    onDataChange({ formattedText: `${data.formattedText || ''}
+${condition}`.trim() });    setSearchTerm('');  };
 
   const handleTextChange = (text: string) => {
-    // Store the raw text from SmartTextEntry
-    // The formatting will be applied when generating the final output
-    onDataChange({
-      items: [],
-      formattedText: text
-    });
+    onDataChange({ formattedText: text });
   };
 
-  // Generate properly formatted text for output
-  const generateFormattedText = (text: string): string => {
-    if (!text) return '';
-    
-    const lines = text.split('\n');
-    const formatted: string[] = [];
-    let conditionCount = 0;
-
-    for (let line of lines) {
-      line = line.trim();
-      if (!line) continue;
-
-      if (line.startsWith('#')) {
-        conditionCount++;
-        const condition = line.replace('#', '').trim();
-        if (conditionCount > 1) formatted.push("");
-        formatted.push(`${conditionCount}. ${condition}`);
-      } else if (line.startsWith('-')) {
-        const detail = line.replace('-', '').trim();
-        formatted.push(`     - ${detail}`);
-      } else if (line.startsWith('--')) {
-        const subDetail = line.replace('--', '').trim();
-        formatted.push(`       - ${subDetail}`);
-      } else if (/^\d+\./.test(line)) {
-        const match = line.match(/^(\d+)\./);
-        if (match) {
-          const num = parseInt(match[1]);
-          if (num > conditionCount) {
-            conditionCount = num;
-            if (conditionCount > 1) formatted.push("");
-          }
-        }
-        formatted.push(line);
-      } else if (line.match(/^\s+/)) {
-        formatted.push(line);
-      } else {
-        conditionCount++;
-        if (conditionCount > 1) formatted.push("");
-        formatted.push(`${conditionCount}. ${line}`);
-      }
-    }
-
-    return formatted.join('\n');
-  };
+  
 
   if (mode === 'text') {
     return (
       <div className="p-4 bg-gray-50 rounded border">
         <div className="text-sm whitespace-pre-wrap">
-          {formatStructuredMedicalText(pmhData.formattedText) || 'No past medical history documented'}
-        </div>
+        {formatStructuredMedicalText(data.formattedText) || 'No past medical history documented'}
+      </div>
       </div>
     );
   }
@@ -202,7 +124,7 @@ export const PMHWidget: React.FC<PMHWidgetProps> = ({
         <SmartTextEntry
           title={language === 'fr' ? 'Antécédents Médicaux' : 'Past Medical History'}
           placeholder={language === 'fr' ? 'Diabète de type 2\n- Bien contrôlé sous metformine\n- Dernière HbA1c 7.2%\n\nHypertension artérielle\n- Bien contrôlée\n- Sous lisinopril 10mg par jour\n\nTapez: dm, htn, cad pour des modèles\nEntrée: nouvelle ligne\nTab: ajouter sous-point' : 'Diabetes mellitus type 2\n- Well controlled on metformin\n- Last HbA1c 7.2%\n\nHypertension\n- Well controlled\n- On lisinopril 10mg daily\n\nType: dm, htn, cad for templates\nEnter: new line\nTab: add sub-point'}
-          value={pmhData.formattedText}
+          value={data.formattedText}
           onChange={handleTextChange}
         />
       </div>

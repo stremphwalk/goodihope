@@ -5,11 +5,13 @@ import { searchMedications, getCommonDosages } from "./parseCSVMedications";
 import { extractLabValuesFromImage, extractMedicationsFromImage } from "./vision";
 import { sanitizeString, validateBase64Image, SECURITY_CONFIG } from "./security";
 import { db } from "./database";
-import { dotPhrases, users, userPresets } from "../shared/schema";
-import { eq, desc, and, ne, sql } from "drizzle-orm";
+import { dotPhrases, users, userPresets, teamGroups, groupMembers, groupTodos, groupEvents } from "../shared/schema";
+import { eq, desc, and, ne, sql, gt, lt, gte, lte } from "drizzle-orm";
 import { checkJwt } from './auth';
 import { generateUniqueShareCode, isValidShareCode, normalizeShareCode } from './shareCodeUtils';
 import { generateUniqueCustomIdentifier, isValidCustomIdentifier, formatCustomIdentifier } from './customIdentifierUtils';
+import { generateUniqueInviteCode, isValidInviteCode, cleanupExpiredGroups, getUserActiveGroup, removeUserFromCurrentGroup, getGroupMemberCount } from './groupUtils';
+import { dashboardCache, CacheKeys, CacheInvalidation } from './cache';
 
 // Extend the Express Request type to include the auth payload
 interface AuthenticatedRequest extends Request {
@@ -36,7 +38,9 @@ const clearExpiredCache = () => {
 setInterval(clearExpiredCache, 60 * 1000);
 
 // Function to get or create a user in your local database
-const getOrCreateUser = async (cognitoSub: string) => {
+const getOrCreateUser = async (authPayload: any) => {
+  const cognitoSub = authPayload.sub;
+  
   // Check cache first
   const cached = userCache.get(cognitoSub);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -45,13 +49,22 @@ const getOrCreateUser = async (cognitoSub: string) => {
 
   let user = await db.select().from(users).where(eq(users.username, cognitoSub)).limit(1);
 
+  // Extract name from JWT token (common fields: name, given_name, family_name, preferred_username, email)
+  const userName = authPayload.name || 
+                   authPayload.preferred_username || 
+                   (authPayload.given_name && authPayload.family_name ? 
+                     `${authPayload.given_name} ${authPayload.family_name}` : null) ||
+                   authPayload.email?.split('@')[0] ||
+                   'Unknown User';
+
   if (user.length === 0) {
-    // If user doesn't exist, create a new one with a custom identifier
+    // If user doesn't exist, create a new one with a custom identifier and name
     try {
       const customIdentifier = await generateUniqueCustomIdentifier();
       const newUser = await db.insert(users).values({
         username: cognitoSub,
         password: 'cognito-user', // Password is required but not used for Cognito logins
+        name: userName,
         customIdentifier: customIdentifier,
       }).returning();
       user = newUser;
@@ -61,8 +74,19 @@ const getOrCreateUser = async (cognitoSub: string) => {
       const newUser = await db.insert(users).values({
         username: cognitoSub,
         password: 'cognito-user',
+        name: userName,
       }).returning();
       user = newUser;
+    }
+  } else {
+    // Update existing user's name if it's not set or different
+    if (!user[0].name || user[0].name !== userName) {
+      const updatedUser = await db
+        .update(users)
+        .set({ name: userName })
+        .where(eq(users.id, user[0].id))
+        .returning();
+      user = updatedUser;
     }
   }
 
@@ -112,7 +136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
         }
         
-        const user = await getOrCreateUser(req.auth.sub);
+        const user = await getOrCreateUser(req.auth);
         
         const userDotPhrases = await db
           .select()
@@ -136,7 +160,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
         }
         
-        const user = await getOrCreateUser(req.auth.sub);
+        const user = await getOrCreateUser(req.auth);
         
         if (!trigger || !content) {
           return res.status(400).json({ error: 'Trigger and content are required' });
@@ -184,7 +208,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
         }
         
-        const user = await getOrCreateUser(req.auth.sub);
+        const user = await getOrCreateUser(req.auth);
         
         if (!trigger || !content) {
           return res.status(400).json({ error: 'Trigger and content are required' });
@@ -250,7 +274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
         }
         
-        const user = await getOrCreateUser(req.auth.sub);
+        const user = await getOrCreateUser(req.auth);
         
         const deletedDotPhrase = await db
           .delete(dotPhrases)
@@ -279,7 +303,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
         }
         
-        const user = await getOrCreateUser(req.auth.sub);
+        const user = await getOrCreateUser(req.auth);
         
         // Check if the dot phrase exists and belongs to the user
         const existing = await db
@@ -399,7 +423,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ error: 'Invalid share code format' });
         }
         
-        const user = await getOrCreateUser(req.auth.sub);
+        const user = await getOrCreateUser(req.auth);
         const normalizedCode = normalizeShareCode(shareCode);
         
         // Get the shared dot phrase
@@ -536,7 +560,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
         }
         
-        const user = await getOrCreateUser(req.auth.sub);
+        const user = await getOrCreateUser(req.auth);
         
         if (!user.customIdentifier) {
           // Generate custom identifier for existing users who don't have one
@@ -622,7 +646,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         const userStartTime = Date.now();
-        const user = await getOrCreateUser(req.auth.sub);
+        const user = await getOrCreateUser(req.auth);
         const userTime = Date.now() - userStartTime;
         console.log(`[PERF] User lookup took ${userTime}ms`);
         
@@ -659,7 +683,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
         }
         
-        const user = await getOrCreateUser(req.auth.sub);
+        const user = await getOrCreateUser(req.auth);
         
         if (!title || typeof symptoms !== 'object') {
           return res.status(400).json({ error: 'Title and symptoms are required' });
@@ -715,7 +739,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
         }
         
-        const user = await getOrCreateUser(req.auth.sub);
+        const user = await getOrCreateUser(req.auth);
         
         // Check if preset exists and belongs to user
         const existing = await db
@@ -874,6 +898,872 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error: any) {
         console.error("Error processing lab image:", error);
         res.status(500).json({ error: "Failed to process lab image" });
+      }
+    });
+
+    // Team Groups API endpoints
+    
+    // POST /api/groups - Create a new team group
+    app.post("/api/groups", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const { name, description } = req.body;
+        
+        if (!name || typeof name !== 'string' || name.trim().length === 0) {
+          return res.status(400).json({ error: 'Group name is required' });
+        }
+        
+        if (name.trim().length > 50) {
+          return res.status(400).json({ error: 'Group name must be 50 characters or less' });
+        }
+        
+        if (description && description.length > 200) {
+          return res.status(400).json({ error: 'Description must be 200 characters or less' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        // Check if user is already in a group
+        const existingGroup = await getUserActiveGroup(user.id);
+        if (existingGroup) {
+          return res.status(409).json({ error: 'You are already in a team group. Leave your current group first.' });
+        }
+        
+        // Generate unique invite code
+        const inviteCode = await generateUniqueInviteCode();
+        
+        // Set expiry to 7 days from now
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        
+        // Create group
+        const newGroup = await db
+          .insert(teamGroups)
+          .values({
+            name: name.trim(),
+            description: description?.trim() || undefined,
+            createdByUserId: user.id,
+            inviteCode,
+            expiresAt
+          })
+          .returning();
+        
+        // Add creator as member
+        await db
+          .insert(groupMembers)
+          .values({
+            groupId: newGroup[0].id,
+            userId: user.id,
+            role: 'creator'
+          });
+        
+        res.status(201).json({
+          ...newGroup[0],
+          role: 'creator',
+          memberCount: 1
+        });
+      } catch (error) {
+        console.error('Error creating group:', error);
+        res.status(500).json({ error: 'Failed to create group' });
+      }
+    });
+
+    // GET /api/groups/my-active-group - Get user's current active group
+    app.get("/api/groups/my-active-group", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        // Clean up expired groups first
+        await cleanupExpiredGroups();
+        
+        const user = await getOrCreateUser(req.auth);
+        const activeGroup = await getUserActiveGroup(user.id);
+        
+        if (!activeGroup) {
+          return res.status(404).json({ error: 'No active group found' });
+        }
+        
+        res.json(activeGroup);
+      } catch (error) {
+        console.error('Error fetching active group:', error);
+        res.status(500).json({ error: 'Failed to fetch active group' });
+      }
+    });
+
+    // POST /api/groups/join - Join a group by invite code
+    app.post("/api/groups/join", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const { inviteCode } = req.body;
+        
+        if (!inviteCode || !isValidInviteCode(inviteCode)) {
+          return res.status(400).json({ error: 'Valid 6-character invite code is required' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        // Find the group by invite code
+        const targetGroup = await db
+          .select()
+          .from(teamGroups)
+          .where(and(
+            eq(teamGroups.inviteCode, inviteCode.toUpperCase()),
+            gt(teamGroups.expiresAt, new Date()) // Only non-expired groups
+          ))
+          .limit(1);
+        
+        if (targetGroup.length === 0) {
+          return res.status(404).json({ error: 'Invalid invite code or group has expired' });
+        }
+        
+        const group = targetGroup[0];
+        
+        // Check if group is full (max 6 members)
+        const memberCount = await getGroupMemberCount(group.id);
+        if (memberCount >= 6) {
+          return res.status(409).json({ error: 'Group is full (maximum 6 members)' });
+        }
+        
+        // Check if user is already in this group
+        const existingMembership = await db
+          .select()
+          .from(groupMembers)
+          .where(and(
+            eq(groupMembers.groupId, group.id),
+            eq(groupMembers.userId, user.id)
+          ))
+          .limit(1);
+        
+        if (existingMembership.length > 0) {
+          return res.status(409).json({ error: 'You are already a member of this group' });
+        }
+        
+        // Remove user from any existing group first
+        await removeUserFromCurrentGroup(user.id);
+        
+        // Add user to the new group
+        await db
+          .insert(groupMembers)
+          .values({
+            groupId: group.id,
+            userId: user.id,
+            role: 'member'
+          });
+        
+        // Invalidate dashboard cache for this group
+        CacheInvalidation.invalidateMembers(group.id);
+        
+        res.json({
+          group: {
+            ...group,
+            role: 'member',
+            memberCount: memberCount + 1
+          },
+          message: 'Successfully joined group'
+        });
+      } catch (error) {
+        console.error('Error joining group:', error);
+        res.status(500).json({ error: 'Failed to join group' });
+      }
+    });
+
+    // DELETE /api/groups/leave - Leave current group
+    app.delete("/api/groups/leave", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        // Remove user from their current group
+        const result = await db
+          .delete(groupMembers)
+          .where(eq(groupMembers.userId, user.id))
+          .returning();
+        
+        if (result.length === 0) {
+          return res.status(404).json({ error: 'You are not currently in a group' });
+        }
+        
+        // Invalidate dashboard cache for the group they left
+        CacheInvalidation.invalidateMembers(result[0].groupId);
+        
+        res.json({ message: 'Successfully left group' });
+      } catch (error) {
+        console.error('Error leaving group:', error);
+        res.status(500).json({ error: 'Failed to leave group' });
+      }
+    });
+
+    // GET /api/groups/:id/dashboard - Get complete dashboard data for a group
+    app.get("/api/groups/:id/dashboard", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const groupId = parseInt(req.params.id);
+        if (isNaN(groupId)) {
+          return res.status(400).json({ error: 'Invalid group ID' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        // Verify user is a member of this group
+        const membership = await db
+          .select()
+          .from(groupMembers)
+          .where(and(
+            eq(groupMembers.groupId, groupId),
+            eq(groupMembers.userId, user.id)
+          ))
+          .limit(1);
+        
+        if (membership.length === 0) {
+          return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+        
+        // Check cache first
+        const cacheKey = CacheKeys.groupDashboard(groupId);
+        const cachedData = dashboardCache.get(cacheKey);
+        if (cachedData) {
+          return res.json(cachedData);
+        }
+        
+        // Get group details
+        const group = await db
+          .select()
+          .from(teamGroups)
+          .where(eq(teamGroups.id, groupId))
+          .limit(1);
+        
+        if (group.length === 0 || new Date() > group[0].expiresAt) {
+          return res.status(404).json({ error: 'Group not found or has expired' });
+        }
+        
+        // Get all members with user details
+        const members = await db
+          .select({
+            id: groupMembers.id,
+            userId: groupMembers.userId,
+            role: groupMembers.role,
+            joinedAt: groupMembers.joinedAt,
+            user: {
+              id: users.id,
+              name: users.name,
+              customIdentifier: users.customIdentifier
+            }
+          })
+          .from(groupMembers)
+          .innerJoin(users, eq(groupMembers.userId, users.id))
+          .where(eq(groupMembers.groupId, groupId));
+        
+        // Get todos with all user details in a single optimized query using LEFT JOINs
+        const todosWithUsers = await db
+          .select({
+            // Todo fields
+            todoId: groupTodos.id,
+            title: groupTodos.title,
+            description: groupTodos.description,
+            status: groupTodos.status,
+            position: groupTodos.position,
+            completed: groupTodos.completed,
+            createdByUserId: groupTodos.createdByUserId,
+            completedByUserId: groupTodos.completedByUserId,
+            assignedToUserId: groupTodos.assignedToUserId,
+            createdAt: groupTodos.createdAt,
+            completedAt: groupTodos.completedAt,
+            
+            // Creator user details (always present)
+            creatorId: sql`creator.id`.as('creatorId'),
+            creatorName: sql`creator.name`.as('creatorName'),
+            creatorCustomIdentifier: sql`creator.custom_identifier`.as('creatorCustomIdentifier'),
+            
+            // Completer user details (nullable)
+            completerId: sql`completer.id`.as('completerId'),
+            completerName: sql`completer.name`.as('completerName'),
+            completerCustomIdentifier: sql`completer.custom_identifier`.as('completerCustomIdentifier'),
+            
+            // Assignee user details (nullable)
+            assigneeId: sql`assignee.id`.as('assigneeId'),
+            assigneeName: sql`assignee.name`.as('assigneeName'),
+            assigneeCustomIdentifier: sql`assignee.custom_identifier`.as('assigneeCustomIdentifier'),
+          })
+          .from(groupTodos)
+          .innerJoin(sql`users AS creator`, sql`creator.id = ${groupTodos.createdByUserId}`)
+          .leftJoin(sql`users AS completer`, sql`completer.id = ${groupTodos.completedByUserId}`)
+          .leftJoin(sql`users AS assignee`, sql`assignee.id = ${groupTodos.assignedToUserId}`)
+          .where(eq(groupTodos.groupId, groupId))
+          .orderBy(groupTodos.status, groupTodos.position);
+
+        // Transform the flat result into the expected nested structure
+        const todos = todosWithUsers.map(row => ({
+          id: row.todoId,
+          title: row.title,
+          description: row.description,
+          status: row.status,
+          position: row.position,
+          completed: row.completed,
+          createdByUserId: row.createdByUserId,
+          completedByUserId: row.completedByUserId,
+          assignedToUserId: row.assignedToUserId,
+          createdAt: row.createdAt,
+          completedAt: row.completedAt,
+          createdBy: {
+            id: row.creatorId,
+            name: row.creatorName,
+            customIdentifier: row.creatorCustomIdentifier
+          },
+          completedBy: row.completerId ? {
+            id: row.completerId,
+            name: row.completerName,
+            customIdentifier: row.completerCustomIdentifier
+          } : null,
+          assignedTo: row.assigneeId ? {
+            id: row.assigneeId,
+            name: row.assigneeName,
+            customIdentifier: row.assigneeCustomIdentifier
+          } : null
+        }));
+        
+        // Get events with creator details
+        const events = await db
+          .select({
+            id: groupEvents.id,
+            title: groupEvents.title,
+            description: groupEvents.description,
+            eventDate: groupEvents.eventDate,
+            createdByUserId: groupEvents.createdByUserId,
+            createdAt: groupEvents.createdAt,
+            createdBy: {
+              id: users.id,
+              name: users.name,
+              customIdentifier: users.customIdentifier
+            }
+          })
+          .from(groupEvents)
+          .innerJoin(users, eq(groupEvents.createdByUserId, users.id))
+          .where(eq(groupEvents.groupId, groupId))
+          .orderBy(groupEvents.eventDate);
+        
+        const dashboardData = {
+          group: group[0],
+          members,
+          todos,
+          events
+        };
+        
+        // Cache the result for 30 seconds
+        dashboardCache.set(cacheKey, dashboardData, 30000);
+        
+        res.json(dashboardData);
+      } catch (error) {
+        console.error('Error fetching group dashboard:', error);
+        res.status(500).json({ error: 'Failed to fetch group dashboard' });
+      }
+    });
+
+    // POST /api/groups/:id/todos - Add a todo to a group
+    app.post("/api/groups/:id/todos", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const groupId = parseInt(req.params.id);
+        const { title, description } = req.body;
+        
+        if (isNaN(groupId)) {
+          return res.status(400).json({ error: 'Invalid group ID' });
+        }
+        
+        if (!title || typeof title !== 'string' || title.trim().length === 0) {
+          return res.status(400).json({ error: 'Todo title is required' });
+        }
+        
+        if (title.trim().length > 100) {
+          return res.status(400).json({ error: 'Title must be 100 characters or less' });
+        }
+        
+        if (description && description.length > 300) {
+          return res.status(400).json({ error: 'Description must be 300 characters or less' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        // Verify user is a member of this group
+        const membership = await db
+          .select()
+          .from(groupMembers)
+          .where(and(
+            eq(groupMembers.groupId, groupId),
+            eq(groupMembers.userId, user.id)
+          ))
+          .limit(1);
+        
+        if (membership.length === 0) {
+          return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+        
+        // Get the current max position in the 'todo' status for this group
+        const maxPositionResult = await db
+          .select({
+            maxPosition: sql`COALESCE(MAX(position), -1)`
+          })
+          .from(groupTodos)
+          .where(and(
+            eq(groupTodos.groupId, groupId),
+            eq(groupTodos.status, 'todo')
+          ));
+        
+        const newPosition = (maxPositionResult[0]?.maxPosition as number || -1) + 1;
+        
+        // Create todo
+        const newTodo = await db
+          .insert(groupTodos)
+          .values({
+            groupId,
+            title: title.trim(),
+            description: description?.trim() || undefined,
+            createdByUserId: user.id,
+            position: newPosition
+          })
+          .returning();
+        
+        // Invalidate dashboard cache for this group
+        CacheInvalidation.invalidateTodos(groupId);
+        
+        res.status(201).json(newTodo[0]);
+      } catch (error) {
+        console.error('Error creating todo:', error);
+        res.status(500).json({ error: 'Failed to create todo' });
+      }
+    });
+
+    // PUT /api/groups/:id/todos/:todoId/status - Update todo status
+    app.put("/api/groups/:id/todos/:todoId/status", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const groupId = parseInt(req.params.id);
+        const todoId = parseInt(req.params.todoId);
+        const { status } = req.body;
+        
+        if (isNaN(groupId) || isNaN(todoId)) {
+          return res.status(400).json({ error: 'Invalid group ID or todo ID' });
+        }
+        
+        if (!status || !['todo', 'in_progress', 'review', 'done'].includes(status)) {
+          return res.status(400).json({ error: 'Valid status is required: todo, in_progress, review, or done' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        // Verify user is a member of this group
+        const membership = await db
+          .select()
+          .from(groupMembers)
+          .where(and(
+            eq(groupMembers.groupId, groupId),
+            eq(groupMembers.userId, user.id)
+          ))
+          .limit(1);
+        
+        if (membership.length === 0) {
+          return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+        
+        // Get current todo
+        const todo = await db
+          .select()
+          .from(groupTodos)
+          .where(and(
+            eq(groupTodos.id, todoId),
+            eq(groupTodos.groupId, groupId)
+          ))
+          .limit(1);
+        
+        if (todo.length === 0) {
+          return res.status(404).json({ error: 'Todo not found' });
+        }
+        
+        // Update status and related fields
+        const updateData: any = {
+          status,
+          completed: status === 'done' // Keep backward compatibility, done = completed
+        };
+        
+        if (status === 'done') {
+          updateData.completedByUserId = user.id;
+          updateData.completedAt = new Date();
+        } else {
+          updateData.completedByUserId = null;
+          updateData.completedAt = null;
+        }
+        
+        const updatedTodo = await db
+          .update(groupTodos)
+          .set(updateData)
+          .where(eq(groupTodos.id, todoId))
+          .returning();
+        
+        // Invalidate dashboard cache for this group
+        CacheInvalidation.invalidateTodos(groupId);
+        
+        res.json(updatedTodo[0]);
+      } catch (error) {
+        console.error('Error updating todo status:', error);
+        res.status(500).json({ error: 'Failed to update todo status' });
+      }
+    });
+
+    // PUT /api/groups/:id/todos/:todoId/assign - Assign todo to user
+    app.put("/api/groups/:id/todos/:todoId/assign", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const groupId = parseInt(req.params.id);
+        const todoId = parseInt(req.params.todoId);
+        const { assignedToUserId } = req.body;
+        
+        if (isNaN(groupId) || isNaN(todoId)) {
+          return res.status(400).json({ error: 'Invalid group ID or todo ID' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        // Verify user is a member of this group
+        const membership = await db
+          .select()
+          .from(groupMembers)
+          .where(and(
+            eq(groupMembers.groupId, groupId),
+            eq(groupMembers.userId, user.id)
+          ))
+          .limit(1);
+        
+        if (membership.length === 0) {
+          return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+        
+        // If assignedToUserId is provided, verify they are also a member of this group
+        if (assignedToUserId) {
+          const assigneeMembership = await db
+            .select()
+            .from(groupMembers)
+            .where(and(
+              eq(groupMembers.groupId, groupId),
+              eq(groupMembers.userId, assignedToUserId)
+            ))
+            .limit(1);
+          
+          if (assigneeMembership.length === 0) {
+            return res.status(400).json({ error: 'Assigned user is not a member of this group' });
+          }
+        }
+        
+        // Verify todo exists in this group
+        const todo = await db
+          .select()
+          .from(groupTodos)
+          .where(and(
+            eq(groupTodos.id, todoId),
+            eq(groupTodos.groupId, groupId)
+          ))
+          .limit(1);
+        
+        if (todo.length === 0) {
+          return res.status(404).json({ error: 'Todo not found' });
+        }
+        
+        // Update assignment (null to unassign)
+        const updatedTodo = await db
+          .update(groupTodos)
+          .set({ assignedToUserId: assignedToUserId || null })
+          .where(eq(groupTodos.id, todoId))
+          .returning();
+        
+        // Invalidate dashboard cache for this group
+        CacheInvalidation.invalidateTodos(groupId);
+        
+        res.json(updatedTodo[0]);
+      } catch (error) {
+        console.error('Error assigning todo:', error);
+        res.status(500).json({ error: 'Failed to assign todo' });
+      }
+    });
+
+    // DELETE /api/groups/:id/todos/:todoId - Delete a todo
+    app.delete("/api/groups/:id/todos/:todoId", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const groupId = parseInt(req.params.id);
+        const todoId = parseInt(req.params.todoId);
+        
+        if (isNaN(groupId) || isNaN(todoId)) {
+          return res.status(400).json({ error: 'Invalid group ID or todo ID' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        // Verify user is a member of this group
+        const membership = await db
+          .select()
+          .from(groupMembers)
+          .where(and(
+            eq(groupMembers.groupId, groupId),
+            eq(groupMembers.userId, user.id)
+          ))
+          .limit(1);
+        
+        if (membership.length === 0) {
+          return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+        
+        // Delete the todo
+        const deletedTodo = await db
+          .delete(groupTodos)
+          .where(and(
+            eq(groupTodos.id, todoId),
+            eq(groupTodos.groupId, groupId)
+          ))
+          .returning();
+        
+        if (deletedTodo.length === 0) {
+          return res.status(404).json({ error: 'Todo not found' });
+        }
+        
+        // Invalidate dashboard cache for this group
+        CacheInvalidation.invalidateTodos(groupId);
+        
+        res.json({ message: 'Todo deleted successfully' });
+      } catch (error) {
+        console.error('Error deleting todo:', error);
+        res.status(500).json({ error: 'Failed to delete todo' });
+      }
+    });
+
+    // PUT /api/groups/:id/todos/reorder - Reorder todos within the same status or move between statuses
+    app.put("/api/groups/:id/todos/reorder", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const groupId = parseInt(req.params.id);
+        const { taskId, newStatus, newPosition } = req.body;
+        
+        if (isNaN(groupId)) {
+          return res.status(400).json({ error: 'Invalid group ID' });
+        }
+        
+        if (!taskId || typeof newPosition !== 'number') {
+          return res.status(400).json({ error: 'Task ID and new position are required' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        // Verify user is a member of this group
+        const membership = await db
+          .select()
+          .from(groupMembers)
+          .where(and(
+            eq(groupMembers.groupId, groupId),
+            eq(groupMembers.userId, user.id)
+          ))
+          .limit(1);
+        
+        if (membership.length === 0) {
+          return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+        
+        // Get the current task
+        const currentTask = await db
+          .select()
+          .from(groupTodos)
+          .where(and(
+            eq(groupTodos.id, taskId),
+            eq(groupTodos.groupId, groupId)
+          ))
+          .limit(1);
+        
+        if (currentTask.length === 0) {
+          return res.status(404).json({ error: 'Task not found' });
+        }
+        
+        const task = currentTask[0];
+        const oldStatus = task.status;
+        const targetStatus = newStatus || oldStatus;
+        
+        // If moving to a different status, also update status fields
+        const statusUpdates: any = {};
+        if (newStatus && newStatus !== oldStatus) {
+          statusUpdates.status = newStatus;
+          if (newStatus === 'done') {
+            statusUpdates.completed = true;
+            statusUpdates.completedByUserId = user.id;
+            statusUpdates.completedAt = new Date();
+          } else {
+            statusUpdates.completed = false;
+            statusUpdates.completedByUserId = null;
+            statusUpdates.completedAt = null;
+          }
+        }
+        
+        // Start a transaction to ensure consistency
+        await db.transaction(async (tx) => {
+          // First, adjust positions of other tasks in the target status
+          if (targetStatus === oldStatus) {
+            // Moving within the same status - shift other tasks
+            if (newPosition > task.position) {
+              // Moving down - shift tasks up
+              await tx
+                .update(groupTodos)
+                .set({ position: sql`position - 1` })
+                .where(and(
+                  eq(groupTodos.groupId, groupId),
+                  eq(groupTodos.status, targetStatus),
+                  gt(groupTodos.position, task.position),
+                  lte(groupTodos.position, newPosition)
+                ));
+            } else {
+              // Moving up - shift tasks down
+              await tx
+                .update(groupTodos)
+                .set({ position: sql`position + 1` })
+                .where(and(
+                  eq(groupTodos.groupId, groupId),
+                  eq(groupTodos.status, targetStatus),
+                  gte(groupTodos.position, newPosition),
+                  lt(groupTodos.position, task.position)
+                ));
+            }
+          } else {
+            // Moving to different status
+            // Shift tasks up in the old status
+            await tx
+              .update(groupTodos)
+              .set({ position: sql`position - 1` })
+              .where(and(
+                eq(groupTodos.groupId, groupId),
+                eq(groupTodos.status, oldStatus),
+                gt(groupTodos.position, task.position)
+              ));
+            
+            // Shift tasks down in the new status
+            await tx
+              .update(groupTodos)
+              .set({ position: sql`position + 1` })
+              .where(and(
+                eq(groupTodos.groupId, groupId),
+                eq(groupTodos.status, targetStatus),
+                gte(groupTodos.position, newPosition)
+              ));
+          }
+          
+          // Update the task with new position and status
+          await tx
+            .update(groupTodos)
+            .set({
+              position: newPosition,
+              ...statusUpdates
+            })
+            .where(eq(groupTodos.id, taskId));
+        });
+        
+        // Invalidate dashboard cache for this group
+        CacheInvalidation.invalidateTodos(groupId);
+        
+        res.json({ message: 'Task reordered successfully' });
+      } catch (error) {
+        console.error('Error reordering task:', error);
+        res.status(500).json({ error: 'Failed to reorder task' });
+      }
+    });
+
+    // POST /api/groups/:id/events - Add an event to a group
+    app.post("/api/groups/:id/events", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const groupId = parseInt(req.params.id);
+        const { title, description, eventDate } = req.body;
+        
+        if (isNaN(groupId)) {
+          return res.status(400).json({ error: 'Invalid group ID' });
+        }
+        
+        if (!title || typeof title !== 'string' || title.trim().length === 0) {
+          return res.status(400).json({ error: 'Event title is required' });
+        }
+        
+        if (title.trim().length > 100) {
+          return res.status(400).json({ error: 'Title must be 100 characters or less' });
+        }
+        
+        if (!eventDate) {
+          return res.status(400).json({ error: 'Event date is required' });
+        }
+        
+        if (description && description.length > 300) {
+          return res.status(400).json({ error: 'Description must be 300 characters or less' });
+        }
+        
+        // Validate date
+        const eventDateTime = new Date(eventDate);
+        if (isNaN(eventDateTime.getTime())) {
+          return res.status(400).json({ error: 'Invalid event date format' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        // Verify user is a member of this group
+        const membership = await db
+          .select()
+          .from(groupMembers)
+          .where(and(
+            eq(groupMembers.groupId, groupId),
+            eq(groupMembers.userId, user.id)
+          ))
+          .limit(1);
+        
+        if (membership.length === 0) {
+          return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+        
+        // Create event
+        const newEvent = await db
+          .insert(groupEvents)
+          .values({
+            groupId,
+            title: title.trim(),
+            description: description?.trim() || undefined,
+            eventDate: eventDateTime,
+            createdByUserId: user.id
+          })
+          .returning();
+        
+        res.status(201).json(newEvent[0]);
+      } catch (error) {
+        console.error('Error creating event:', error);
+        res.status(500).json({ error: 'Failed to create event' });
       }
     });
 

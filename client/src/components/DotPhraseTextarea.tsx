@@ -81,18 +81,14 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const { data: customPhrases = [] } = useDotPhrases();
   const [isCalculationModalOpen, setIsCalculationModalOpen] = useState(false);
   const [widgets, setWidgets] = useState<Map<string, WidgetInstance>>(new Map());
-  const [showWidgetMode, setShowWidgetMode] = useState(false);
   const [activeWidgetModal, setActiveWidgetModal] = useState<{type: string, position: number} | null>(null);
   const [currentPosition, setCurrentPosition] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [dateValue, setDateValue] = useState<string>("");
   const [dropdownPos, setDropdownPos] = useState<{top: number, left: number}>({top: 0, left: 0});
   const [customInput, setCustomInput] = useState<string>("");
   const [customInputFocused, setCustomInputFocused] = useState(false);
   const customInputRef = useRef<HTMLInputElement>(null);
   const dropdownMouseDownRef = useRef(false);
-  const dateInputRef = useRef<HTMLInputElement>(null);
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [dateObj, setDateObj] = useState<Date | null>(null);
   const justExpandedToSmartOption = useRef(false);
   const [calendarIsOpen, setCalendarIsOpen] = useState(false);
@@ -105,7 +101,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     }
   }, [onRef]);
 
-
   // Create combined dot phrases object
   const getCombinedDotPhrases = (): Record<string, string> => {
     const combined: Record<string, string> = { ...(dotPhrases as Record<string, string>) };
@@ -114,7 +109,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     });
     return combined;
   };
-
 
   // Update smart options and widgets when value changes
   useEffect(() => {
@@ -164,13 +158,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       }
     }
     
-    // Show widget mode if we have widgets and no smart options
-    try {
-      const widgetMatches = parseWidgetSyntax(value);
-      setShowWidgetMode(widgetMatches.length > 0 && options.length === 0);
-    } catch (error) {
-      setShowWidgetMode(false);
-    }
   }, [value, activeSmartIdx, isCreationMode]);
 
   // Handle typing in textarea
@@ -257,49 +244,29 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       return;
     }
 
-    // Smart phrase dropdown navigation (but not in creation mode)
-    if (!isCreationMode && smartOptions.length > 0 && activeSmartIdx !== null) {
+    // Handle smart options navigation
+    if (smartOptions.length > 0 && activeSmartIdx !== null) {
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        if (smartOptions.length > 1) {
-          const prevIdx = (activeSmartIdx - 1 + smartOptions.length) % smartOptions.length;
-          setActiveSmartIdx(prevIdx);
-        } else {
-          const opt = smartOptions[activeSmartIdx];
-          opt.selectedIdx = (opt.selectedIdx - 1 + opt.options.length) % opt.options.length;
-          setSmartOptions([...smartOptions]);
-        }
+        const opt = smartOptions[activeSmartIdx];
+        opt.selectedIdx = (opt.selectedIdx - 1 + opt.options.length) % opt.options.length;
+        setSmartOptions([...smartOptions]);
+        return;
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        if (smartOptions.length > 1) {
-          const nextIdx = (activeSmartIdx + 1) % smartOptions.length;
-          setActiveSmartIdx(nextIdx);
-        } else {
-          const opt = smartOptions[activeSmartIdx];
-          opt.selectedIdx = (opt.selectedIdx + 1) % opt.options.length;
-          setSmartOptions([...smartOptions]);
-        }
-      } else if (e.key === 'Tab') {
+        const opt = smartOptions[activeSmartIdx];
+        opt.selectedIdx = (opt.selectedIdx + 1) % opt.options.length;
+        setSmartOptions([...smartOptions]);
+        return;
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        if (e.shiftKey) {
-          // Shift+Tab: go to previous smart option
-          const prevIdx = (activeSmartIdx - 1 + smartOptions.length) % smartOptions.length;
-          setActiveSmartIdx(prevIdx);
-        } else {
-          // Tab: confirm current and go to next smart option
-          handleSmartOptionSelect(activeSmartIdx, smartOptions[activeSmartIdx].selectedIdx || 0);
-          if (smartOptions.length > 1) {
-            const nextIdx = (activeSmartIdx + 1) % smartOptions.length;
-            setTimeout(() => setActiveSmartIdx(nextIdx), 0);
-          }
-        }
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        handleSmartOptionSelect(activeSmartIdx, smartOptions[activeSmartIdx].selectedIdx || 0);
+        handleSmartOptionSelect(activeSmartIdx, smartOptions[activeSmartIdx].selectedIdx);
+        return;
       } else if (e.key === 'Escape') {
+        e.preventDefault();
         setActiveSmartIdx(null);
+        return;
       }
-      return;
     }
     
     // Allow normal Enter behavior when no suggestions or smart options are active
@@ -591,6 +558,13 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     setTimeout(() => {
       textarea.selectionStart = newPosition;
       textarea.selectionEnd = newPosition;
+      
+      // Check for remaining smart options and auto-show popup
+      const remainingSmartOptions = parseSmartOptions(newValue);
+      if (remainingSmartOptions.length > 0) {
+        setSmartOptions(remainingSmartOptions);
+        setActiveSmartIdx(0);
+      }
     }, 0);
   }, [activeWidgetModal, value, onChange]);
 
@@ -613,91 +587,94 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     }
   }, [isCalculationModalOpen]);
 
+  // Handle blur to prevent closing dropdown during interaction
+  const handleBlur = () => {
+    setTimeout(() => {
+      if (!dropdownMouseDownRef.current && !(activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options?.includes('DATE') && calendarIsOpen)) {
+        setActiveSmartIdx(null);
+        setShowSuggestions(false);
+        setCurrentDot(null);
+      }
+      dropdownMouseDownRef.current = false;
+    }, 50);
+  };
+
+  // Update dropdown position when smart option is active
   useEffect(() => {
-    if (!isCreationMode && activeSmartIdx !== null && textareaRef.current && smartOptions[activeSmartIdx]) {
+    if (activeSmartIdx !== null && textareaRef.current && smartOptions[activeSmartIdx]) {
       const opt = smartOptions[activeSmartIdx];
       const caret = getCaretCoordinates(textareaRef.current, opt.start);
       const rect = textareaRef.current.getBoundingClientRect();
       setDropdownPos({
-        top: rect.top + caret.top - textareaRef.current.scrollTop + 28, // 28px below caret
+        top: rect.top + caret.top - textareaRef.current.scrollTop + 28,
         left: rect.left + caret.left - textareaRef.current.scrollLeft + 8
       });
     }
-  }, [activeSmartIdx, smartOptions, value, isCreationMode]);
+  }, [activeSmartIdx, smartOptions, value]);
 
-  // Open the date picker automatically and robustly when the dropdown appears for a DATE smart option (but not in creation mode)
+  // Reset date object for DATE options
   useEffect(() => {
     if (
-      !isCreationMode &&
       activeSmartIdx !== null &&
       smartOptions[activeSmartIdx] &&
       smartOptions[activeSmartIdx].options[0] === 'DATE'
     ) {
-      setDatePickerOpen(true);
       setDateObj(null);
-      setDateValue("");
-    } else {
-      setDatePickerOpen(false);
     }
-  }, [activeSmartIdx, smartOptions, isCreationMode]);
+  }, [activeSmartIdx, smartOptions]);
 
-  // Prevent blur from closing dropdown when interacting with date picker
-  const handleBlur = () => {
-    setTimeout(() => {
-      if (isCreationMode || (!dropdownMouseDownRef.current && !(activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options[0] === 'DATE' && (datePickerOpen || calendarIsOpen)))) {
-        setActiveSmartIdx(null);
-        setShowSuggestions(false);
-      }
-      dropdownMouseDownRef.current = false;
-      if (onBlur) onBlur();
-    }, 50);
-  };
-
-  // Handle keyboard navigation in dropdown
+  // Auto-activate smart options when expanded
   useEffect(() => {
-    if (isCreationMode || activeSmartIdx === null || !smartOptions[activeSmartIdx]) return;
+    if (justExpandedToSmartOption.current && smartOptions.length > 0) {
+      setActiveSmartIdx(0);
+      justExpandedToSmartOption.current = false;
+    }
+  }, [smartOptions]);
+
+  // Auto-open dropdown for single smart option covering whole textarea
+  useEffect(() => {
+    if (
+      smartOptions.length === 1 &&
+      smartOptions[0].start === 0 &&
+      smartOptions[0].end === value.length &&
+      value.trim().startsWith('[[') &&
+      value.trim().endsWith(']]')
+    ) {
+      if (activeSmartIdx !== 0) setActiveSmartIdx(0);
+      if (smartOptions[0].options[0] === 'DATE') {
+        setCalendarIsOpen(true);
+      }
+    }
+  }, [value, smartOptions]);
+
+  // Enhanced keyboard navigation for dropdown
+  useEffect(() => {
+    if (activeSmartIdx === null || !smartOptions[activeSmartIdx]) return;
     const handleDropdownKeyDown = (e: KeyboardEvent) => {
       if (activeSmartIdx === null) return;
       const opts = smartOptions[activeSmartIdx].options;
       const numOptions = opts.length;
       const isDate = opts[0] === 'DATE';
-      if (isDate) return; // Let date picker handle its own keys
       let selIdx = smartOptions[activeSmartIdx].selectedIdx ?? 0;
-      if (e.key === 'ArrowDown') {
+      if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        if (customInputFocused) {
-          // wrap to first option
-          setCustomInputFocused(false);
-          updateSmartOptionsIdx(activeSmartIdx, 0);
-        } else if (selIdx < numOptions - 1) {
-          updateSmartOptionsIdx(activeSmartIdx, selIdx + 1);
-        } else {
-          // move to custom input
-          setCustomInputFocused(true);
-        }
-      } else if (e.key === 'ArrowUp') {
+        // Move to previous smart option with looping
+        setActiveSmartIdx((activeSmartIdx - 1 + smartOptions.length) % smartOptions.length);
+      } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        if (customInputFocused) {
-          // move to last option
-          setCustomInputFocused(false);
-          updateSmartOptionsIdx(activeSmartIdx, numOptions - 1);
-        } else if (selIdx > 0) {
-          updateSmartOptionsIdx(activeSmartIdx, selIdx - 1);
-        } else {
-          // move to custom input
-          setCustomInputFocused(true);
-        }
-      } else if (e.key === 'Enter') {
+        // Move to next smart option with looping
+        setActiveSmartIdx((activeSmartIdx + 1) % smartOptions.length);
+      } else if (e.key === 'ArrowDown' && !isDate) {
         e.preventDefault();
-        if (customInputFocused) {
-          if (customInput.trim()) {
-            handleCustomOptionSelect(activeSmartIdx, customInput.trim());
-            setCustomInput("");
-            setCustomInputFocused(false);
-          }
-        } else {
-          handleSmartOptionSelect(activeSmartIdx, selIdx);
-        }
+        // Cycle to next option within the current smart option (skip for dates)
+        updateSmartOptionsIdx(activeSmartIdx, (selIdx + 1) % numOptions);
+      } else if (e.key === 'ArrowUp' && !isDate) {
+        e.preventDefault();
+        // Cycle to previous option within the current smart option (skip for dates)
+        updateSmartOptionsIdx(activeSmartIdx, (selIdx - 1 + numOptions) % numOptions);
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        handleSmartOptionSelect(activeSmartIdx, selIdx);
       } else if (e.key === 'Escape') {
         setActiveSmartIdx(null);
         setCustomInputFocused(false);
@@ -731,7 +708,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     ) {
       if (activeSmartIdx !== 0) setActiveSmartIdx(0);
       if (smartOptions[0].options[0] === 'DATE') {
-        setDatePickerOpen(true);
         setCalendarIsOpen(true);
       }
     }
@@ -750,6 +726,22 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         setActiveSmartIdx(index);
       }
     });
+
+    // Check if click is inside a widget placeholder
+    const widgetRegex = /\[\[WIDGET:([a-zA-Z0-9_-]+):([a-zA-Z0-9_-]+)\]\]/g;
+    let match;
+    while ((match = widgetRegex.exec(value))) {
+      const start = match.index;
+      const end = match.index + match[0].length;
+      if (cursor >= start && cursor <= end) {
+        setActiveWidgetModal({
+          type: match[1],
+          position: start
+        });
+        setActiveSmartIdx(null);
+        break;
+      }
+    }
   };
 
   // Always render the textarea, but overlay smart options when needed
@@ -784,73 +776,111 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
           onMouseDown={() => { dropdownMouseDownRef.current = true; }}
           onMouseUp={() => { dropdownMouseDownRef.current = false; }}
         >
-          {suggestions.map((s, idx) => {
-            const isCustom = customPhrases.some(p => p.trigger === s);
-            const customPhrase = customPhrases.find(p => p.trigger === s);
-            const combinedPhrases = getCombinedDotPhrases();
-            const content = combinedPhrases[s] || '';
-            const preview = content.split('\n')[0] || '';
-            
-            return (
-              <div
-                key={s + idx}
-                className={`px-3 py-2 cursor-pointer hover:bg-blue-50 ${
-                  idx === selectedSuggestion ? 'bg-blue-100' : ''
-                }`}
-                onClick={e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleSuggestionClick(idx);
-                }}
-                onPointerDown={e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onMouseDown={e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-              >
-                <div className="font-mono text-sm">{s}</div>
-                <div className="text-xs text-gray-500 truncate">
-                  {customPhrase?.description || preview}
-                </div>
+          {suggestions.map((suggestion, index) => (
+            <div
+              key={suggestion}
+              className={`px-3 py-2 cursor-pointer hover:bg-blue-50 ${
+                index === selectedSuggestion ? 'bg-blue-100' : ''
+              }`}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                dropdownMouseDownRef.current = true;
+                handleSuggestionClick(index);
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                dropdownMouseDownRef.current = true;
+              }}
+            >
+              <div className="font-mono text-sm">{suggestion}</div>
+              <div className="text-xs text-gray-500 truncate">
+                {getCombinedDotPhrases()[suggestion]?.split('\n')[0] || ''}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
-
+      
       {/* Smart Options Dropdown */}
-      {!isCreationMode && activeSmartIdx !== null && smartOptions[activeSmartIdx] && (
+      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && (
         <div
-          className="fixed z-30 bg-white/90 border border-blue-200 rounded shadow-lg p-1 text-sm"
-          style={{ minWidth: 120, maxWidth: 220, top: dropdownPos.top, left: dropdownPos.left }}
+          className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-lg min-w-48"
+          style={{
+            top: dropdownPos.top,
+            left: dropdownPos.left,
+          }}
+          onPointerDown={() => { dropdownMouseDownRef.current = true; }}
+          onPointerUp={() => { dropdownMouseDownRef.current = false; }}
           onMouseDown={() => { dropdownMouseDownRef.current = true; }}
+          onMouseUp={() => { dropdownMouseDownRef.current = false; }}
         >
-          {/* Multiple options indicator */}
-          {smartOptions.length > 1 && (
-            <div className="text-xs text-gray-500 mb-1 px-1">
-              {activeSmartIdx + 1}/{smartOptions.length} • ←→ to cycle
+          {/* Smart Options Counter */}
+          <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 rounded-t-lg">
+            <div className="text-xs text-gray-600 text-center font-medium">
+              Smart Option {activeSmartIdx + 1}/{smartOptions.length}
+            </div>
+          </div>
+          {/* Date Picker for DATE options */}
+          {(activeSmartIdx !== null && smartOptions[activeSmartIdx]?.options?.includes('DATE')) && (
+            <div className="p-3">
+              <div className="text-sm font-medium text-gray-700 mb-2">Select Date:</div>
+              <DatePicker
+                selected={dateObj}
+                onChange={(date) => {
+                  setDateObj(date);
+                  if (date && activeSmartIdx !== null) {
+                    const formattedDate = date.toLocaleDateString();
+                    // Replace the DATE placeholder with the actual date
+                    const before = value.slice(0, smartOptions[activeSmartIdx].start);
+                    const after = value.slice(smartOptions[activeSmartIdx].end);
+                    const newValue = before + formattedDate + after;
+                    onChange(newValue);
+                    
+                    // Close the smart options dropdown
+                    setTimeout(() => {
+                      const newOptions = parseSmartOptions(newValue);
+                      if (newOptions.length > 0) {
+                        setActiveSmartIdx(0);
+                      } else {
+                        setActiveSmartIdx(null);
+                      }
+                    }, 0);
+                  }
+                }}
+                inline
+                onCalendarOpen={() => setCalendarIsOpen(true)}
+                onCalendarClose={() => setCalendarIsOpen(false)}
+                dateFormat="MM/dd/yyyy"
+                placeholderText="Select date"
+                className="w-full"
+              />
+              <div className="flex gap-2 mt-1">
+                <button
+                  className="text-xs text-blue-700 hover:underline"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    const dateStr = dateObj ? dateObj.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+                    handleCustomOptionSelect(activeSmartIdx, dateStr);
+                    setCalendarIsOpen(false);
+                  }}
+                >
+                  Insert
+                </button>
+                <button
+                  className="text-xs text-red-600 hover:underline"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleCancelOption(activeSmartIdx);
+                    setCalendarIsOpen(false);
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
             </div>
           )}
-          {/* Pointer triangle */}
-          <div
-            style={{
-              position: 'absolute',
-              top: -8,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: 0,
-              height: 0,
-              borderLeft: '8px solid transparent',
-              borderRight: '8px solid transparent',
-              borderBottom: '8px solid #bfdbfe', // blue-200
-              zIndex: 31,
-            }}
-          />
-          {/* Dropdown content */}
-          {smartOptions[activeSmartIdx].isWidget ? (
+          
+          {smartOptions[activeSmartIdx].options[0] !== 'DATE' && smartOptions[activeSmartIdx].isWidget && (
             <div className="flex flex-col items-center gap-2 p-2">
               <div className="text-xs text-gray-600 text-center">
                 {smartOptions[activeSmartIdx].widgetType?.charAt(0).toUpperCase() + smartOptions[activeSmartIdx].widgetType?.slice(1)} Widget
@@ -874,77 +904,42 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
                 Remove
               </button>
             </div>
-          ) : smartOptions[activeSmartIdx].options[0] === 'DATE' ? (
-            <div className="flex flex-col items-start gap-1">
-              <label className="text-xs text-gray-500 mb-1">Select date:</label>
-              <DatePicker
-                selected={dateObj}
-                onChange={date => {
-                  setDateObj(date);
-                  setDateValue(date ? date.toISOString().slice(0, 10) : "");
-                  setDatePickerOpen(false);
-                  setCalendarIsOpen(false);
-                  if (date) {
-                    handleCustomOptionSelect(activeSmartIdx, date.toISOString().slice(0, 10));
-                    setDateValue("");
-                  }
-                }}
-                onCalendarClose={() => setCalendarIsOpen(false)}
-                onCalendarOpen={() => setCalendarIsOpen(true)}
-                open={datePickerOpen}
-                onFocus={() => { setDatePickerOpen(true); setCalendarIsOpen(true); }}
-                dateFormat="yyyy-MM-dd"
-                className="border px-2 py-1 rounded text-sm"
-                autoFocus
-                placeholderText="YYYY-MM-DD"
-                todayButton="Today"
-                showPopperArrow={false}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const dateStr = dateObj ? dateObj.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
-                    handleCustomOptionSelect(activeSmartIdx, dateStr);
-                    setDateValue("");
-                    setDatePickerOpen(false);
-                    setCalendarIsOpen(false);
-                  } else if (e.key === 'Escape') {
-                    setActiveSmartIdx(null);
-                    setDateValue("");
-                    setDatePickerOpen(false);
-                    setCalendarIsOpen(false);
-                  }
-                }}
-              />
-              <div className="flex gap-2 mt-1">
+          )}
+          
+          {smartOptions[activeSmartIdx].options[0] !== 'DATE' && !smartOptions[activeSmartIdx].isWidget && (
+            <>
+              {/* Arrow buttons for cycling options */}
+              <div className="flex items-center justify-center gap-2 mb-2">
                 <button
-                  className="text-xs text-blue-700 hover:underline"
+                  className="px-2 py-1 text-lg rounded bg-gray-100 hover:bg-gray-200"
                   onMouseDown={e => {
                     e.preventDefault();
-                    const dateStr = dateObj ? dateObj.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
-                    handleCustomOptionSelect(activeSmartIdx, dateStr);
-                    setDateValue("");
-                    setDatePickerOpen(false);
-                    setCalendarIsOpen(false);
+                    const selIdx = smartOptions[activeSmartIdx].selectedIdx ?? 0;
+                    const numOptions = smartOptions[activeSmartIdx].options.length;
+                    const prevIdx = (selIdx - 1 + numOptions) % numOptions;
+                    updateSmartOptionsIdx(activeSmartIdx, prevIdx);
                   }}
+                  aria-label="Previous option"
                 >
-                  Insert
+                  &#8592;
                 </button>
+                <span className="text-xs text-gray-500">
+                  {((smartOptions[activeSmartIdx].selectedIdx ?? 0) + 1)} / {smartOptions[activeSmartIdx].options.length}
+                </span>
                 <button
-                  className="text-xs text-red-600 hover:underline"
+                  className="px-2 py-1 text-lg rounded bg-gray-100 hover:bg-gray-200"
                   onMouseDown={e => {
                     e.preventDefault();
-                    handleCancelOption(activeSmartIdx);
-                    setDateValue("");
-                    setDatePickerOpen(false);
-                    setCalendarIsOpen(false);
+                    const selIdx = smartOptions[activeSmartIdx].selectedIdx ?? 0;
+                    const numOptions = smartOptions[activeSmartIdx].options.length;
+                    const nextIdx = (selIdx + 1) % numOptions;
+                    updateSmartOptionsIdx(activeSmartIdx, nextIdx);
                   }}
+                  aria-label="Next option"
                 >
-                  Remove
+                  &#8594;
                 </button>
               </div>
-            </div>
-          ) : (
-            <>
               {smartOptions[activeSmartIdx].options.map((opt: string, idx: number) => (
                 <div
                   key={opt + idx}
@@ -1009,52 +1004,78 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         </div>
       )}
 
-      {/* Widget Rendering */}
-      {showWidgetMode && widgets.size > 0 && (
-        <div className="mt-4 space-y-4">
-          {Array.from(widgets.entries()).map(([widgetId, widget]) => (
-            <WidgetWrapper
-              key={widgetId}
-              widget={widget}
-              onDataChange={(data) => handleWidgetDataChange(widgetId, data)}
-              mode="interactive"
-              isReadOnly={disabled}
-              showControls={true}
-              className="border border-purple-200 bg-purple-50"
-            />
-          ))}
-          <div className="flex justify-end gap-2">
-            <button
-              className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600"
-              onClick={() => {
-                const textOutput = generateTextOutput();
-                navigator.clipboard.writeText(textOutput);
-                // Could add a toast notification here
-              }}
-            >
-              Copy as Text
-            </button>
-            <button
-              className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-              onClick={() => setShowWidgetMode(false)}
-            >
-              Hide Widgets
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Show Widgets Button */}
-      {!showWidgetMode && widgets.size > 0 && (
-        <div className="mt-2">
-          <button
-            className="px-3 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600"
-            onClick={() => setShowWidgetMode(true)}
+      {/* Inline Smart Option Selector Popup */}
+      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && (() => {
+        const opt = smartOptions[activeSmartIdx];
+        // Only show for any smart option (multi, widget, date)
+        const caretTop = dropdownPos.top - 48; // 48px above caret
+        const caretLeft = dropdownPos.left;
+        return (
+          <div
+            className="fixed z-50 bg-white border border-blue-200 rounded shadow-lg px-2 py-1 flex items-center gap-2"
+            style={{
+              top: caretTop,
+              left: caretLeft,
+              minWidth: 120,
+              maxWidth: 320,
+              pointerEvents: 'auto',
+            }}
           >
-            Show Widgets ({widgets.size})
-          </button>
-        </div>
-      )}
+            {opt.options.map((option: string, idx: number) => {
+              // Widget option
+              if (opt.isWidget || option.startsWith('WIDGET:')) {
+                const widgetType = opt.widgetType || option.split(':')[1];
+                return (
+                  <button
+                    key={option + idx}
+                    className={`px-2 py-1 rounded border text-xs font-mono ${opt.selectedIdx === idx ? 'bg-purple-100 border-purple-400 text-purple-800' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-purple-50`}
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      setActiveWidgetModal({ type: widgetType, position: opt.start });
+                      setActiveSmartIdx(null);
+                    }}
+                  >
+                    {widgetType.charAt(0).toUpperCase() + widgetType.slice(1)} Widget
+                  </button>
+                );
+              }
+              // Date picker option
+              if (option === 'DATE') {
+                return (
+                  <button
+                    key={option + idx}
+                    className={`px-2 py-1 rounded border text-xs font-mono ${opt.selectedIdx === idx ? 'bg-blue-100 border-blue-400 text-blue-800' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-blue-50`}
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      setActiveSmartIdx(activeSmartIdx);
+                      updateSmartOptionsIdx(activeSmartIdx, idx);
+                    }}
+                  >
+                    📅 Date
+                  </button>
+                );
+              }
+              // Regular option
+              return (
+                <button
+                  key={option + idx}
+                  className={`px-2 py-1 rounded border text-xs font-mono ${opt.selectedIdx === idx ? 'bg-green-100 border-green-400 text-green-800' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-green-50`}
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleSmartOptionSelect(activeSmartIdx, idx);
+                  }}
+                >
+                  {option}
+                </button>
+              );
+            })}
+            <span className="text-xs text-gray-500 ml-2">
+              {((opt.selectedIdx ?? 0) + 1)} / {opt.options.length}
+            </span>
+          </div>
+        );
+      })()}
+
 
       <CalculationModal
         isOpen={isCalculationModalOpen}
@@ -1065,10 +1086,19 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       <WidgetModal
         isOpen={activeWidgetModal !== null}
         widgetType={activeWidgetModal?.type || ''}
-        onClose={() => setActiveWidgetModal(null)}
+        onClose={() => {
+          setActiveWidgetModal(null);
+          // Check for remaining smart options when widget is closed without selection
+          setTimeout(() => {
+            const remainingSmartOptions = parseSmartOptions(value);
+            if (remainingSmartOptions.length > 0) {
+              setSmartOptions(remainingSmartOptions);
+              setActiveSmartIdx(0);
+            }
+          }, 100);
+        }}
         onResult={handleWidgetResult}
       />
-
     </div>
   );
 };

@@ -6,6 +6,7 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  name: text("name"), // User's display name from Cognito
   customIdentifier: text("custom_identifier").unique(), // 4 letters + 2 numbers format
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -48,6 +49,50 @@ export const userPresets = pgTable("user_presets", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Team Groups tables
+export const teamGroups = pgTable("team_groups", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  inviteCode: text("invite_code").notNull().unique(), // 6-character invite code
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(), // Auto-expire after 7 days
+});
+
+export const groupMembers = pgTable("group_members", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").references(() => teamGroups.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  role: text("role").notNull().default("member"), // "creator" or "member"
+  joinedAt: timestamp("joined_at").defaultNow(),
+});
+
+export const groupTodos = pgTable("group_todos", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").references(() => teamGroups.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  status: text("status").default("todo").notNull(), // 'todo' | 'in_progress' | 'review' | 'done'
+  position: integer("position").default(0).notNull(), // Position within the status column for ordering
+  assignedToUserId: integer("assigned_to_user_id").references(() => users.id),
+  completed: boolean("completed").default(false), // Keep for backward compatibility during migration
+  completedByUserId: integer("completed_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const groupEvents = pgTable("group_events", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").references(() => teamGroups.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  eventDate: timestamp("event_date").notNull(),
+  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -67,6 +112,36 @@ export const insertUserPresetSchema = createInsertSchema(userPresets).pick({
   title: true,
   isFavorite: true,
   symptoms: true,
+});
+
+// Team Groups insert schemas
+export const insertTeamGroupSchema = createInsertSchema(teamGroups).pick({
+  name: true,
+  description: true,
+  createdByUserId: true,
+  inviteCode: true,
+  expiresAt: true,
+});
+
+export const insertGroupMemberSchema = createInsertSchema(groupMembers).pick({
+  groupId: true,
+  userId: true,
+  role: true,
+});
+
+export const insertGroupTodoSchema = createInsertSchema(groupTodos).pick({
+  groupId: true,
+  title: true,
+  description: true,
+  createdByUserId: true,
+});
+
+export const insertGroupEventSchema = createInsertSchema(groupEvents).pick({
+  groupId: true,
+  title: true,
+  description: true,
+  eventDate: true,
+  createdByUserId: true,
 });
 
 export const insertRosNoteSchema = createInsertSchema(rosNotes).pick({
@@ -104,3 +179,13 @@ export type InsertUserPreset = z.infer<typeof insertUserPresetSchema>;
 export type UserPreset = typeof userPresets.$inferSelect;
 export type InsertRosNote = z.infer<typeof insertRosNoteSchema>;
 export type RosNote = typeof rosNotes.$inferSelect;
+
+// Team Groups types
+export type InsertTeamGroup = z.infer<typeof insertTeamGroupSchema>;
+export type TeamGroup = typeof teamGroups.$inferSelect;
+export type InsertGroupMember = z.infer<typeof insertGroupMemberSchema>;
+export type GroupMember = typeof groupMembers.$inferSelect;
+export type InsertGroupTodo = z.infer<typeof insertGroupTodoSchema>;
+export type GroupTodo = typeof groupTodos.$inferSelect;
+export type InsertGroupEvent = z.infer<typeof insertGroupEventSchema>;
+export type GroupEvent = typeof groupEvents.$inferSelect;
