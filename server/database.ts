@@ -6,26 +6,35 @@ import { eq, desc, and } from 'drizzle-orm';
 // Railway provides DATABASE_URL environment variable
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
-if (!connectionString) {
-  throw new Error('DATABASE_URL environment variable is required');
+let db: any = null;
+
+if (connectionString) {
+  try {
+    // Validate connection string format
+    if (connectionString.startsWith('postgresql://') || connectionString.startsWith('postgres://')) {
+      // Create postgres connection with security settings
+      const client = postgres(connectionString, {
+        max: process.env.NODE_ENV === 'production' ? 10 : 5,
+        ssl: process.env.NODE_ENV === 'production' ? 'require' : false,
+        idle_timeout: 20,
+        connect_timeout: 10,
+        prepare: false, // Disable prepared statements for security
+      });
+
+      // Create drizzle database instance
+      db = drizzle(client);
+      console.log('✅ Database connection initialized');
+    } else {
+      console.warn('⚠️  Invalid DATABASE_URL format, database features disabled');
+    }
+  } catch (error) {
+    console.warn('⚠️  Database connection failed, database features disabled:', error);
+  }
+} else {
+  console.warn('⚠️  DATABASE_URL not provided, database features disabled');
 }
 
-// Validate connection string format
-if (!connectionString.startsWith('postgresql://') && !connectionString.startsWith('postgres://')) {
-  throw new Error('Invalid DATABASE_URL format');
-}
-
-// Create postgres connection with security settings
-const client = postgres(connectionString, {
-  max: process.env.NODE_ENV === 'production' ? 10 : 5, // Increased from 1 to 5 for development
-  ssl: process.env.NODE_ENV === 'production' ? 'require' : false,
-  idle_timeout: 20,
-  connect_timeout: 10,
-  prepare: false, // Disable prepared statements for security
-});
-
-// Create drizzle database instance
-export const db = drizzle(client);
+export { db };
 
 // Export tables for easy access
 export { users, rosNotes, dotPhrases, userPresets };
@@ -33,6 +42,7 @@ export { users, rosNotes, dotPhrases, userPresets };
 // Database operations
 export const userQueries = {
   async getUserById(id: number) {
+    if (!db) throw new Error('Database not available');
     if (!Number.isInteger(id) || id <= 0) {
       throw new Error('Invalid user ID');
     }
@@ -41,6 +51,7 @@ export const userQueries = {
   },
 
   async getUserByUsername(username: string) {
+    if (!db) throw new Error('Database not available');
     if (!username || typeof username !== 'string' || username.length > 50) {
       throw new Error('Invalid username');
     }
@@ -49,6 +60,7 @@ export const userQueries = {
   },
 
   async createUser(userData: { username: string; password: string }) {
+    if (!db) throw new Error('Database not available');
     const result = await db.insert(users).values(userData).returning();
     return result[0];
   },

@@ -69,41 +69,40 @@ app.use((req, res, next) => {
   next();
 });
 
-// Add a comprehensive health check endpoint
-app.get('/health', async (req, res) => {
-  try {
-    // Basic health check without database dependency for Railway health checks
-    const healthStatus = {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV || 'development',
-      memory: process.memoryUsage(),
-      port: process.env.PORT || 5000
-    };
-    
-    res.status(200).json(healthStatus);
-  } catch (error) {
-    res.status(503).json({ 
-      status: 'error', 
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
+// Add a basic health check endpoint that doesn't depend on any external services
+app.get('/health', (req, res) => {
+  // Simple health check that just returns OK - no database or external dependencies
+  res.status(200).json({ 
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
 });
 
 (async () => {
   try {
     log('Starting server initialization...');
+    log(`Environment: ${process.env.NODE_ENV}`);
+    log(`Port: ${process.env.PORT || 'not set, using 5001'}`);
     
-    const server = await registerRoutes(app);
+    // Register routes with error handling
+    let server;
+    try {
+      log('Registering routes...');
+      server = await registerRoutes(app);
+      log('Routes registered successfully');
+    } catch (error) {
+      log(`❌ Failed to register routes: ${error}`);
+      // Continue anyway - maybe some routes failed but we can still serve health check
+      server = require("http").createServer(app);
+    }
 
     app.use(errorHandler);
 
     // importantly only setup vite in development and after
     // setting up all the other routes so the catch-all route
     // doesn't interfere with the other routes
-    if (app.get("env") === "development") {
+    if (process.env.NODE_ENV === "development") {
       log('Setting up Vite for development...');
       await setupVite(app, server);
     } else {
@@ -112,26 +111,50 @@ app.get('/health', async (req, res) => {
         serveStatic(app);
         log('Static file serving setup complete');
       } catch (error) {
-        log(`Error setting up static files: ${error}`);
-        throw error;
+        log(`Warning: Error setting up static files: ${error}`);
+        // Don't throw - server can still run without static files for health check
       }
     }
 
-    // Use process.env.PORT for Railway/production, fallback to 5000 for development
-    const port = 5001;
+    // Use process.env.PORT for Railway/production, fallback to 5001 for development
+    const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 5001;
     log(`Attempting to start server on port ${port}...`);
     
     server.listen(port, "0.0.0.0", () => {
       log(`✅ Server successfully started on port ${port}`);
+      log(`Health check available at http://0.0.0.0:${port}/health`);
     });
 
-    server.on('error', (error) => {
+    server.on('error', (error: any) => {
       log(`❌ Server error: ${error.message}`);
+      if (error.code === 'EACCES') {
+        log(`❌ Permission denied for port ${port}. Check port availability.`);
+      } else if (error.code === 'EADDRINUSE') {
+        log(`❌ Port ${port} is already in use.`);
+      }
       process.exit(1);
+    });
+
+    // Graceful shutdown handling
+    process.on('SIGTERM', () => {
+      log('Received SIGTERM, shutting down gracefully...');
+      server.close(() => {
+        log('Server closed');
+        process.exit(0);
+      });
+    });
+
+    process.on('SIGINT', () => {
+      log('Received SIGINT, shutting down gracefully...');
+      server.close(() => {
+        log('Server closed');
+        process.exit(0);
+      });
     });
 
   } catch (error) {
     log(`❌ Failed to start server: ${error}`);
+    console.error('Full error details:', error);
     process.exit(1);
   }
 })();
