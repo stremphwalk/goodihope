@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '@/contexts/AuthContext';
 import { Tabs } from '@/components/ui/tabs';
 import { DotPhraseTextarea } from './DotPhraseTextarea';
 import { SmartFunctionBuilder } from './SmartFunctionBuilder';
@@ -331,43 +331,47 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
       </Card>
 
       {/* Controls */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="flex-1">
-          <Input
-            placeholder={t('dotManager.searchPlaceholder')}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="flex flex-col gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <Input
+              placeholder={t('dotManager.searchPlaceholder')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <select
+            className="px-3 py-2 border border-gray-300 rounded-md min-w-[150px]"
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+          >
+            <option value="all">{t('dotManager.allCategories')}</option>
+            {categories.map(cat => (
+              <option key={cat} value={cat}>
+                {cat.charAt(0).toUpperCase() + cat.slice(1)}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          className="px-3 py-2 border border-gray-300 rounded-md"
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-        >
-          <option value="all">{t('dotManager.allCategories')}</option>
-          {categories.map(cat => (
-            <option key={cat} value={cat}>
-              {cat.charAt(0).toUpperCase() + cat.slice(1)}
-            </option>
-          ))}
-        </select>
-        <Button 
-          onClick={() => setImportModalOpen(true)}
-          variant="outline"
-          className="flex items-center gap-2"
-          disabled={isCreating || editingId !== null || loading}
-        >
-          <Download className="w-4 h-4" />
-          Import
-        </Button>
-        <Button 
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-2"
-          disabled={isCreating || editingId !== null || loading || createMutation.isPending}
-        >
-          <Plus className="w-4 h-4" />
-          {t('dotManager.newPhrase')}
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button 
+            onClick={() => setImportModalOpen(true)}
+            variant="outline"
+            className="flex items-center gap-2"
+            disabled={isCreating || editingId !== null || loading}
+          >
+            <Download className="w-4 h-4" />
+            Import
+          </Button>
+          <Button 
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-2"
+            disabled={isCreating || editingId !== null || loading || createMutation.isPending}
+          >
+            <Plus className="w-4 h-4" />
+            {t('dotManager.newPhrase')}
+          </Button>
+        </div>
       </div>
 
       {/* Loading State */}

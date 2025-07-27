@@ -7,7 +7,7 @@ import { WeeklyCalendar } from '@/components/WeeklyCalendar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, Plus, UserPlus, Clock, Calendar } from 'lucide-react';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface SidebarStateProps {
   selectedMenu: string;

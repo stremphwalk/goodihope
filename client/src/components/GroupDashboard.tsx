@@ -17,7 +17,7 @@ import {
   Play,
   Trash2
 } from 'lucide-react';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { AddTodoForm } from './AddTodoForm';
 import { AddEventForm } from './AddEventForm';

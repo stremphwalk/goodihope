@@ -1,5 +1,5 @@
-import { db } from "./database";
-import { teamGroups, groupMembers, users } from "../shared/schema";
+import { db } from "./database-neon.js";
+import { teamGroups, groupMembers, users } from "../shared/schema.js";
 import { eq, and, lt, gt } from "drizzle-orm";
 
 // Letters and numbers for invite codes (excluding similar looking characters)

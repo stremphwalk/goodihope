@@ -1,22 +1,28 @@
 import React from "react";
-import { useAuth } from "react-oidc-context";
+import { useAuth } from "@/contexts/AuthContext";
 import { User, LogOut } from "lucide-react";
 import { Button } from "./ui/button";
-import { Link } from 'wouter'; // Import for client-side navigation
+import { Link } from 'wouter';
+import toast from 'react-hot-toast';
 
 export function UserProfileSection() {
   const auth = useAuth();
 
-  const signOutRedirect = () => {
-    auth.signoutRedirect();
+  const handleSignOut = async () => {
+    try {
+      await auth.logout();
+      toast.success('Signed out successfully');
+    } catch (error) {
+      toast.error('Failed to sign out');
+    }
   };
 
   if (!auth.isAuthenticated || !auth.user) {
     return null;
   }
 
-  const userEmail = auth.user.profile.email || auth.user.profile.preferred_username || 'User';
-  const userFirstName = auth.user.profile.given_name || auth.user.profile.name?.split(' ')[0] || userEmail.split('@')[0] || 'User';
+  const userEmail = auth.user.email;
+  const userFirstName = auth.user.name?.split(' ')[0] || userEmail.split('@')[0] || 'User';
   const userInitials = userEmail
     .split('@')[0]
     .split('.')
@@ -51,7 +57,7 @@ export function UserProfileSection() {
       <Button
         variant="outline"
         size="sm"
-        onClick={signOutRedirect}
+        onClick={handleSignOut}
         className="w-full justify-start text-gray-700 hover:text-gray-900"
       >
         <LogOut className="w-4 h-4 mr-2" />

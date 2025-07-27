@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { searchMedications, getCommonDosages } from "./parseCSVMedications";
 import { extractLabValuesFromImage, extractMedicationsFromImage } from "./vision";
 import { sanitizeString, validateBase64Image, SECURITY_CONFIG } from "./security";
-import { db } from "./database";
+import { db } from "./database-neon";
 import { dotPhrases, users, userPresets, teamGroups, groupMembers, groupTodos, groupEvents } from "../shared/schema";
 import { eq, desc, and, ne, sql, gt, lt, gte, lte } from "drizzle-orm";
 import { checkJwt } from './auth';
@@ -37,61 +37,32 @@ const clearExpiredCache = () => {
 // Clear expired cache entries every minute
 setInterval(clearExpiredCache, 60 * 1000);
 
-// Function to get or create a user in your local database
+// Function to get user from Supabase auth - users are auto-created by trigger
 const getOrCreateUser = async (authPayload: any) => {
-  const cognitoSub = authPayload.sub;
+  const supabaseUserId = authPayload.sub; // This is the Supabase user UUID
   
   // Check cache first
-  const cached = userCache.get(cognitoSub);
+  const cached = userCache.get(supabaseUserId);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.user;
   }
 
-  let user = await db.select().from(users).where(eq(users.username, cognitoSub)).limit(1);
-
-  // Extract name from JWT token (common fields: name, given_name, family_name, preferred_username, email)
-  const userName = authPayload.name || 
-                   authPayload.preferred_username || 
-                   (authPayload.given_name && authPayload.family_name ? 
-                     `${authPayload.given_name} ${authPayload.family_name}` : null) ||
-                   authPayload.email?.split('@')[0] ||
-                   'Unknown User';
+  // Look up user by UUID (not email) since Supabase uses UUIDs as primary keys
+  let user = await db.select().from(users).where(eq(users.id, supabaseUserId)).limit(1);
 
   if (user.length === 0) {
-    // If user doesn't exist, create a new one with a custom identifier and name
-    try {
-      const customIdentifier = await generateUniqueCustomIdentifier();
-      const newUser = await db.insert(users).values({
-        username: cognitoSub,
-        password: 'cognito-user', // Password is required but not used for Cognito logins
-        name: userName,
-        customIdentifier: customIdentifier,
-      }).returning();
-      user = newUser;
-    } catch (error) {
-      console.error('Error creating user with custom identifier:', error);
-      // Fallback: create user without custom identifier
-      const newUser = await db.insert(users).values({
-        username: cognitoSub,
-        password: 'cognito-user',
-        name: userName,
-      }).returning();
-      user = newUser;
-    }
-  } else {
-    // Update existing user's name if it's not set or different
-    if (!user[0].name || user[0].name !== userName) {
-      const updatedUser = await db
-        .update(users)
-        .set({ name: userName })
-        .where(eq(users.id, user[0].id))
-        .returning();
-      user = updatedUser;
+    // User should have been created by the Supabase trigger, but if not found, wait and retry once
+    console.log('User not found immediately, waiting for trigger...');
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+    user = await db.select().from(users).where(eq(users.id, supabaseUserId)).limit(1);
+    
+    if (user.length === 0) {
+      throw new Error(`User not found in database. Supabase trigger may have failed for user ${supabaseUserId}`);
     }
   }
 
   // Cache the user
-  userCache.set(cognitoSub, { user: user[0], timestamp: Date.now() });
+  userCache.set(supabaseUserId, { user: user[0], timestamp: Date.now() });
   
   return user[0];
 };
@@ -611,7 +582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const targetUser = await db
           .select({
             id: users.id,
-            username: users.username,
+            email: users.email,
             customIdentifier: users.customIdentifier,
             createdAt: users.createdAt
           })
@@ -1205,7 +1176,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .orderBy(groupTodos.status, groupTodos.position);
 
         // Transform the flat result into the expected nested structure
-        const todos = todosWithUsers.map(row => ({
+        const todos = todosWithUsers.map((row: any) => ({
           id: row.todoId,
           title: row.title,
           description: row.description,
@@ -1626,7 +1597,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         // Start a transaction to ensure consistency
-        await db.transaction(async (tx) => {
+        await db.transaction(async (tx: any) => {
           // First, adjust positions of other tasks in the target status
           if (targetStatus === oldStatus) {
             // Moving within the same status - shift other tasks

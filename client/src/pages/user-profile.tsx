@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, LogOut, User } from 'lucide-react';
@@ -39,14 +39,11 @@ const UserProfilePage = ({ selectedMenu, setSelectedMenu, selectedSubOption, set
     }
 
     try {
-      // Extract from auth.user.profile (Cognito claims)
-      const userProfile = auth.user.profile;
-      const username = userProfile.sub || 'Unknown'; // Cognito sub as username
+      // Extract from auth.user (custom auth system)
+      const userProfile = auth.user;
+      const username = String(userProfile.id) || 'Unknown'; // Use user ID as username
       const email = userProfile.email || 'Not available';
-      const name =
-        userProfile.given_name ||
-        userProfile.name ||
-        (email.split('@')[0] || 'User'); // Fallback to derive from email if missing
+      const name = userProfile.name || (email.split('@')[0] || 'User'); // Fallback to derive from email if missing
 
       setProfileData({
         username,
@@ -67,9 +64,20 @@ const UserProfilePage = ({ selectedMenu, setSelectedMenu, selectedSubOption, set
     }
   }, [auth, toast]);
 
-  const handleLogout = () => {
-    // Reuse logic from UserProfileSection.tsx
-    auth.signoutRedirect();
+  const handleLogout = async () => {
+    try {
+      await auth.logout();
+      toast({
+        title: 'Success',
+        description: 'You have been signed out successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to sign out. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   if (loading) {

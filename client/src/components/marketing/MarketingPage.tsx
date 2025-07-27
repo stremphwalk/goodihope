@@ -32,7 +32,7 @@ import SecurityIcon from '@mui/icons-material/Security';
 import CloudSyncIcon from '@mui/icons-material/CloudSync';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '@/contexts/AuthContext';
 import ScreenshotCarousel from './ScreenshotCarousel';
 
 // ========================================
@@ -340,7 +340,7 @@ const Hero = () => {
     >
       <Container maxWidth="lg">
         <Grid container spacing={4} alignItems="center">
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Box sx={{ textAlign: { xs: 'center', md: 'left' } }}>
               <Chip
                 label={MARKETING_CONTENT.hero.badge}
@@ -403,7 +403,7 @@ const Hero = () => {
               </Stack>
             </Box>
           </Grid>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Box
               sx={{
                 position: 'relative',
@@ -472,7 +472,7 @@ const Features = () => {
   ];
   
   const features = MARKETING_CONTENT.features.items.map((item, index) => ({
-    icon: featureIcons[index] || <AutoAwesome />,
+    icon: featureIcons[index] || <AutoAwesomeIcon />,
     title: item.title,
     description: item.description,
   }));
@@ -491,7 +491,7 @@ const Features = () => {
 
         <Grid container spacing={4}>
           {features.map((feature, index) => (
-            <Grid item xs={12} sm={6} md={4} key={index}>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={index}>
               <Card
                 sx={{
                   height: '100%',
@@ -604,7 +604,7 @@ const Footer = () => {
     <Box sx={{ py: 6, bgcolor: 'grey.900', color: 'white' }}>
       <Container maxWidth="lg">
         <Grid container spacing={4}>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <LocalHospitalIcon sx={{ mr: 1 }} />
               <Typography variant="h6" sx={{ fontWeight: 700 }}>
@@ -615,9 +615,9 @@ const Footer = () => {
               {MARKETING_CONTENT.footer.description}
             </Typography>
           </Grid>
-          <Grid item xs={12} md={8}>
+          <Grid size={{ xs: 12, md: 8 }}>
             <Grid container spacing={4}>
-              <Grid item xs={6} md={3}>
+              <Grid size={{ xs: 6, md: 3 }}>
                 <Typography variant="h6" sx={{ mb: 2, fontSize: '1rem', fontWeight: 600 }}>
                   {MARKETING_CONTENT.footer.sections.product.title}
                 </Typography>
@@ -627,7 +627,7 @@ const Footer = () => {
                   ))}
                 </Stack>
               </Grid>
-              <Grid item xs={6} md={3}>
+              <Grid size={{ xs: 6, md: 3 }}>
                 <Typography variant="h6" sx={{ mb: 2, fontSize: '1rem', fontWeight: 600 }}>
                   {MARKETING_CONTENT.footer.sections.company.title}
                 </Typography>
@@ -637,7 +637,7 @@ const Footer = () => {
                   ))}
                 </Stack>
               </Grid>
-              <Grid item xs={6} md={3}>
+              <Grid size={{ xs: 6, md: 3 }}>
                 <Typography variant="h6" sx={{ mb: 2, fontSize: '1rem', fontWeight: 600 }}>
                   {MARKETING_CONTENT.footer.sections.support.title}
                 </Typography>

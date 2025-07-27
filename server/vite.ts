@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
-import viteConfig from "../vite.config";
+import viteConfigFunction from "../vite.config";
 import { nanoid } from "nanoid";
 
 // Fix for production build - get current directory
@@ -31,14 +31,18 @@ export async function setupVite(app: Express, server: Server) {
     allowedHosts: ['localhost'],
   };
 
+  // Get the vite config by calling the function with development mode
+  const viteConfig = viteConfigFunction({ mode: 'development', command: 'serve' });
+  
   const vite = await createViteServer({
     ...viteConfig,
     configFile: false,
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
+        log(`[vite] Error: ${msg}`, "vite");
         viteLogger.error(msg, options);
-        process.exit(1);
+        // Don't exit the process on Vite errors - let the server continue running
       },
     },
     server: serverOptions,

@@ -2,25 +2,28 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import { AuthProvider } from "react-oidc-context";
+import { AuthProvider } from "./contexts/AuthContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
 
-const cognitoAuthConfig = {
-  authority: "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_8JHg800Rm",
-  client_id: "2ajlh70hd6rsk8hoc9ldvqnbtr",
-  redirect_uri: window.location.hostname.includes('github.dev') 
-    ? `https://${window.location.hostname}` 
-    : window.location.origin,
-  post_logout_redirect_uri: window.location.hostname.includes('github.dev') 
-    ? `https://${window.location.hostname}` 
-    : window.location.origin,
-  response_type: "code",
-  scope: "email openid phone",
-};
+// Declare global window property for API base URL
+declare global {
+  interface Window {
+    __API_BASE_URL__: string;
+  }
+}
+
+// Set base URL for API calls in production
+if (import.meta.env.PROD) {
+  // In production, API calls should be relative to the current domain
+  window.__API_BASE_URL__ = '';
+} else {
+  // In development, use the local server
+  window.__API_BASE_URL__ = 'http://localhost:5001';
+}
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <AuthProvider {...cognitoAuthConfig}>
+    <AuthProvider>
       <LanguageProvider>
         <App />
       </LanguageProvider>

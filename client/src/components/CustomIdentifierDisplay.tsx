@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Badge } from './ui/badge';
 import { Copy, CheckCircle } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface CustomIdentifierData {
   customIdentifier: string;

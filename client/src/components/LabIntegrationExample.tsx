@@ -9,6 +9,7 @@ import { processLabValues, LabValue, ProcessedLabValue } from '@/lib/labUtils';
 export function LabIntegrationExample() {
   const [rawLabValues, setRawLabValues] = useState<LabValue[]>([]);
   const [processedLabs, setProcessedLabs] = useState<ProcessedLabValue[]>([]);
+  const [selectedPanel, setSelectedPanel] = useState<string>('manual');
 
   const handleLabAdd = (labValues: LabValue[]) => {
     const updatedRawLabs = [...rawLabValues, ...labValues];
@@ -43,6 +44,8 @@ export function LabIntegrationExample() {
         onLabAdd={handleLabAdd}
         selectedLabs={selectedLabs}
         onLabRemove={handleLabRemove}
+        selectedPanel={selectedPanel}
+        setSelectedPanel={setSelectedPanel}
       />
       
       {/* Development/Debug info - remove in production */}

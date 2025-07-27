@@ -1,27 +1,43 @@
-import { expressjwt, GetVerificationKey } from 'express-jwt';
-import jwksRsa from 'jwks-rsa';
+import { Request, Response, NextFunction } from 'express';
+import { createServerSupabaseClient } from '../lib/supabase';
 
-// Replace with your AWS Cognito User Pool information
-const COGNITO_USER_POOL_ID = 'us-east-2_8JHg800Rm';
-const COGNITO_REGION = 'us-east-2';
-const COGNITO_ISSUER = `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`;
+export interface AuthenticatedRequest extends Request {
+  auth?: {
+    sub: string;
+    email: string;
+    [key: string]: any;
+  };
+}
 
-// Middleware for validating JWT tokens
-export const checkJwt = expressjwt({
-  secret: jwksRsa.expressJwtSecret({
-    cache: true,
-    rateLimit: true,
-    jwksRequestsPerMinute: 10, // Increased from 5 to 10
-    cacheMaxEntries: 5, // Cache up to 5 keys
-    cacheMaxAge: 600000, // Cache for 10 minutes (increased from default)
-    jwksUri: `${COGNITO_ISSUER}/.well-known/jwks.json`,
-    requestAgent: undefined, // Use default agent
-    timeout: 5000, // 5 second timeout for JWKS requests
-  }) as GetVerificationKey,
+// Middleware for validating Supabase JWT tokens
+export const checkJwt = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing or invalid authorization header' });
+    }
 
-  // Validate the audience and the issuer.
-  audience: '2ajlh70hd6rsk8hoc9ldvqnbtr', // Replace with your App Client ID
-  issuer: COGNITO_ISSUER,
-  algorithms: ['RS256'],
-  requestProperty: 'auth', // Store decoded token in req.auth
-}); 
+    const token = authHeader.substring(7); // Remove "Bearer " prefix
+    
+    // Use Supabase to verify the JWT token
+    const supabase = createServerSupabaseClient();
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    // Add user info to request object for downstream use
+    req.auth = {
+      sub: user.id,
+      email: user.email || '',
+      ...user.user_metadata
+    };
+
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    return res.status(401).json({ error: 'Authentication failed' });
+  }
+}; 

@@ -1,16 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '@/contexts/AuthContext';
 import type { CustomDotPhrase } from '@/components/DotPhraseManager';
 
-const getApiHeaders = (id_token: string) => ({
+// Note: This is a module-level function that can't access hooks
+// We'll need to pass the token from the hook functions
+const getApiHeaders = (token?: string) => ({
   'Content-Type': 'application/json',
-  'Authorization': `Bearer ${id_token}`,
+  ...(token && { 'Authorization': `Bearer ${token}` }),
 });
 
 const dotPhrasesAPI = {
-  async getAll(id_token: string): Promise<CustomDotPhrase[]> {
+  async getAll(token: string): Promise<CustomDotPhrase[]> {
     const response = await fetch('/api/dot-phrases', {
-      headers: getApiHeaders(id_token),
+      headers: getApiHeaders(token),
+      credentials: 'include',
     });
     if (!response.ok) {
       throw new Error('Failed to fetch dot phrases');
@@ -24,10 +27,11 @@ const dotPhrasesAPI = {
     }));
   },
 
-  async create(phrase: Omit<CustomDotPhrase, 'id' | 'createdAt' | 'updatedAt'>, id_token: string): Promise<CustomDotPhrase> {
+  async create(phrase: Omit<CustomDotPhrase, 'id' | 'createdAt' | 'updatedAt'>, token: string): Promise<CustomDotPhrase> {
     const response = await fetch('/api/dot-phrases', {
       method: 'POST',
-      headers: getApiHeaders(id_token),
+      headers: getApiHeaders(token),
+      credentials: 'include',
       body: JSON.stringify(phrase),
     });
     if (!response.ok) {
@@ -42,10 +46,11 @@ const dotPhrasesAPI = {
     };
   },
 
-  async update(id: string, phrase: Partial<CustomDotPhrase>, id_token: string): Promise<CustomDotPhrase> {
+  async update(id: string, phrase: Partial<CustomDotPhrase>, token: string): Promise<CustomDotPhrase> {
     const response = await fetch(`/api/dot-phrases/${id}`, {
       method: 'PUT',
-      headers: getApiHeaders(id_token),
+      headers: getApiHeaders(token),
+      credentials: 'include',
       body: JSON.stringify(phrase),
     });
     if (!response.ok) {
@@ -60,10 +65,11 @@ const dotPhrasesAPI = {
     };
   },
 
-  async delete(id: string, id_token: string): Promise<void> {
+  async delete(id: string, token: string): Promise<void> {
     const response = await fetch(`/api/dot-phrases/${id}`, {
       method: 'DELETE',
-      headers: getApiHeaders(id_token),
+      headers: getApiHeaders(token),
+      credentials: 'include',
     });
     if (!response.ok) {
       const error = await response.json();
@@ -72,10 +78,11 @@ const dotPhrasesAPI = {
   },
 
   // Sharing API methods
-  async share(id: string, id_token: string): Promise<{ shareCode: string; isPublic: boolean; sharedAt: Date; importCount: number }> {
+  async share(id: string, token: string): Promise<{ shareCode: string; isPublic: boolean; sharedAt: Date; importCount: number }> {
     const response = await fetch(`/api/dot-phrases/${id}/share`, {
       method: 'POST',
-      headers: getApiHeaders(id_token),
+      headers: getApiHeaders(token),
+      credentials: 'include',
     });
     if (!response.ok) {
       const error = await response.json();
@@ -103,10 +110,11 @@ const dotPhrasesAPI = {
     };
   },
 
-  async import(shareCode: string, customTrigger: string | undefined, id_token: string): Promise<{ dotPhrase: CustomDotPhrase; importedFrom: { shareCode: string; originalTrigger: string } }> {
+  async import(shareCode: string, customTrigger: string | undefined, token: string): Promise<{ dotPhrase: CustomDotPhrase; importedFrom: { shareCode: string; originalTrigger: string } }> {
     const response = await fetch(`/api/dot-phrases/import/${shareCode}`, {
       method: 'POST',
-      headers: getApiHeaders(id_token),
+      headers: getApiHeaders(token),
+      credentials: 'include',
       body: JSON.stringify({ customTrigger }),
     });
     if (!response.ok) {
@@ -149,11 +157,11 @@ export function useDotPhrases() {
     queryKey: [DOT_PHRASES_QUERY_KEY],
     queryFn: () => {
       if (!auth.user?.id_token) {
-        throw new Error('Authentication required');
+        throw new Error('Authentication token not available');
       }
       return dotPhrasesAPI.getAll(auth.user.id_token);
     },
-    enabled: !!auth.user?.id_token,
+    enabled: auth.isAuthenticated && !!auth.user?.id_token,
     staleTime: 1000 * 60 * 5, // 5 minutes
     gcTime: 1000 * 60 * 10, // 10 minutes
   });
@@ -165,7 +173,7 @@ export function useCreateDotPhrase() {
   
   return useMutation({
     mutationFn: async (phrase: Omit<CustomDotPhrase, 'id' | 'createdAt' | 'updatedAt'>) => {
-      if (!auth.user?.id_token) {
+      if (!auth.isAuthenticated || !auth.user?.id_token) {
         throw new Error('Authentication required');
       }
       return dotPhrasesAPI.create(phrase, auth.user.id_token);
@@ -184,7 +192,7 @@ export function useUpdateDotPhrase() {
   
   return useMutation({
     mutationFn: async ({ id, phrase }: { id: string; phrase: Partial<CustomDotPhrase> }) => {
-      if (!auth.user?.id_token) {
+      if (!auth.isAuthenticated || !auth.user?.id_token) {
         throw new Error('Authentication required');
       }
       return dotPhrasesAPI.update(id, phrase, auth.user.id_token);
@@ -203,7 +211,7 @@ export function useDeleteDotPhrase() {
   
   return useMutation({
     mutationFn: async (id: string) => {
-      if (!auth.user?.id_token) {
+      if (!auth.isAuthenticated || !auth.user?.id_token) {
         throw new Error('Authentication required');
       }
       return dotPhrasesAPI.delete(id, auth.user.id_token);
@@ -223,7 +231,7 @@ export function useShareDotPhrase() {
   
   return useMutation({
     mutationFn: async (id: string) => {
-      if (!auth.user?.id_token) {
+      if (!auth.isAuthenticated || !auth.user?.id_token) {
         throw new Error('Authentication required');
       }
       return dotPhrasesAPI.share(id, auth.user.id_token);
@@ -262,7 +270,7 @@ export function useImportDotPhrase() {
   
   return useMutation({
     mutationFn: async ({ shareCode, customTrigger }: { shareCode: string; customTrigger?: string }) => {
-      if (!auth.user?.id_token) {
+      if (!auth.isAuthenticated || !auth.user?.id_token) {
         throw new Error('Authentication required');
       }
       return dotPhrasesAPI.import(shareCode, customTrigger, auth.user.id_token);

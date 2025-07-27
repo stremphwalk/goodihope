@@ -1,5 +1,5 @@
-import { db } from "./database";
-import { users } from "../shared/schema";
+import { db } from "./database-neon.js";
+import { users } from "../shared/schema.js";
 import { eq } from "drizzle-orm";
 
 // Letters to use for custom identifiers (excluding similar looking characters)

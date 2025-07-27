@@ -71,3 +71,4 @@ terraform.tfstate*
 # Desktop companion release files (too large for GitHub)
 desktop-companion/release/
 bundle-analysis.html
+.vercel

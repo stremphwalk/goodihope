@@ -19,7 +19,7 @@ import {
   User
 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '@/contexts/AuthContext';
 import { TemplateContent, getSectionById } from '@/lib/sectionLibrary';
 
 interface Template {

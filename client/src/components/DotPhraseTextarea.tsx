@@ -7,7 +7,7 @@ import { CalculationModal } from './CalculationModal';
 import { CalculationResult } from './CalculationModal';
 import { WidgetModal } from './WidgetModal';
 import getCaretCoordinates from 'textarea-caret';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '@/contexts/AuthContext';
 import { useDotPhrases } from '@/hooks/useDotPhrases';
 import { widgetRegistry, parseWidgetSyntax } from '@/lib/widgetRegistry';
 import { WidgetWrapper } from './WidgetWrapper';

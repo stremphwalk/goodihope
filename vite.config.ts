@@ -46,39 +46,9 @@ export default defineConfig(({ mode }) => ({
     minify: mode === "production" ? "esbuild" : false,
     sourcemap: mode === "production" ? false : true,
     target: "esnext",
-    // Rollup options for better tree shaking and code splitting
+    // Simplified rollup options
     rollupOptions: {
       output: {
-        // Code splitting strategy
-        manualChunks: {
-          // React ecosystem
-          "react-vendor": ["react", "react-dom", "react-router-dom"],
-          // UI libraries
-          "ui-vendor": [
-            "@radix-ui/react-dialog",
-            "@radix-ui/react-dropdown-menu", 
-            "@radix-ui/react-popover",
-            "@radix-ui/react-select",
-            "@radix-ui/react-tabs",
-            "@radix-ui/react-tooltip"
-          ],
-          // Data fetching and state
-          "data-vendor": ["@tanstack/react-query", "axios"],
-          // Form and validation
-          "form-vendor": ["react-hook-form", "@hookform/resolvers", "zod"],
-          // Large UI component libraries
-          "chart-vendor": ["recharts"],
-          "date-vendor": ["react-datepicker", "date-fns"],
-          // Icons and styling
-          "style-vendor": ["lucide-react", "clsx", "tailwind-merge"],
-        },
-        // Optimize chunk file names
-        chunkFileNames: (chunkInfo: any) => {
-          const facadeModuleId = chunkInfo.facadeModuleId
-            ? chunkInfo.facadeModuleId.split('/').pop().replace(/\.\w+$/, '')
-            : 'chunk';
-          return `js/${facadeModuleId}-[hash].js`;
-        },
         assetFileNames: (assetInfo: any) => {
           const info = assetInfo.name.split('.');
           const ext = info[info.length - 1];
@@ -90,12 +60,6 @@ export default defineConfig(({ mode }) => ({
           }
           return `assets/[name]-[hash][extname]`;
         },
-      },
-      // Improve tree shaking
-      treeshake: {
-        moduleSideEffects: false,
-        propertyReadSideEffects: false,
-        unknownGlobalSideEffects: false,
       },
     },
     // Chunk size warnings
@@ -122,4 +86,13 @@ export default defineConfig(({ mode }) => ({
       strict: true,
     },
   } : undefined,
+  // Vercel-specific configuration
+  define: {
+    // Ensure environment variables are available at build time
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+  },
+  // Explicitly load environment variables for Vite
+  envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
+  // Load environment variables from .env files
+  envDir: '.',
 }));

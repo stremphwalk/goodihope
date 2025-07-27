@@ -136,21 +136,33 @@ app.get('/health', (req, res) => {
     });
 
     // Graceful shutdown handling
-    process.on('SIGTERM', () => {
-      log('Received SIGTERM, shutting down gracefully...');
-      server.close(() => {
-        log('Server closed');
+    const gracefulShutdown = async (signal: string) => {
+      log(`🛑 Received ${signal}, shutting down gracefully...`);
+      
+      server.close(async () => {
+        log('🔒 HTTP server closed');
+        
+        // Close database connections
+        try {
+          const { closeDatabase } = await import('./database');
+          await closeDatabase();
+        } catch (error) {
+          log(`Warning: Error closing database: ${error}`);
+        }
+        
+        log('✅ Graceful shutdown complete');
         process.exit(0);
       });
-    });
+      
+      // Force close after 5 seconds
+      setTimeout(() => {
+        log('⚠️  Forced shutdown after timeout');
+        process.exit(1);
+      }, 5000);
+    };
 
-    process.on('SIGINT', () => {
-      log('Received SIGINT, shutting down gracefully...');
-      server.close(() => {
-        log('Server closed');
-        process.exit(0);
-      });
-    });
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   } catch (error) {
     log(`❌ Failed to start server: ${error}`);

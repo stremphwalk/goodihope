@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 
 import { Star, AlertCircle, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from 'react-oidc-context';  // Assuming auth for user ID
+import { useAuth } from '@/contexts/AuthContext';  // Assuming auth for user ID
 
 interface SymptomObject {
   key: string;

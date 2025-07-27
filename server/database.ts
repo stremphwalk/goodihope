@@ -3,22 +3,26 @@ import postgres from 'postgres';
 import { users, rosNotes, dotPhrases, userPresets } from '@shared/schema';
 import { eq, desc, and } from 'drizzle-orm';
 
-// Railway provides DATABASE_URL environment variable
-const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+// Support both Railway and Vercel Postgres environment variables
+const connectionString = process.env.DATABASE_URL || 
+                         process.env.POSTGRES_URL || 
+                         process.env.POSTGRES_DATABASE_URL;
 
 let db: any = null;
+let client: any = null;
 
 if (connectionString) {
   try {
     // Validate connection string format
     if (connectionString.startsWith('postgresql://') || connectionString.startsWith('postgres://')) {
-      // Create postgres connection with security settings
-      const client = postgres(connectionString, {
-        max: process.env.NODE_ENV === 'production' ? 10 : 5,
+      // Create postgres connection with Vercel-optimized settings
+      client = postgres(connectionString, {
+        max: process.env.NODE_ENV === 'production' ? 1 : 5, // Vercel functions have connection limits
         ssl: process.env.NODE_ENV === 'production' ? 'require' : false,
         idle_timeout: 20,
         connect_timeout: 10,
         prepare: false, // Disable prepared statements for security
+        transform: postgres.camel, // Transform snake_case to camelCase
       });
 
       // Create drizzle database instance
@@ -33,6 +37,15 @@ if (connectionString) {
 } else {
   console.warn('⚠️  DATABASE_URL not provided, database features disabled');
 }
+
+// Graceful shutdown function
+export const closeDatabase = async () => {
+  if (client) {
+    console.log('🔒 Closing database connections...');
+    await client.end();
+    console.log('✅ Database connections closed');
+  }
+};
 
 export { db };
 
@@ -55,7 +68,7 @@ export const userQueries = {
     if (!username || typeof username !== 'string' || username.length > 50) {
       throw new Error('Invalid username');
     }
-    const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+    const result = await db.select().from(users).where(eq(users.email, username)).limit(1);
     return result[0];
   },
 

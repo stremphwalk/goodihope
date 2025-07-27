@@ -1,19 +1,32 @@
-import { pgTable, text, serial, integer, boolean, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, jsonb, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-  name: text("name"), // User's display name from Cognito
+  id: uuid("id").primaryKey(), // UUID for Supabase auth integration
+  email: text("email").notNull().unique(),
+  name: text("name"), // User's display name
   customIdentifier: text("custom_identifier").unique(), // 4 letters + 2 numbers format
+  emailVerified: boolean("email_verified").default(false),
+  resetToken: text("reset_token"),
+  resetTokenExpires: timestamp("reset_token_expires"),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// New table for user sessions
+export const userSessions = pgTable("user_sessions", {
+  id: serial("id").primaryKey(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  sessionToken: text("session_token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const dotPhrases = pgTable("dot_phrases", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
   trigger: text("trigger").notNull(),
   content: text("content").notNull(),
   description: text("description"),
@@ -28,7 +41,7 @@ export const dotPhrases = pgTable("dot_phrases", {
 
 export const rosNotes = pgTable("ros_notes", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
   patientName: text("patient_name").notNull(),
   patientDob: text("patient_dob").notNull(),
   patientMrn: text("patient_mrn").notNull(),
@@ -41,7 +54,7 @@ export const rosNotes = pgTable("ros_notes", {
 // New table for user presets
 export const userPresets = pgTable("user_presets", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
   title: text("title").notNull().unique(),  // Unique titles per user (enforced in API)
   isFavorite: boolean("is_favorite").default(false),
   symptoms: jsonb("symptoms").notNull(),  // JSONB for symptoms object
@@ -54,7 +67,7 @@ export const teamGroups = pgTable("team_groups", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
-  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id).notNull(),
   inviteCode: text("invite_code").notNull().unique(), // 6-character invite code
   createdAt: timestamp("created_at").defaultNow(),
   expiresAt: timestamp("expires_at").notNull(), // Auto-expire after 7 days
@@ -63,7 +76,7 @@ export const teamGroups = pgTable("team_groups", {
 export const groupMembers = pgTable("group_members", {
   id: serial("id").primaryKey(),
   groupId: integer("group_id").references(() => teamGroups.id).notNull(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
   role: text("role").notNull().default("member"), // "creator" or "member"
   joinedAt: timestamp("joined_at").defaultNow(),
 });
@@ -73,12 +86,12 @@ export const groupTodos = pgTable("group_todos", {
   groupId: integer("group_id").references(() => teamGroups.id).notNull(),
   title: text("title").notNull(),
   description: text("description"),
-  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id).notNull(),
   status: text("status").default("todo").notNull(), // 'todo' | 'in_progress' | 'review' | 'done'
   position: integer("position").default(0).notNull(), // Position within the status column for ordering
-  assignedToUserId: integer("assigned_to_user_id").references(() => users.id),
+  assignedToUserId: uuid("assigned_to_user_id").references(() => users.id),
   completed: boolean("completed").default(false), // Keep for backward compatibility during migration
-  completedByUserId: integer("completed_by_user_id").references(() => users.id),
+  completedByUserId: uuid("completed_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
   completedAt: timestamp("completed_at"),
 });
@@ -89,13 +102,30 @@ export const groupEvents = pgTable("group_events", {
   title: text("title").notNull(),
   description: text("description"),
   eventDate: timestamp("event_date").notNull(),
-  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+  email: true,
+  name: true,
+});
+
+export const loginUserSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+export const registerUserSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  name: z.string().min(1, "Name is required"),
+});
+
+export const insertUserSessionSchema = createInsertSchema(userSessions).pick({
+  userId: true,
+  sessionToken: true,
+  expiresAt: true,
 });
 
 export const insertDotPhraseSchema = createInsertSchema(dotPhrases).pick({
@@ -172,6 +202,10 @@ export const medicationCategories = {
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type LoginUser = z.infer<typeof loginUserSchema>;
+export type RegisterUser = z.infer<typeof registerUserSchema>;
+export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
+export type UserSession = typeof userSessions.$inferSelect;
 export type InsertDotPhrase = z.infer<typeof insertDotPhraseSchema>;
 export type DotPhrase = typeof dotPhrases.$inferSelect;
 // New types for presets
