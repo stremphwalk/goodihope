@@ -5,7 +5,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 interface SmartPMHSectionProps {
   value: string;
   onChange: (value: string) => void;
-  onBlur?: () => void;
+  onBlur?: (value?: string) => void;
   defaultContent?: string | null; // Template default content
 }
 
@@ -43,6 +43,7 @@ Tab at start: convert to sub-point`;
       value={value}
       onChange={onChange}
       onBlur={onBlur}
+      updateOnBlurOnly
       persistenceKey="pmh-section"
     />
   );

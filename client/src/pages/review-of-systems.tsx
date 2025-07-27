@@ -339,16 +339,20 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     setValue: setPmhText 
   } = usePersistedState<string>('medical_pmh_text', '');
   
+  // State for live editing of PMH to prevent re-renders on every keystroke
+  const [typingPmhText, setTypingPmhText] = useState(pmhText);
+  
+  // Sync live editing state if the persisted value changes
+  useEffect(() => {
+    setTypingPmhText(pmhText);
+  }, [pmhText]);
+
   const { 
     value: impressionText, 
     setValue: setImpressionText 
   } = usePersistedState<string>('medical_impression_text', '');
 
   // Create debounced callbacks to prevent focus interruption
-  const debouncedSetPmhText = useDebounceCallback((value: string) => {
-    setPmhText(value);
-  }, 500); // 500ms delay for live preview updates
-
   const debouncedSetImpressionText = useDebounceCallback((value: string) => {
     setImpressionText(value);
   }, 500); // 500ms delay for live preview updates
@@ -464,6 +468,14 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       }
       
       const data = await response.json();
+      
+      // Validate that data is an array before calling .map()
+      if (!Array.isArray(data)) {
+        console.error('Template API response is not an array:', data);
+        setAvailableTemplates([]);
+        return;
+      }
+      
       const templates = data.map((template: any) => ({
         ...template,
         createdAt: new Date(template.createdAt),
@@ -1125,7 +1137,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         formatted.push(`${conditionCount}. ${line}`);
       }
     }
-    
+
     const header = language === 'fr' ? "ANTÉCÉDENTS MÉDICAUX :\n" : "PAST MEDICAL HISTORY:\n";
     return header + formatted.join('\n');
   }, [language, pmhText]);
@@ -1515,6 +1527,15 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     handleOptionChange();
   }, [medications, processedLabValues, pmhText, noteType, admissionType, progressType, chiefComplaint, selectedPeSystems, intubationValues, impressionText, selectedSymptoms, selectedTemplate]);
 
+  // On blur, commit the live typing text to the main state to trigger a note update.
+  const handlePMHBlur = useCallback((updatedText?: string) => {
+    if (updatedText !== undefined) {
+      setPmhText(updatedText);
+    } else {
+      setPmhText(typingPmhText);
+    }
+  }, [typingPmhText, setPmhText]);
+  
   const timeoutRef = useRef<NodeJS.Timeout[]>([]);
   
   const handleAllergiesConfirm = useCallback(() => {
@@ -1904,9 +1925,9 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         return (
           <SectionWrapper title={sectionTitle["pmh"]} sectionKey="pmh" controls={pmhControls}>
             <SmartPMHSection
-              value={pmhText}
-              onChange={debouncedSetPmhText} // Use debounced callback to prevent focus loss
-              onBlur={() => {}} // Handle immediate save on blur through SmartTextEntry
+              value={typingPmhText}
+              onChange={setTypingPmhText}
+              onBlur={handlePMHBlur}
               defaultContent={getSectionDefaultContent("pmh")}
             />
           </SectionWrapper>

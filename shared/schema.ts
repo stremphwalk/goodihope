@@ -62,6 +62,36 @@ export const userPresets = pgTable("user_presets", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Templates table
+export const templates = pgTable("templates", {
+  id: serial("id").primaryKey(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull(),
+  specialty: text("specialty"),
+  content: jsonb("content").notNull(),
+  isPublic: boolean("is_public").default(false),
+  version: integer("version").default(1),
+  parentTemplateId: integer("parent_template_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  compatibleNoteTypes: jsonb("compatible_note_types"),
+  compatibleSubtypes: jsonb("compatible_subtypes"),
+  sectionDefaults: jsonb("section_defaults"),
+  lastUsed: timestamp("last_used"),
+  isFavorite: boolean("is_favorite").default(false),
+});
+
+// Template usage table
+export const templateUsage = pgTable("template_usage", {
+  id: serial("id").primaryKey(),
+  templateId: integer("template_id").references(() => templates.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  usedAt: timestamp("used_at").defaultNow(),
+  patientContext: jsonb("patient_context"),
+});
+
 // Team Groups tables
 export const teamGroups = pgTable("team_groups", {
   id: serial("id").primaryKey(),
@@ -142,6 +172,21 @@ export const insertUserPresetSchema = createInsertSchema(userPresets).pick({
   title: true,
   isFavorite: true,
   symptoms: true,
+});
+
+// Templates insert schema
+export const insertTemplateSchema = createInsertSchema(templates).pick({
+  userId: true,
+  name: true,
+  description: true,
+  category: true,
+  specialty: true,
+  content: true,
+  isPublic: true,
+  compatibleNoteTypes: true,
+  compatibleSubtypes: true,
+  sectionDefaults: true,
+  isFavorite: true,
 });
 
 // Team Groups insert schemas

@@ -306,10 +306,12 @@ export function MainLayout({
         <main className={`medical-main-content ${!hasLivePreview ? 'no-right-margin' : ''}`}>
           {children}
         </main>
-        {/* Fixed preview panel on far right */}
-        <aside className="medical-preview-panel">
-          {livePreview}
-        </aside>
+        {/* Fixed preview panel on far right - only render when hasLivePreview is true */}
+        {hasLivePreview && (
+          <aside className="medical-preview-panel">
+            {livePreview}
+          </aside>
+        )}
       </div>
     </SidebarProvider>
   );

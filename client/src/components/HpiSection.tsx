@@ -87,12 +87,21 @@ export function HpiSection({ selectedSymptoms: globalSelectedSymptoms, setSelect
       });
       if (!response.ok) throw new Error('Failed to load presets');
       const data: Preset[] = await response.json();
+      
+      // Validate that data is an array before calling .sort()
+      if (!Array.isArray(data)) {
+        console.error('Presets API response is not an array:', data);
+        setPresets([]);
+        return;
+      }
+      
       // Sort favorites first
       setPresets(data.sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0)));
       console.log('[DEBUG] HpiSection: Loaded presets successfully');
     } catch (err) {
       console.error(err);
       toast({ title: 'Error', description: 'Failed to load presets', variant: 'destructive' });
+      setPresets([]); // Set empty array on error
     } finally {
       setLoading(false);
     }

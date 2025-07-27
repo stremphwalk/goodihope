@@ -17,9 +17,15 @@ interface SmartTextEntryProps {
   placeholder: string;
   value: string;
   onChange?: (value: string) => void;
-  onBlur?: () => void;
+  onBlur?: (value?: string) => void;
   templates?: { [key: string]: string };
   persistenceKey?: string; // Unique key for state persistence across unmounts
+  /**
+   * When true, parent onChange will only be invoked on blur to avoid
+   * excessive re-renders (e.g. keeps textarea focus during long typing).
+   * Defaults to false to preserve existing live-update behaviour.
+   */
+  updateOnBlurOnly?: boolean;
 }
 
 const commonConditions = {
@@ -59,7 +65,16 @@ function parseSmartOptions(text: string) {
   return matches;
 }
 
-export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, templates, persistenceKey }: SmartTextEntryProps) {
+export function SmartTextEntry({
+  title,
+  placeholder,
+  value,
+  onChange: parentOnChange,
+  onBlur,
+  templates,
+  persistenceKey,
+  updateOnBlurOnly = false,
+}: SmartTextEntryProps) {
   const { language } = useLanguage();
   const auth = useAuth();
   const { data: customPhrases = [], isLoading } = useDotPhrases();
@@ -70,7 +85,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     persistenceKey || `smart-text-entry-${title}`,
     value || '',
     value,
-    onChange
+    parentOnChange
   );
   
   const localValue = persistedState.value;
@@ -276,7 +291,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         newLines[currentLineIndex] = newLine;
         const newValue = newLines.join('\n');
         setLocalValue(newValue);
-        if (onChange) onChange(newValue);
+        if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
         
         setTimeout(() => {
           textarea.focus();
@@ -288,7 +303,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         newLines.splice(currentLineIndex + 1, 0, '- ');
         const newValue = newLines.join('\n');
         setLocalValue(newValue);
-        if (onChange) onChange(newValue);
+        if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
         
         setTimeout(() => {
           const newPosition = newLines.slice(0, currentLineIndex + 2).join('\n').length;
@@ -301,7 +316,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         newLines.splice(currentLineIndex + 1, 0, '- ');
         const newValue = newLines.join('\n');
         setLocalValue(newValue);
-        if (onChange) onChange(newValue);
+        if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
         
         setTimeout(() => {
           const newPosition = newLines.slice(0, currentLineIndex + 2).join('\n').length;
@@ -312,7 +327,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         // Add new sub-point line at end
         const newValue = currentValue + '\n- ';
         setLocalValue(newValue);
-        if (onChange) onChange(newValue);
+        if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
         
         setTimeout(() => {
           textarea.focus();
@@ -323,12 +338,12 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     } catch (error) {
       console.error('Error in handleKeyDown:', error);
     }
-  }, [localValue, showSuggestions, suggestions, selectedSuggestion, smartOptions, activeSmartIdx, onChange]);
+  }, [localValue, showSuggestions, suggestions, selectedSuggestion, smartOptions, activeSmartIdx, parentOnChange, updateOnBlurOnly]);
 
   // Debounced callback for parent updates to reduce excessive calls
   const debouncedParentUpdate = useDebounceCallback((newValue: string) => {
-    if (onChange && newValue !== value) {
-      onChange(newValue);
+    if (!updateOnBlurOnly && parentOnChange && newValue !== value) {
+      parentOnChange(newValue);
     }
   }, 300); // 300ms debounce
 
@@ -367,7 +382,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         newLines[newLines.length - 1] = '- ';
         const finalValue = newLines.join('\n');
         setLocalValue(finalValue);
-        if (onChange) onChange(finalValue);
+        if (!updateOnBlurOnly && parentOnChange) parentOnChange(finalValue);
         
         setTimeout(() => {
           textarea.focus();
@@ -375,7 +390,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         }, 0);
       }
     }
-  }, [onChange]);
+  }, [parentOnChange, updateOnBlurOnly, value]);
 
   const insertTemplate = useCallback((template: string) => {
     const textarea = textareaRef.current;
@@ -389,37 +404,37 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     const newValue = beforeCursor + template + afterCursor;
     setLocalValue(newValue);
     setHasUserEdited(true);
-    if (onChange) onChange(newValue);
+    if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
     
     setTimeout(() => {
       textarea.focus();
       textarea.setSelectionRange(selectionStart + template.length, selectionStart + template.length);
     }, 0);
-  }, [localValue, onChange]);
+  }, [localValue, parentOnChange, updateOnBlurOnly]);
 
   const addCondition = useCallback(() => {
     const newValue = (localValue || '') + ((localValue || '') ? '\n' : '') + '# ';
     setLocalValue(newValue);
     setHasUserEdited(true);
-    if (onChange) onChange(newValue);
+    if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
     
     setTimeout(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(newValue.length, newValue.length);
     }, 0);
-  }, [localValue, onChange]);
+  }, [localValue, parentOnChange, updateOnBlurOnly]);
 
   const addDetail = useCallback(() => {
     const newValue = (localValue || '') + ((localValue || '') ? '\n' : '') + '- ';
     setLocalValue(newValue);
     setHasUserEdited(true);
-    if (onChange) onChange(newValue);
+    if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
     
     setTimeout(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(newValue.length, newValue.length);
     }, 0);
-  }, [localValue, onChange]);
+  }, [localValue, parentOnChange, updateOnBlurOnly]);
 
   // Expand dot phrase in textarea
   const expandDotPhrase = useCallback((dotKey: string) => {
@@ -443,7 +458,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     const currentScrollLeft = textareaRef.current?.scrollLeft || 0;
     
     setLocalValue(expanded);
-    if (onChange) onChange(expanded);
+    if (!updateOnBlurOnly && parentOnChange) parentOnChange(expanded);
     setShowSuggestions(false);
     setCurrentDot(null);
     setSuggestions([]);
@@ -470,7 +485,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         }
       });
     }
-  }, [currentDot, localValue, onChange, getCombinedDotPhrases]);
+  }, [currentDot, localValue, parentOnChange, updateOnBlurOnly, getCombinedDotPhrases]);
 
   // Handle smart option selection
   const handleSmartOptionSelect = (idx: number, optIdx: number) => {
@@ -487,7 +502,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     // Replace the [[...]] with the selected option
     const newValue = before + selected + after;
     setLocalValue(newValue);
-    if (onChange) onChange(newValue);
+    if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
     
     // Restore scroll position and handle cursor
     if (textareaRef.current) {
@@ -528,7 +543,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     // Replace the [[...]] with the custom text
     const newValue = before + customText + after;
     setLocalValue(newValue);
-    if (onChange) onChange(newValue);
+    if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
     
     // Restore scroll position and handle next options
     if (textareaRef.current) {
@@ -564,7 +579,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     // Remove the smart option
     const newValue = before + after;
     setLocalValue(newValue);
-    if (onChange) onChange(newValue);
+    if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
     
     setTimeout(() => {
       const updatedOptions = parseSmartOptions(newValue);
@@ -630,8 +645,8 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     setIsFocused(false);
     
     // Force immediate parent update on blur to ensure data is saved
-    if (onChange && localValue !== value) {
-      onChange(localValue);
+    if (parentOnChange && localValue !== value) {
+      parentOnChange(localValue);
     }
     
     // Only close dropdowns if not interacting with them
@@ -646,8 +661,8 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     
     // Sync to parent using persisted state
     persistedState.syncToParent();
-    onBlur?.();
-  }, [persistedState, onBlur, calendarIsOpen, onChange, localValue, value]);
+    onBlur?.(localValue);
+  }, [persistedState, onBlur, calendarIsOpen, parentOnChange, localValue, value]);
 
   // Auto-activate smart options when expanded
   useEffect(() => {
@@ -836,9 +851,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
                     setLocalValue(newValue);
                     
                     // Call onChange if provided
-                    if (onChange) {
-                      onChange(newValue);
-                    }
+                    if (!updateOnBlurOnly && parentOnChange) parentOnChange(newValue);
                     
                     // Move to next smart option or close
                     setTimeout(() => {

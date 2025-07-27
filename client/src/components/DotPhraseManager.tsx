@@ -211,9 +211,9 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
   };
 
   const filteredPhrases = customPhrases.filter(phrase => {
-    const matchesSearch = phrase.trigger.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         phrase.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         phrase.content.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = phrase.trigger?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (phrase.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         phrase.content?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'all' || phrase.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -298,7 +298,7 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
   };
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
+    <div className="max-w-7xl mx-auto p-6">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('dotManager.title')}</h1>
         <p className="text-gray-600">{t('dotManager.subtitle')}</p>
