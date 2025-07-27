@@ -5,11 +5,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from 'react-hot-toast';
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/contexts/LanguageContext";
-import { useAuth } from "react-oidc-context";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { NoteStateProvider } from "@/contexts/NoteStateContext";
 import { Stethoscope } from "lucide-react";
 
 // Lazy load pages for better code splitting
-const LoginPage = lazy(() => import("@/components/LoginPage").then(module => ({ default: module.LoginPage })));
+const AuthPage = lazy(() => import("@/components/auth/AuthPage").then(module => ({ default: module.AuthPage })));
 const Navigation = lazy(() => import("@/components/Navigation").then(module => ({ default: module.Navigation })));
 const MarketingPage = lazy(() => import("@/components/marketing/MarketingPage"));
 const ReviewOfSystems = lazy(() => import("@/pages/review-of-systems"));
@@ -57,29 +58,39 @@ function ProtectedApp() {
   const [selectedMenu, setSelectedMenu] = useState('medical-notes');
   const [selectedSubOption, setSelectedSubOption] = useState('note-type');
 
-  // Ensure medical notes is default on initial load
+  // Initialize state only once when the component mounts
+  useEffect(() => {
+    // Check if we have any persisted state to restore
+    const persistedMenu = sessionStorage.getItem('selectedMenu');
+    const persistedSubOption = sessionStorage.getItem('selectedSubOption');
+    
+    if (persistedMenu && persistedMenu !== 'medical-notes') {
+      setSelectedMenu(persistedMenu);
+    }
+    if (persistedSubOption && persistedSubOption !== 'note-type') {
+      setSelectedSubOption(persistedSubOption);
+    }
+  }, []); // Empty dependency array - only run once on mount
+
+  // Persist state changes to sessionStorage - with guards to prevent loops
   useEffect(() => {
     if (selectedMenu !== 'medical-notes') {
-      setSelectedMenu('medical-notes');
+      sessionStorage.setItem('selectedMenu', selectedMenu);
     }
-    if (selectedSubOption !== 'note-type') {
-      setSelectedSubOption('note-type');
-    }
-  }, []);
+  }, [selectedMenu]);
 
-  const signOutRedirect = () => {
-    const clientId = "2ajlh70hd6rsk8hoc9ldvqnbtr";
-    const logoutUri = window.location.origin;
-    const cognitoDomain = "https://us-east-28jhg800rm.auth.us-east-2.amazoncognito.com";
-    window.location.href = `${cognitoDomain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(logoutUri)}`;
-  };
+  useEffect(() => {
+    if (selectedSubOption !== 'note-type') {
+      sessionStorage.setItem('selectedSubOption', selectedSubOption);
+    }
+  }, [selectedSubOption]);
 
   if (auth.isLoading) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
   }
 
   if (auth.error) {
-    return <div className="flex items-center justify-center h-screen">Error: {auth.error.message}</div>;
+    return <div className="flex items-center justify-center h-screen">Error: {auth.error}</div>;
   }
 
   if (auth.isAuthenticated) {
@@ -88,7 +99,7 @@ function ProtectedApp() {
 
   return (
     <Suspense fallback={<PageLoader />}>
-      <MarketingPage />
+      <AuthPage />
     </Suspense>
   );
 }
@@ -98,8 +109,12 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>
         <TooltipProvider>
-          <Toaster position="top-right" />
-          <ProtectedApp />
+          <AuthProvider>
+            <NoteStateProvider>
+              <Toaster position="top-right" />
+              <ProtectedApp />
+            </NoteStateProvider>
+          </AuthProvider>
         </TooltipProvider>
       </LanguageProvider>
     </QueryClientProvider>

@@ -1,13 +1,16 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { RotateCcw } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { dotPhrases } from '@/lib/dotPhrases';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '@/contexts/AuthContext';
+import { useDotPhrases } from '@/hooks/useDotPhrases';
 import type { CustomDotPhrase } from '@/components/DotPhraseManager';
 import getCaretCoordinates from 'textarea-caret';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { usePersistedState } from '@/hooks/usePersistedState';
+import { useDebounceCallback } from '@/hooks/useDebounce';
 
 interface SmartTextEntryProps {
   title: string;
@@ -16,6 +19,7 @@ interface SmartTextEntryProps {
   onChange?: (value: string) => void;
   onBlur?: () => void;
   templates?: { [key: string]: string };
+  persistenceKey?: string; // Unique key for state persistence across unmounts
 }
 
 const commonConditions = {
@@ -55,11 +59,22 @@ function parseSmartOptions(text: string) {
   return matches;
 }
 
-export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, templates }: SmartTextEntryProps) {
+export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, templates, persistenceKey }: SmartTextEntryProps) {
   const { language } = useLanguage();
   const auth = useAuth();
+  const { data: customPhrases = [], isLoading } = useDotPhrases();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [localValue, setLocalValue] = useState(value || '');
+  
+  // Use persisted state if persistence key is provided, otherwise use regular state
+  const persistedState = usePersistedState(
+    persistenceKey || `smart-text-entry-${title}`,
+    value || '',
+    value,
+    onChange
+  );
+  
+  const localValue = persistedState.value;
+  const setLocalValue = persistedState.setValue;
   const [hasUserEdited, setHasUserEdited] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   
@@ -70,7 +85,6 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [smartOptions, setSmartOptions] = useState<any[]>([]);
   const [activeSmartIdx, setActiveSmartIdx] = useState<number | null>(null);
-  const [customPhrases, setCustomPhrases] = useState<CustomDotPhrase[]>([]);
   const [dropdownPos, setDropdownPos] = useState<{top: number, left: number}>({top: 0, left: 0});
   const [customInput, setCustomInput] = useState<string>("");
   const [customInputFocused, setCustomInputFocused] = useState(false);
@@ -80,67 +94,34 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
   const [calendarIsOpen, setCalendarIsOpen] = useState(false);
   const justExpandedToSmartOption = useRef(false);
 
-  // Fetch custom dot phrases
-  useEffect(() => {
-    const fetchCustomPhrases = async () => {
-      if (!auth.isAuthenticated || !auth.user?.id_token) {
-        setCustomPhrases([]);
-        return;
-      }
-
-      try {
-        const response = await fetch('/api/dot-phrases', {
-          headers: {
-            'Authorization': `Bearer ${auth.user.id_token}`
-          }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setCustomPhrases(data);
-        } else {
-          console.error('Failed to fetch custom dot phrases');
-          setCustomPhrases([]);
-        }
-      } catch (error) {
-        console.error('Error fetching custom dot phrases:', error);
-        setCustomPhrases([]);
-      }
-    };
-
-    fetchCustomPhrases();
-  }, [auth.isAuthenticated, auth.user]);
-
-  // Create combined dot phrases object
-  const getCombinedDotPhrases = (): Record<string, string> => {
+  // Create combined dot phrases object - memoized to prevent re-creation
+  const getCombinedDotPhrases = useCallback((): Record<string, string> => {
     const combined: Record<string, string> = { ...(dotPhrases as Record<string, string>) };
     customPhrases.forEach(phrase => {
       combined[phrase.trigger] = phrase.content;
     });
     return combined;
-  };
+  }, [customPhrases]);
 
-  // Update smart options when value changes
+  // Update smart options when value changes - optimized
   useEffect(() => {
     const options = parseSmartOptions(localValue);
-    setSmartOptions(options);
     
-    // Auto-activate first smart option if we have smart functions and user isn't actively editing
-    if (options.length > 0 && !isFocused && activeSmartIdx === null) {
-      // Check if this looks like a template or dot phrase expansion
-      const hasOnlySmartFunctions = (localValue || '').trim().match(/^\[\[.*\]\]$/) || 
-                                   justExpandedToSmartOption.current ||
-                                   // Also activate if we just loaded content with smart functions
-                                   (!hasUserEdited && options.length > 0);
-      if (hasOnlySmartFunctions) {
-        setActiveSmartIdx(0);
+    // Only update if options actually changed
+    if (JSON.stringify(options) !== JSON.stringify(smartOptions)) {
+      setSmartOptions(options);
+      
+      // Auto-activate first smart option only in specific cases
+      if (options.length > 0 && activeSmartIdx === null && !isFocused) {
+        const hasOnlySmartFunctions = (localValue || '').trim().match(/^\[\[.*\]\]$/) || 
+                                     justExpandedToSmartOption.current;
+        if (hasOnlySmartFunctions) {
+          setActiveSmartIdx(0);
+        }
       }
     }
-  }, [localValue, isFocused, activeSmartIdx, hasUserEdited]);
+  }, [localValue, isFocused, activeSmartIdx]);
 
-  // Sync external value with local state
-  useEffect(() => {
-    setLocalValue(value || '');
-  }, [value]);
 
   
 
@@ -189,19 +170,11 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     return formatted.join('\n');
   }, []);
 
-  const handleBlur = () => {
-    setIsFocused(false);
-    if (onChange) {
-      onChange(localValue || ''); // Only propagate raw value on blur
-    }
-    onBlur?.(); // Call additional blur handler if provided
-  };
 
-  const handleFocus = () => {
+  const handleFocus = useCallback(() => {
     setIsFocused(true);
-    // Mark that user has started editing this field
     setHasUserEdited(true);
-  };
+  }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const textarea = textareaRef.current;
@@ -303,6 +276,8 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         newLines[currentLineIndex] = newLine;
         const newValue = newLines.join('\n');
         setLocalValue(newValue);
+        if (onChange) onChange(newValue);
+        
         setTimeout(() => {
           textarea.focus();
           textarea.setSelectionRange(selectionStart + 2, selectionStart + 2);
@@ -313,6 +288,8 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         newLines.splice(currentLineIndex + 1, 0, '- ');
         const newValue = newLines.join('\n');
         setLocalValue(newValue);
+        if (onChange) onChange(newValue);
+        
         setTimeout(() => {
           const newPosition = newLines.slice(0, currentLineIndex + 2).join('\n').length;
           textarea.focus();
@@ -324,6 +301,8 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         newLines.splice(currentLineIndex + 1, 0, '- ');
         const newValue = newLines.join('\n');
         setLocalValue(newValue);
+        if (onChange) onChange(newValue);
+        
         setTimeout(() => {
           const newPosition = newLines.slice(0, currentLineIndex + 2).join('\n').length;
           textarea.focus();
@@ -333,6 +312,8 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         // Add new sub-point line at end
         const newValue = currentValue + '\n- ';
         setLocalValue(newValue);
+        if (onChange) onChange(newValue);
+        
         setTimeout(() => {
           textarea.focus();
           textarea.setSelectionRange(newValue.length, newValue.length);
@@ -342,71 +323,59 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     } catch (error) {
       console.error('Error in handleKeyDown:', error);
     }
-  }, [localValue, showSuggestions, suggestions, selectedSuggestion, smartOptions, activeSmartIdx]);
+  }, [localValue, showSuggestions, suggestions, selectedSuggestion, smartOptions, activeSmartIdx, onChange]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    try {
-      const newValue = e.target.value;
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-
-      // Mark that user has edited this field
-      setHasUserEdited(true);
-
-      // Dot phrase detection
-      const cursor = e.target.selectionStart;
-      const slash = getSlashPhraseAtCursor(newValue, cursor);
-      if (slash) {
-        const combinedPhrases = getCombinedDotPhrases();
-        const matches = Object.keys(combinedPhrases).filter(k => 
-          k.toLowerCase().startsWith(slash.phrase.toLowerCase())
-        );
-        setSuggestions(matches);
-        setShowSuggestions(matches.length > 0);
-        setCurrentDot(slash);
-        setSelectedSuggestion(0);
-      } else {
-        setShowSuggestions(false);
-        setCurrentDot(null);
-      }
-
-      // Check if user typed a dash at end of line
-      const { selectionStart } = textarea;
-      const lines = newValue.split('\n');
-      const currentLineIndex = newValue.substring(0, selectionStart).split('\n').length - 1;
-      
-      // Validate bounds
-      if (currentLineIndex < 0 || currentLineIndex >= lines.length) {
-        setLocalValue(newValue);
-        return;
-      }
-      
-      const currentLine = lines[currentLineIndex] || '';
-    
-    // If line ends with dash, convert to sub-point on next line
-    if (currentLine.endsWith('-') && !currentLine.startsWith('-')) {
-      const lineWithoutDash = currentLine.slice(0, -1).trim();
-      const newLines = [...lines];
-      newLines[currentLineIndex] = lineWithoutDash;
-      newLines.splice(currentLineIndex + 1, 0, '- ');
-      const finalValue = newLines.join('\n');
-      setLocalValue(finalValue);
-      
-      setTimeout(() => {
-        const newPosition = newLines.slice(0, currentLineIndex + 2).join('\n').length;
-        textarea.focus();
-        textarea.setSelectionRange(newPosition, newPosition);
-      }, 0);
-      return;
+  // Debounced callback for parent updates to reduce excessive calls
+  const debouncedParentUpdate = useDebounceCallback((newValue: string) => {
+    if (onChange && newValue !== value) {
+      onChange(newValue);
     }
-    
+  }, 300); // 300ms debounce
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setHasUserEdited(true);
     setLocalValue(newValue);
-    } catch (error) {
-      console.error('Error in handleChange:', error);
-      // Fallback to just setting the value without special processing
-      setLocalValue(e.target.value);
+    
+    // Use debounced update for parent to reduce excessive re-renders
+    debouncedParentUpdate(newValue);
+
+    // Dot phrase detection (simplified)
+    const cursor = e.target.selectionStart;
+    const slash = getSlashPhraseAtCursor(newValue, cursor);
+    if (slash) {
+      const combinedPhrases = getCombinedDotPhrases();
+      const matches = Object.keys(combinedPhrases).filter(k => 
+        k.toLowerCase().startsWith(slash.phrase.toLowerCase())
+      );
+      setSuggestions(matches);
+      setShowSuggestions(matches.length > 0);
+      setCurrentDot(slash);
+      setSelectedSuggestion(0);
+    } else {
+      setShowSuggestions(false);
+      setCurrentDot(null);
     }
-  };
+
+    // Auto-convert dash to sub-point (simplified)
+    const textarea = textareaRef.current;
+    if (textarea && newValue.endsWith('-')) {
+      const lines = newValue.split('\n');
+      const lastLine = lines[lines.length - 1];
+      if (lastLine === '-' && lines.length > 1) {
+        const newLines = [...lines];
+        newLines[newLines.length - 1] = '- ';
+        const finalValue = newLines.join('\n');
+        setLocalValue(finalValue);
+        if (onChange) onChange(finalValue);
+        
+        setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(finalValue.length, finalValue.length);
+        }, 0);
+      }
+    }
+  }, [onChange]);
 
   const insertTemplate = useCallback((template: string) => {
     const textarea = textareaRef.current;
@@ -420,35 +389,40 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     const newValue = beforeCursor + template + afterCursor;
     setLocalValue(newValue);
     setHasUserEdited(true);
+    if (onChange) onChange(newValue);
     
     setTimeout(() => {
       textarea.focus();
       textarea.setSelectionRange(selectionStart + template.length, selectionStart + template.length);
     }, 0);
-  }, [localValue]);
+  }, [localValue, onChange]);
 
   const addCondition = useCallback(() => {
     const newValue = (localValue || '') + ((localValue || '') ? '\n' : '') + '# ';
     setLocalValue(newValue);
     setHasUserEdited(true);
+    if (onChange) onChange(newValue);
+    
     setTimeout(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(newValue.length, newValue.length);
     }, 0);
-  }, [localValue]);
+  }, [localValue, onChange]);
 
   const addDetail = useCallback(() => {
     const newValue = (localValue || '') + ((localValue || '') ? '\n' : '') + '- ';
     setLocalValue(newValue);
     setHasUserEdited(true);
+    if (onChange) onChange(newValue);
+    
     setTimeout(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(newValue.length, newValue.length);
     }, 0);
-  }, [localValue]);
+  }, [localValue, onChange]);
 
   // Expand dot phrase in textarea
-  const expandDotPhrase = (dotKey: string) => {
+  const expandDotPhrase = useCallback((dotKey: string) => {
     if (!currentDot) return;
     const combinedPhrases = getCombinedDotPhrases();
     const phrase = combinedPhrases[dotKey];
@@ -469,6 +443,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     const currentScrollLeft = textareaRef.current?.scrollLeft || 0;
     
     setLocalValue(expanded);
+    if (onChange) onChange(expanded);
     setShowSuggestions(false);
     setCurrentDot(null);
     setSuggestions([]);
@@ -495,7 +470,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         }
       });
     }
-  };
+  }, [currentDot, localValue, onChange, getCombinedDotPhrases]);
 
   // Handle smart option selection
   const handleSmartOptionSelect = (idx: number, optIdx: number) => {
@@ -512,6 +487,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     // Replace the [[...]] with the selected option
     const newValue = before + selected + after;
     setLocalValue(newValue);
+    if (onChange) onChange(newValue);
     
     // Restore scroll position and handle cursor
     if (textareaRef.current) {
@@ -552,6 +528,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     // Replace the [[...]] with the custom text
     const newValue = before + customText + after;
     setLocalValue(newValue);
+    if (onChange) onChange(newValue);
     
     // Restore scroll position and handle next options
     if (textareaRef.current) {
@@ -587,6 +564,7 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     // Remove the smart option
     const newValue = before + after;
     setLocalValue(newValue);
+    if (onChange) onChange(newValue);
     
     setTimeout(() => {
       const updatedOptions = parseSmartOptions(newValue);
@@ -612,15 +590,24 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
   // Update dropdown position when smart option is active
   useEffect(() => {
     if (activeSmartIdx !== null && textareaRef.current && smartOptions[activeSmartIdx]) {
-      const opt = smartOptions[activeSmartIdx];
-      const caret = getCaretCoordinates(textareaRef.current, opt.start);
-      const rect = textareaRef.current.getBoundingClientRect();
-      setDropdownPos({
-        top: rect.top + caret.top - textareaRef.current.scrollTop + 28,
-        left: rect.left + caret.left - textareaRef.current.scrollLeft + 8
-      });
+      try {
+        const opt = smartOptions[activeSmartIdx];
+        const caret = getCaretCoordinates(textareaRef.current, opt.start);
+        const rect = textareaRef.current.getBoundingClientRect();
+        const newPos = {
+          top: rect.top + caret.top - textareaRef.current.scrollTop + 28,
+          left: rect.left + caret.left - textareaRef.current.scrollLeft + 8
+        };
+        
+        // Only update if position actually changed
+        if (newPos.top !== dropdownPos.top || newPos.left !== dropdownPos.left) {
+          setDropdownPos(newPos);
+        }
+      } catch (error) {
+        console.warn('Error calculating dropdown position:', error);
+      }
     }
-  }, [activeSmartIdx, smartOptions, localValue]);
+  }, [activeSmartIdx, smartOptions]);
 
   // Reset date object for DATE options
   useEffect(() => {
@@ -634,22 +621,33 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
   }, [activeSmartIdx, smartOptions]);
 
   // Handle blur to prevent closing dropdown during interaction
-  const handleTextareaBlur = () => {
-    setIsFocused(false);
-    if (onChange) {
-      onChange(localValue || '');
+  const handleTextareaBlur = useCallback(() => {
+    // Don't process blur if user is interacting with dropdown
+    if (dropdownMouseDownRef.current) {
+      return;
     }
-    onBlur?.();
     
+    setIsFocused(false);
+    
+    // Force immediate parent update on blur to ensure data is saved
+    if (onChange && localValue !== value) {
+      onChange(localValue);
+    }
+    
+    // Only close dropdowns if not interacting with them
     setTimeout(() => {
-      if (!dropdownMouseDownRef.current && !(activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options[0] === 'DATE' && calendarIsOpen)) {
+      if (!dropdownMouseDownRef.current && !calendarIsOpen) {
         setActiveSmartIdx(null);
         setShowSuggestions(false);
         setCurrentDot(null);
       }
       dropdownMouseDownRef.current = false;
-    }, 50);
-  };
+    }, 100);
+    
+    // Sync to parent using persisted state
+    persistedState.syncToParent();
+    onBlur?.();
+  }, [persistedState, onBlur, calendarIsOpen, onChange, localValue, value]);
 
   // Auto-activate smart options when expanded
   useEffect(() => {
@@ -680,15 +678,21 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
     setSmartOptions(prev => prev.map((o, i) => i === idx ? { ...o, selectedIdx: sel } : o));
   }
 
-  // Enhanced keyboard navigation for dropdown
+  // Enhanced keyboard navigation for dropdown - simplified
   useEffect(() => {
     if (activeSmartIdx === null || !smartOptions[activeSmartIdx]) return;
+    
     const handleDropdownKeyDown = (e: KeyboardEvent) => {
-      if (activeSmartIdx === null) return;
+      // Only handle if we're in an active dropdown context
+      if (activeSmartIdx === null || !document.activeElement || 
+          (!textareaRef.current?.contains(document.activeElement) && 
+           !customInputRef.current?.contains(document.activeElement))) return;
+           
       const opts = smartOptions[activeSmartIdx].options;
       const numOptions = opts.length;
       const isDate = opts[0] === 'DATE';
       let selIdx = smartOptions[activeSmartIdx].selectedIdx ?? 0;
+      
       if (e.key === 'ArrowDown' && !isDate) {
         e.preventDefault();
         if (customInputFocused) {
@@ -725,8 +729,9 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         setCustomInputFocused(false);
       }
     };
-    window.addEventListener('keydown', handleDropdownKeyDown);
-    return () => window.removeEventListener('keydown', handleDropdownKeyDown);
+    
+    document.addEventListener('keydown', handleDropdownKeyDown);
+    return () => document.removeEventListener('keydown', handleDropdownKeyDown);
   }, [activeSmartIdx, smartOptions, customInputFocused, customInput]);
 
   // Handle click to activate smart functions
@@ -761,8 +766,10 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
       {showSuggestions && suggestions.length > 0 && (
         <div 
           className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto min-w-48"
-          onPointerDown={() => { dropdownMouseDownRef.current = true; }}
-          onMouseDown={() => { dropdownMouseDownRef.current = true; }}
+          onMouseDown={(e) => { 
+            dropdownMouseDownRef.current = true; 
+            e.preventDefault(); 
+          }}
         >
           {suggestions.map((suggestion, index) => (
             <div
@@ -770,14 +777,11 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
               className={`px-3 py-2 cursor-pointer hover:bg-blue-50 ${
                 index === selectedSuggestion ? 'bg-blue-100' : ''
               }`}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                dropdownMouseDownRef.current = true;
-                expandDotPhrase(suggestion);
-              }}
               onMouseDown={(e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 dropdownMouseDownRef.current = true;
+                expandDotPhrase(suggestion);
               }}
             >
               <div className="font-mono text-sm">{suggestion}</div>
@@ -797,10 +801,10 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
             top: dropdownPos.top,
             left: dropdownPos.left,
           }}
-          onPointerDown={() => { dropdownMouseDownRef.current = true; }}
-          onPointerUp={() => { dropdownMouseDownRef.current = false; }}
-          onMouseDown={() => { dropdownMouseDownRef.current = true; }}
-          onMouseUp={() => { dropdownMouseDownRef.current = false; }}
+          onMouseDown={(e) => { 
+            dropdownMouseDownRef.current = true; 
+            e.preventDefault(); 
+          }}
         >
           {/* Smart Options Counter */}
           <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 rounded-t-lg">
@@ -868,10 +872,6 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
                     optIdx === smartOptions[activeSmartIdx].selectedIdx ? 'bg-blue-100' : ''
                   }`}
                   onClick={() => handleSmartOptionSelect(activeSmartIdx, optIdx)}
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -929,11 +929,8 @@ export function SmartTextEntry({ title, placeholder, value, onChange, onBlur, te
         <div className="flex items-center gap-3">
           <span>Characters: {(localValue || '').length}</span>
           <Button size="sm" variant="ghost" onClick={() => { 
-            setLocalValue(''); 
+            persistedState.clearPersistedState();
             setHasUserEdited(false); 
-            if (onChange) {
-              onChange(''); 
-            }
           }} className="h-6 px-2 text-xs">
             <RotateCcw className="w-3 h-3 mr-1" />
             Clear

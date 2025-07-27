@@ -53,7 +53,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { useAuth } from "react-oidc-context";
+import { useAuth } from "@/contexts/AuthContext";
+import { useNoteState } from "@/contexts/NoteStateContext";
 // Template context removed - using direct template management
 
 // Type definitions for templates
@@ -89,6 +90,8 @@ import * as DiffMatchPatch from 'diff-match-patch';
 import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
 import HpiSection from '@/components/HpiSection';
 import { TemplateAwareLivePreview } from '@/components/TemplateAwareLivePreview';
+import { usePersistedState } from '@/hooks/usePersistedState';
+import { useDebounceCallback } from '@/hooks/useDebounce';
 
 import { type TemplateContent, getSectionById } from '@/lib/sectionLibrary';
 
@@ -220,13 +223,19 @@ interface SidebarStateProps {
 }
 
 function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, setSelectedSubOption }: SidebarStateProps) {
+  // Get centralized note state management
+  const noteState = useNoteState();
+  
   // Note state with diff-patch-merge tracking
   const [note, setNote] = useState("");
   const [initialGeneratedText, setInitialGeneratedText] = useState("");
   const [currentText, setCurrentText] = useState("");
   const dmp = useRef(new DiffMatchPatch.diff_match_patch());
   
-  const [noteType, setNoteType] = useState<NoteType>(null);
+  // Use persistent note type from context
+  const noteType = noteState.noteType as NoteType;
+  const setNoteTypeState = noteState.setNoteType;
+  
   const [customNoteText, setCustomNoteText] = useState<string>("");
   const [admissionType, setAdmissionType] = useState<NoteSubtype>("general");
   const [progressType, setProgressType] = useState<NoteSubtype>("general");
@@ -253,19 +262,36 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   // ICU intubation
   const [intubationValues, setIntubationValues] = useState<Record<string, { current: string; past: string[] }>>({});
   
-  const [medications, setMedications] = useState<MedicationData>({ 
-    homeMedications: [], 
-    hospitalMedications: [] 
-  });
+  // Use persistent state for medications and allergies
+  const { 
+    value: medications, 
+    setValue: setMedications 
+  } = usePersistedState<MedicationData>(
+    'medical_medications',
+    { homeMedications: [], hospitalMedications: [] }
+  );
   
-  const [allergies, setAllergies] = useState<AllergiesData>({ hasAllergies: false, allergiesList: [] });
+  const { 
+    value: allergies, 
+    setValue: setAllergies 
+  } = usePersistedState<AllergiesData>(
+    'medical_allergies',
+    { hasAllergies: false, allergiesList: [] }
+  );
+  
   const [newAllergy, setNewAllergy] = useState("");
   
-  const [socialHistory, setSocialHistory] = useState<SocialHistoryData>({
-    smoking: { status: false, details: "" },
-    alcohol: { status: false, details: "" },
-    drugs: { status: false, details: "" }
-  });
+  const { 
+    value: socialHistory, 
+    setValue: setSocialHistory 
+  } = usePersistedState<SocialHistoryData>(
+    'medical_social_history',
+    {
+      smoking: { status: false, details: "" },
+      alcohol: { status: false, details: "" },
+      drugs: { status: false, details: "" }
+    }
+  );
 
   // Local state for social details
   const [smokingDetails, setSmokingDetails] = useState("");
@@ -285,21 +311,51 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   allergiesRef.current = allergies;
   socialHistoryRef.current = socialHistory;
   
-  const [chiefComplaint, setChiefComplaint] = useState<ChiefComplaintData>({
-    selectedTemplate: "",
-    customComplaint: "",
-    presentingSymptoms: "",
-    onsetDuration: "",
-    associatedSymptoms: "",
-    aggravatingFactors: "",
-    relievingFactors: "",
-    previousTreatment: ""
-  });
+  // Use persistent state for form data
+  const { 
+    value: chiefComplaint, 
+    setValue: setChiefComplaint 
+  } = usePersistedState<ChiefComplaintData>(
+    'medical_chief_complaint',
+    {
+      selectedTemplate: "",
+      customComplaint: "",
+      presentingSymptoms: "",
+      onsetDuration: "",
+      associatedSymptoms: "",
+      aggravatingFactors: "",
+      relievingFactors: "",
+      previousTreatment: ""
+    }
+  );
 
-  const [hpiText, setHpiText] = useState<string>("");
+  const { 
+    value: hpiText, 
+    setValue: setHpiText 
+  } = usePersistedState<string>('medical_hpi_text', "");
 
-  const [pmhText, setPmhText] = useState<string>('');
-  const [impressionText, setImpressionText] = useState<string>('');
+  const { 
+    value: pmhText, 
+    setValue: setPmhText 
+  } = usePersistedState<string>('medical_pmh_text', '');
+  
+  const { 
+    value: impressionText, 
+    setValue: setImpressionText 
+  } = usePersistedState<string>('medical_impression_text', '');
+
+  // Create debounced callbacks to prevent focus interruption
+  const debouncedSetPmhText = useDebounceCallback((value: string) => {
+    setPmhText(value);
+  }, 500); // 500ms delay for live preview updates
+
+  const debouncedSetImpressionText = useDebounceCallback((value: string) => {
+    setImpressionText(value);
+  }, 500); // 500ms delay for live preview updates
+
+  const debouncedSetCustomNoteText = useDebounceCallback((value: string) => {
+    setCustomNoteText(value);
+  }, 500); // 500ms delay for live preview updates
 
   const [labValues, setLabValues] = useState<LabValue[]>([]);
   const [processedLabValues, setProcessedLabValues] = useState<ProcessedLabValue[]>([]);
@@ -539,7 +595,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   }, [labValues]);
 
   const handleCompleteReset = useCallback(() => {
-    setNoteType(null);
+    setNoteTypeState('');
     setAdmissionType("general");
     setProgressType("general");
     
@@ -1563,7 +1619,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
               </h1>
             </div>
             <Button
-              onClick={() => setNoteType(null)}
+              onClick={() => setNoteTypeState('')}
               variant="outline"
               size="sm"
             >
@@ -1573,7 +1629,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
           <div className="flex-1 flex flex-col rounded-lg border border-gray-200 shadow-sm">
             <DotPhraseTextarea
               value={customNoteText}
-              onChange={setCustomNoteText}
+              onChange={debouncedSetCustomNoteText}
               placeholder={language === 'fr' ? 'Commencez à taper votre note personnalisée...' : 'Start typing your custom note...'}
               rows={25}
               className="flex-1 w-full h-full resize-none border-0 focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm p-4 bg-gray-50"
@@ -1593,7 +1649,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
                       ? "border-blue-500 bg-blue-50"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
-                  onClick={() => setNoteType("admission")}
+                  onClick={() => setNoteTypeState("admission")}
                 >
                   <div className="flex items-center space-x-2 mb-2">
                     <FileText className="w-5 h-5 text-blue-600" />
@@ -1607,7 +1663,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
                       ? "border-green-500 bg-green-50"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
-                  onClick={() => setNoteType("progress")}
+                  onClick={() => setNoteTypeState("progress")}
                 >
                   <div className="flex items-center space-x-2 mb-2">
                     <TrendingUp className="w-5 h-5 text-green-600" />
@@ -1621,7 +1677,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
                       ? "border-purple-500 bg-purple-50"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
-                  onClick={() => setNoteType("consultation")}
+                  onClick={() => setNoteTypeState("consultation")}
                 >
                   <div className="flex items-center space-x-2 mb-2">
                     <Users className="w-5 h-5 text-purple-600" />
@@ -1635,7 +1691,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
                       ? "border-orange-500 bg-orange-50"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
-                  onClick={() => { setNoteType("custom"); }}
+                  onClick={() => { setNoteTypeState("custom"); }}
                 >
                   <div className="flex items-center space-x-2 mb-2">
                     <Edit3 className="w-5 h-5 text-orange-600" />
@@ -1849,7 +1905,8 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
           <SectionWrapper title={sectionTitle["pmh"]} sectionKey="pmh" controls={pmhControls}>
             <SmartPMHSection
               value={pmhText}
-              onChange={setPmhText}
+              onChange={debouncedSetPmhText} // Use debounced callback to prevent focus loss
+              onBlur={() => {}} // Handle immediate save on blur through SmartTextEntry
               defaultContent={getSectionDefaultContent("pmh")}
             />
           </SectionWrapper>
@@ -2031,7 +2088,8 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
           <SectionWrapper title={sectionTitle["impression"]} sectionKey="impression">
             <SmartImpressionSection 
               value={impressionText} 
-              onChange={setImpressionText}
+              onChange={debouncedSetImpressionText} // Use debounced callback to prevent focus loss
+              onBlur={() => {}} // Handle immediate save on blur through SmartTextEntry
               defaultContent={getSectionDefaultContent("impression")}
             />
           </SectionWrapper>
@@ -2267,22 +2325,18 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         <div className="flex-1 min-w-0 flex flex-col p-0">
           <div className="w-full h-full min-h-[600px] flex flex-col rounded-none shadow-none bg-white border-0">
             <div className="flex-1 overflow-y-auto px-6 py-4 text-base text-gray-800" ref={contentRef}>
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={selectedSubOption}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.3 }}
-                  className="w-full"
-                >
-                  {renderMainContent() || (
-                    <div className="text-center text-gray-400 py-12 whitespace-normal text-wrap">
-                      Please select a section from the sidebar to begin.
-                    </div>
-                  )}
-                </motion.div>
-              </AnimatePresence>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="w-full"
+              >
+                {renderMainContent() || (
+                  <div className="text-center text-gray-400 py-12 whitespace-normal text-wrap">
+                    Please select a section from the sidebar to begin.
+                  </div>
+                )}
+              </motion.div>
             </div>
           </div>
         </div>

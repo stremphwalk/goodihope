@@ -18,7 +18,6 @@ import {
   Sparkles
 } from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
-import { DotPhraseManager } from './DotPhraseManager';
 import { UserProfileSection } from './UserProfileSection';
 import { useLocation } from 'wouter';
 
@@ -103,28 +102,46 @@ export function MainLayout({
   const [medicalNotesOpen, setMedicalNotesOpen] = useState(true); // Always start with medical notes open
   const [smartOptionsOpen, setSmartOptionsOpen] = useState(selectedMenu === 'smart-options');
 
-  // Synchronize selectedMenu with current route
+  // Synchronize selectedMenu with current route - only update if different
   useEffect(() => {
+    let newMenu = selectedMenu;
+    
     if (location === '/groups' && selectedMenu !== 'team-groups') {
-      setSelectedMenu('team-groups');
+      newMenu = 'team-groups';
     } else if (location === '/dot-phrases' && selectedMenu !== 'smart-options') {
-      setSelectedMenu('smart-options');
+      newMenu = 'smart-options';
     } else if (location === '/calculations' && selectedMenu !== 'calculations') {
-      setSelectedMenu('calculations');
+      newMenu = 'calculations';
     } else if (location === '/' && selectedMenu !== 'medical-notes') {
-      setSelectedMenu('medical-notes');
+      newMenu = 'medical-notes';
+    }
+    
+    if (newMenu !== selectedMenu) {
+      setSelectedMenu(newMenu);
     }
   }, [location, selectedMenu, setSelectedMenu]);
 
   // Synchronize open/close state and suboption selection with selectedMenu
   useEffect(() => {
-    setMedicalNotesOpen(selectedMenu === 'medical-notes');
-    setSmartOptionsOpen(selectedMenu === 'smart-options');
-    const menu = MAIN_MENUS.find((m) => m.key === selectedMenu);
-    if (menu && menu.subOptions.length > 0 && !menu.subOptions.some(sub => sub.key === selectedSubOption)) {
-      setSelectedSubOption(menu.subOptions[0].key);
+    const newMedicalNotesOpen = selectedMenu === 'medical-notes';
+    const newSmartOptionsOpen = selectedMenu === 'smart-options';
+    
+    if (newMedicalNotesOpen !== medicalNotesOpen) {
+      setMedicalNotesOpen(newMedicalNotesOpen);
     }
-  }, [selectedMenu, selectedSubOption, MAIN_MENUS, setSelectedSubOption]);
+    if (newSmartOptionsOpen !== smartOptionsOpen) {
+      setSmartOptionsOpen(newSmartOptionsOpen);
+    }
+    
+    // Only update sub-option if current one is invalid for the selected menu
+    const menu = MAIN_MENUS.find((m) => m.key === selectedMenu);
+    if (menu && menu.subOptions.length > 0) {
+      const validSubOption = menu.subOptions.some(sub => sub?.key === selectedSubOption);
+      if (!validSubOption) {
+        setSelectedSubOption(menu.subOptions[0]?.key || '');
+      }
+    }
+  }, [selectedMenu, selectedSubOption, MAIN_MENUS, setSelectedSubOption, medicalNotesOpen, smartOptionsOpen]);
 
   return (
     <SidebarProvider>
@@ -167,7 +184,7 @@ export function MainLayout({
                     if (menu.key === "medical-notes") {
                       setMedicalNotesOpen(true); // Always keep medical notes open when selected
                       if (menu.subOptions.length > 0) {
-                        setSelectedSubOption(menu.subOptions[0].key);
+                        setSelectedSubOption(menu.subOptions[0]?.key || '');
                       }
                       if (location !== '/') {
                         setLocation('/');
@@ -187,7 +204,7 @@ export function MainLayout({
                       }
                     } else {
                       if (menu.subOptions.length > 0) {
-                        setSelectedSubOption(menu.subOptions[0].key);
+                        setSelectedSubOption(menu.subOptions[0]?.key || '');
                       }
                     }
                   }}
@@ -205,37 +222,37 @@ export function MainLayout({
                   <nav className="flex flex-col gap-1 mt-2 ml-2">
                     {menu.subOptions.map((sub, subIdx) => (
                       <button
-                        key={sub.key}
-                        className={`medical-subnav-button ${selectedSubOption === sub.key ? 'medical-subnav-active' : ''}`}
+                        key={sub?.key}
+                        className={`medical-subnav-button ${selectedSubOption === sub?.key ? 'medical-subnav-active' : ''}`}
                         onClick={() => {
                           // Navigate to the appropriate route when switching from profile page
                           if (location === '/profile') {
                             setLocation('/');
                             return;
                           }
-                          setSelectedSubOption(sub.key);
+                          setSelectedSubOption(sub?.key || '');
                         }}
                         tabIndex={0}
                         onKeyDown={e => {
                           if (e.key === 'ArrowDown') {
                             e.preventDefault();
                             const nextIdx = (subIdx + 1) % menu.subOptions.length;
-                            setSelectedSubOption(menu.subOptions[nextIdx].key);
+                            setSelectedSubOption(menu.subOptions[nextIdx]?.key || '');
                             // Move focus to the next button
                             const nextBtn = e.currentTarget.parentElement?.children[nextIdx] as HTMLButtonElement;
                             nextBtn?.focus();
                           } else if (e.key === 'ArrowUp') {
                             e.preventDefault();
                             const prevIdx = (subIdx - 1 + menu.subOptions.length) % menu.subOptions.length;
-                            setSelectedSubOption(menu.subOptions[prevIdx].key);
+                            setSelectedSubOption(menu.subOptions[prevIdx]?.key || '');
                             // Move focus to the previous button
                             const prevBtn = e.currentTarget.parentElement?.children[prevIdx] as HTMLButtonElement;
                             prevBtn?.focus();
                           }
                         }}
                       >
-                        {sub.icon}
-                        <span>{sub.label}</span>
+                        {sub?.icon}
+                        <span>{sub?.label}</span>
                       </button>
                     ))}
                   </nav>
@@ -245,22 +262,22 @@ export function MainLayout({
                   <nav className="flex flex-col gap-1 mt-2 ml-2">
                     {menu.subOptions.map((sub) => (
                       <button
-                        key={sub.key}
-                        className={`medical-subnav-button ${selectedSubOption === sub.key ? 'medical-subnav-active' : ''}`}
+                        key={sub?.key}
+                        className={`medical-subnav-button ${selectedSubOption === sub?.key ? 'medical-subnav-active' : ''}`}
                         onClick={() => {
                           // Navigate to the appropriate route when switching from profile page
                           if (location === '/profile') {
-                            if (sub.key === 'dot-phrases') {
+                            if (sub?.key === 'dot-phrases') {
                               setLocation('/dot-phrases');
                             }
                             return;
                           }
-                          setSelectedSubOption(sub.key);
+                          setSelectedSubOption(sub?.key || '');
                         }}
                         tabIndex={0}
                       >
-                        {sub.icon}
-                        <span>{sub.label}</span>
+                        {sub?.icon}
+                        <span>{sub?.label}</span>
                       </button>
                     ))}
                   </nav>
@@ -287,11 +304,7 @@ export function MainLayout({
         </Sidebar>
         {/* Main content area */}
         <main className={`medical-main-content ${!hasLivePreview ? 'no-right-margin' : ''}`}>
-          {selectedMenu === 'smart-options' && selectedSubOption === 'dot-phrases' ? (
-            <DotPhraseManager />
-          ) : (
-            children
-          )}
+          {children}
         </main>
         {/* Fixed preview panel on far right */}
         <aside className="medical-preview-panel">
