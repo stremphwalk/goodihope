@@ -244,18 +244,30 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   }, [preserveBeforeUpdate]);
 
   // Note state with diff-patch-merge tracking
-  const [note, setNote] = useState("");
-  const [initialGeneratedText, setInitialGeneratedText] = useState("");
-  const [currentText, setCurrentText] = useState("");
+  // Use persistent storage for main note content
+  const note = noteState.getFormData('note') || '';
+  const setNote = (value: string) => noteState.setFormData('note', value);
+  
+  const initialGeneratedText = noteState.getFormData('initialGeneratedText') || '';
+  const setInitialGeneratedText = (value: string) => noteState.setFormData('initialGeneratedText', value);
+  
+  const currentText = noteState.getFormData('currentText') || '';
+  const setCurrentText = (value: string) => noteState.setFormData('currentText', value);
   const dmp = useRef(new DiffMatchPatch.diff_match_patch());
   
   // Use persistent note type from context
   const noteType = noteState.noteType as NoteType;
   const setNoteTypeState = noteState.setNoteType;
   
-  const [customNoteText, setCustomNoteText] = useState<string>("");
-  const [admissionType, setAdmissionType] = useState<NoteSubtype>("general");
-  const [progressType, setProgressType] = useState<NoteSubtype>("general");
+  // Use persistent storage for custom note text
+  const customNoteText = noteState.getFormData('customNoteText') || '';
+  const setCustomNoteText = (value: string) => noteState.setFormData('customNoteText', value);
+  // Use persistent storage for admission and progress types
+  const admissionType = (noteState.getFormData('admissionType') as NoteSubtype) || 'general';
+  const setAdmissionType = (value: NoteSubtype) => noteState.setFormData('admissionType', value);
+  
+  const progressType = (noteState.getFormData('progressType') as NoteSubtype) || 'general';
+  const setProgressType = (value: NoteSubtype) => noteState.setFormData('progressType', value);
   
   // Template state management
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
