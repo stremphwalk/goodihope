@@ -60,20 +60,35 @@ async function handleTranscriptionToken(req: VercelRequest, res: VercelResponse)
       });
     }
     
-    // For client-side security, we should generate a temporary API key
-    // but for now, return the main key (this should be improved for production)
+    // Generate temporary API key as recommended by Soniox for client-side usage
     try {
-      // In a proper implementation, we would call Soniox's temporary API key endpoint:
-      // const tempKeyResponse = await fetch('https://api.soniox.com/v1/auth/create_temporary_api_key', {
-      //   method: 'POST',
-      //   headers: { 'Authorization': `Bearer ${sonioxApiKey}`, 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ expires_in: 3600 })
-      // });
+      console.log('Generating temporary Soniox API key...');
+      
+      const tempKeyResponse = await fetch('https://api.soniox.com/v1/auth/temporary-api-key', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${sonioxApiKey}`, 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({ 
+          usage_type: 'transcribe_websocket',
+          expires_in_seconds: 3600 // 1 hour
+        })
+      });
+      
+      if (!tempKeyResponse.ok) {
+        const errorData = await tempKeyResponse.text();
+        console.error('Soniox temporary key generation failed:', tempKeyResponse.status, errorData);
+        throw new Error(`Soniox API error: ${tempKeyResponse.status} - ${errorData}`);
+      }
+      
+      const tempKeyData = await tempKeyResponse.json();
+      console.log('✅ Temporary Soniox API key generated successfully');
       
       return res.json({
-        token: sonioxApiKey,
+        token: tempKeyData.api_key,
         sessionId: req.body?.sessionId || 'default',
-        expiresIn: 3600,
+        expiresIn: tempKeyData.expires_in_seconds || 3600,
         config: {
           maxDuration: 30000,
           model: 'en_v2',
@@ -81,10 +96,11 @@ async function handleTranscriptionToken(req: VercelRequest, res: VercelResponse)
         }
       });
     } catch (error) {
-      console.error('Error preparing transcription token:', error);
+      console.error('Error generating temporary API key:', error);
       return res.status(500).json({
-        error: 'Failed to prepare transcription token',
-        code: 'TOKEN_PREPARATION_FAILED'
+        error: 'Failed to generate temporary API key',
+        code: 'TEMP_KEY_GENERATION_FAILED',
+        details: error.message
       });
     }
     
