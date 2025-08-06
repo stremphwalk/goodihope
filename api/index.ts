@@ -7,11 +7,14 @@ async function handleTranscriptionDebug(req: VercelRequest, res: VercelResponse)
     const hasApiKey = !!getSonioxApiKey();
     const apiKeyLength = getSonioxApiKey()?.length || 0;
     
+    const apiKey = getSonioxApiKey();
     return res.json({
       hasApiKey,
       apiKeyLength,
+      apiKeyPrefix: apiKey ? apiKey.substring(0, 8) + '...' : 'none',
       nodeEnv: process.env.NODE_ENV,
       availableSonioxKeys: Object.keys(process.env).filter(key => key.includes('SONIOX')),
+      rawEnvValue: !!process.env.SONIOX_API_KEY,
       timestamp: new Date().toISOString()
     });
   } catch (error) {

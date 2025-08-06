@@ -223,6 +223,14 @@ export function useSonioxTranscription(options = {}) {
         // Error handling
         onError: (error) => {
           console.error('Soniox transcription error:', error);
+          console.error('Error details:', {
+            message: error.message,
+            code: error.code,
+            status: error.status,
+            response: error.response,
+            type: typeof error,
+            keys: Object.keys(error)
+          });
           setState(TRANSCRIPTION_STATES.ERROR);
           setError({
             type: 'transcription_error',
