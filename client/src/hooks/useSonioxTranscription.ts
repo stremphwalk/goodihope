@@ -14,6 +14,7 @@ import {
   detectMedicalSection 
 } from '@/lib/transcriptionUtils';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Transcription states
 export const TRANSCRIPTION_STATES = {
@@ -57,6 +58,7 @@ export function useSonioxTranscription(options = {}) {
   } = options;
 
   const { language } = useLanguage();
+  const { user } = useAuth();
   const finalConfig = { ...DEFAULT_CONFIG, ...config };
 
   // State management
@@ -98,9 +100,20 @@ export function useSonioxTranscription(options = {}) {
         try {
           console.log('Requesting transcription token from server...');
           const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          // Prepare headers with authorization
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json'
+          };
+          
+          // Add authorization header if user is authenticated
+          if (user && user.id_token) {
+            headers['Authorization'] = `Bearer ${user.id_token}`;
+          }
+          
           const response = await fetch('/api/transcription/token', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             credentials: 'include',
             body: JSON.stringify({ sessionId })
           });

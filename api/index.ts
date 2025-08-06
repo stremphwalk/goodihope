@@ -31,11 +31,10 @@ async function handleTranscriptionToken(req: VercelRequest, res: VercelResponse)
 
     // Import necessary modules
     const { getSonioxApiKey, validateSonioxApiKey } = await import('../server/middleware/transcriptionAuth.js');
-    const { checkJwt } = await import('../server/auth.js');
     
-    // Simple auth check (without full middleware setup)
+    // Simple auth check - just require authorization header presence
     const authHeader = req.headers.authorization;
-    if (!authHeader) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         error: 'Authentication required',
         code: 'AUTH_REQUIRED'
