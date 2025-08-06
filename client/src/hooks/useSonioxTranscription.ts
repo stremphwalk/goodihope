@@ -96,36 +96,59 @@ export function useSonioxTranscription(options = {}) {
       let effectiveApiKey = apiKey;
       if (!effectiveApiKey) {
         try {
+          console.log('Requesting transcription token from server...');
           const response = await fetch('/api/transcription/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include'
           });
+          
+          console.log(`Token request response status: ${response.status}`);
+          
           if (response.ok) {
             const data = await response.json();
             effectiveApiKey = data.token;
+            console.log('✅ Transcription token received from server');
           } else {
-            throw new Error('Failed to get transcription token');
+            const errorText = await response.text();
+            console.error(`Token request failed: ${response.status} - ${errorText}`);
+            throw new Error(`Failed to get transcription token: ${response.status}`);
           }
         } catch (tokenError) {
-          console.warn('Failed to get server token, using direct API key');
-          if (!apiKey) {
-            throw new Error('No API key available');
+          console.error('Token request error:', tokenError);
+          console.warn('Failed to get server token, checking environment variables...');
+          
+          // In production, we should always use server tokens for security
+          // But as a fallback, check if there's a client-side key (not recommended)
+          if (process.env.NODE_ENV === 'development' && window.SONIOX_API_KEY) {
+            effectiveApiKey = window.SONIOX_API_KEY;
+            console.warn('⚠️ Using client-side API key (development only)');
+          } else {
+            throw new Error('No transcription API key available. Please check server configuration.');
           }
         }
       }
 
       const medicalContext = getMedicalContextConfig();
       
-      const recordTranscribe = new RecordTranscribe({
-        apiKey: effectiveApiKey,
-        model: finalConfig.model,
-        languageHints: [language],
-        context: medicalContext.context,
-        enableVAD: finalConfig.enableVAD,
-        
-        // Callback for partial results (real-time)
-        onPartialResult: (result) => {
+      // Validate API key before creating instance
+      if (!effectiveApiKey || effectiveApiKey.trim() === '') {
+        throw new Error('No valid API key available for transcription service');
+      }
+
+      console.log('Creating Soniox RecordTranscribe instance...');
+      
+      let recordTranscribe;
+      try {
+        recordTranscribe = new RecordTranscribe({
+          apiKey: effectiveApiKey,
+          model: finalConfig.model || 'stt-rt-preview',
+          languageHints: [language || 'en'],
+          context: medicalContext.context || [],
+          enableVAD: finalConfig.enableVAD,
+          
+          // Callback for partial results (real-time)
+          onPartialResult: (result) => {
           if (result && result.tokens) {
             currentTokensRef.current = result.tokens;
             const text = result.tokens.map(token => token.text).join('');
@@ -214,6 +237,22 @@ export function useSonioxTranscription(options = {}) {
           }
         }
       });
+      
+      // Validate the created instance
+      if (!recordTranscribe) {
+        throw new Error('Failed to create RecordTranscribe instance');
+      }
+      
+      if (typeof recordTranscribe.start !== 'function') {
+        throw new Error('RecordTranscribe instance missing required methods');
+      }
+      
+      console.log('✅ Soniox RecordTranscribe instance created successfully');
+      
+      } catch (constructorError) {
+        console.error('Failed to create RecordTranscribe instance:', constructorError);
+        throw new Error(`Transcription service initialization failed: ${constructorError.message}`);
+      }
 
       recordTranscribeRef.current = recordTranscribe;
       return recordTranscribe;
@@ -339,10 +378,35 @@ export function useSonioxTranscription(options = {}) {
       // Initialize if needed
       const recordTranscribe = await initializeTranscription();
       
-      // Start recording
-      await recordTranscribe.start();
-      setIsRecording(true);
-      setState(TRANSCRIPTION_STATES.LISTENING);
+      // Ensure the instance is properly initialized before starting
+      if (!recordTranscribe) {
+        throw new Error('Failed to initialize transcription service');
+      }
+      
+      // Validate that the RecordTranscribe instance has required methods
+      if (typeof recordTranscribe.start !== 'function') {
+        throw new Error('Transcription service not properly initialized - missing start method');
+      }
+      
+      // Start recording with additional error handling
+      try {
+        await recordTranscribe.start();
+        setIsRecording(true);
+        setState(TRANSCRIPTION_STATES.LISTENING);
+      } catch (startError) {
+        console.error('Failed to start Soniox recording:', startError);
+        
+        // Try to reinitialize and start again
+        recordTranscribeRef.current = null;
+        const newInstance = await initializeTranscription();
+        if (newInstance && typeof newInstance.start === 'function') {
+          await newInstance.start();
+          setIsRecording(true);
+          setState(TRANSCRIPTION_STATES.LISTENING);
+        } else {
+          throw new Error('Unable to initialize Soniox recording service. Please check your internet connection and try again.');
+        }
+      }
 
       // Start duration timer
       const startTime = Date.now();

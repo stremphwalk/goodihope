@@ -168,7 +168,21 @@ export const validateTranscriptionSession = (req, res, next) => {
  * @returns {string|null} API key or null if not available
  */
 export function getSonioxApiKey() {
-  return process.env.SONIOX_API_KEY || null;
+  const apiKey = process.env.SONIOX_API_KEY;
+  
+  if (!apiKey) {
+    console.error('❌ SONIOX_API_KEY not found in environment variables');
+    console.error('Available environment variables:', Object.keys(process.env).filter(key => key.includes('SONIOX')));
+    return null;
+  }
+  
+  if (apiKey.trim() === '') {
+    console.error('❌ SONIOX_API_KEY is empty');
+    return null;
+  }
+  
+  console.log('✅ SONIOX_API_KEY found in environment');
+  return apiKey.trim();
 }
 
 /**

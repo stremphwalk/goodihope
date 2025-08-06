@@ -21,6 +21,23 @@ const router = express.Router();
 router.use(addTranscriptionSecurityHeaders);
 
 /**
+ * GET /api/transcription/debug
+ * Debug endpoint for production troubleshooting (remove in production)
+ */
+router.get('/debug', (req, res) => {
+  const hasApiKey = !!getSonioxApiKey();
+  const apiKeyLength = getSonioxApiKey()?.length || 0;
+  
+  res.json({
+    hasApiKey,
+    apiKeyLength,
+    nodeEnv: process.env.NODE_ENV,
+    availableSonioxKeys: Object.keys(process.env).filter(key => key.includes('SONIOX')),
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
  * POST /api/transcription/token
  * Generate a secure token for client-side Soniox access
  */
