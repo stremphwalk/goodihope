@@ -271,25 +271,16 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   
   // Handler that updates local state immediately and persistent state with delay
   const setCustomNoteText = useCallback((value: string) => {
-    console.log('setCustomNoteText called:', {
-      value,
-      noteType,
-      currentNote: note,
-      localText: localCustomNoteText
-    });
-    
     // Always update local state immediately for responsive UI
     setLocalCustomNoteText(value);
     
     // Update persistent states with debouncing to prevent cursor issues
     debouncedUpdatePersistentState(value);
-  }, [noteType, note, localCustomNoteText]);
+  }, [noteType]);
   
   // Debounced function to update both main note and persistent storage
   const debouncedUpdatePersistentState = useDebounceCallback((value: string) => {
-    console.log('Debounced update - persisting:', value);
     if (noteType === 'custom') {
-      console.log('Updating main note (debounced):', value);
       setNote(value);
     }
     noteState.setFormData('customNoteText', value);
@@ -299,7 +290,6 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   useEffect(() => {
     if (noteType === 'custom') {
       const savedCustomNote = noteState.getFormData('customNoteText') || note || '';
-      console.log('Loading custom note on mode switch:', savedCustomNote);
       setLocalCustomNoteText(savedCustomNote);
       if (savedCustomNote && savedCustomNote !== note) {
         setNote(savedCustomNote);
@@ -2017,21 +2007,12 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
             </Button>
           </div>
           <div className="flex-1">
-            {/* Temporary debug: using regular textarea */}
-            <textarea
+            <DotPhraseTextarea
               value={customNoteText}
-              onChange={(e) => {
-                console.log('Textarea onChange:', {
-                  value: e.target.value,
-                  selectionStart: e.target.selectionStart,
-                  selectionEnd: e.target.selectionEnd,
-                  inputType: (e.nativeEvent as any)?.inputType
-                });
-                setCustomNoteText(e.target.value);
-              }}
+              onChange={setCustomNoteText}
               placeholder={language === 'fr' ? 
-                'Commencez à taper votre note personnalisée (DEBUG MODE)...' : 
-                'Start typing your custom note (DEBUG MODE)...'}
+                'Commencez à taper votre note personnalisée...\n\nUtilisez / pour accéder aux phrases prédéfinies (ex: /dm2, /htn, /predwean)' : 
+                'Start typing your custom note...\n\nUse / to access dot phrases (e.g., /dm2, /htn, /predwean)'}
               rows={20}
               className="w-full h-full p-4 bg-gray-50 border-0 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm transition-colors min-h-[32rem]"
             />
