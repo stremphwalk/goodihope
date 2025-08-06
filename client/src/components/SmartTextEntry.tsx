@@ -85,13 +85,15 @@ export function SmartTextEntry({
     persistenceKey || `smart-text-entry-${title}`,
     value || '',
     value,
-    parentOnChange
+    parentOnChange,
+    false // Disable session backup to prevent unwanted restoration
   );
   
   const localValue = persistedState.value;
   const setLocalValue = persistedState.setValue;
   const [hasUserEdited, setHasUserEdited] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const userExplicitlyDeletedRef = useRef(false); // Track when user intentionally clears content
   
   // Dot phrase state
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -108,6 +110,11 @@ export function SmartTextEntry({
   const [dateObj, setDateObj] = useState<Date | null>(null);
   const [calendarIsOpen, setCalendarIsOpen] = useState(false);
   const justExpandedToSmartOption = useRef(false);
+
+  // DISABLED: Automatic sync was causing text regeneration issues
+  // The persisted state hook handles initial values correctly
+  // Manual sync only happens via explicit user actions (buttons, blur, etc.)
+  // This prevents unwanted text restoration when user deletes content
 
   // Create combined dot phrases object - memoized to prevent re-creation
   const getCombinedDotPhrases = useCallback((): Record<string, string> => {
@@ -349,11 +356,26 @@ export function SmartTextEntry({
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
+    const previousValue = localValue || '';
+    
     setHasUserEdited(true);
+    
+    // Detect if user explicitly deleted all content (Ctrl+A -> Delete/Backspace)
+    if (previousValue.trim().length > 0 && newValue.trim().length === 0) {
+      userExplicitlyDeletedRef.current = true;
+    } else if (newValue.trim().length > 0) {
+      userExplicitlyDeletedRef.current = false;
+    }
+    
     setLocalValue(newValue);
     
-    // Use debounced update for parent to reduce excessive re-renders
-    debouncedParentUpdate(newValue);
+    // For immediate updates (non-blur mode), update parent immediately
+    // For blur-only mode, use debounced update to reduce re-renders
+    if (!updateOnBlurOnly && parentOnChange) {
+      parentOnChange(newValue);
+    } else {
+      debouncedParentUpdate(newValue);
+    }
 
     // Dot phrase detection (simplified)
     const cursor = e.target.selectionStart;
@@ -644,8 +666,8 @@ export function SmartTextEntry({
     
     setIsFocused(false);
     
-    // Force immediate parent update on blur to ensure data is saved
-    if (parentOnChange && localValue !== value) {
+    // Always update parent with current local value on blur - this ensures deletions are preserved
+    if (parentOnChange) {
       parentOnChange(localValue);
     }
     
@@ -659,10 +681,12 @@ export function SmartTextEntry({
       dropdownMouseDownRef.current = false;
     }, 100);
     
-    // Sync to parent using persisted state
-    persistedState.syncToParent();
+    // Sync to parent using persisted state - but respect explicit deletions
+    if (!userExplicitlyDeletedRef.current || localValue.trim().length > 0) {
+      persistedState.syncToParent();
+    }
     onBlur?.(localValue);
-  }, [persistedState, onBlur, calendarIsOpen, parentOnChange, localValue, value]);
+  }, [persistedState, onBlur, calendarIsOpen, parentOnChange, localValue]);
 
   // Auto-activate smart options when expanded
   useEffect(() => {
@@ -774,6 +798,7 @@ export function SmartTextEntry({
         onClick={handleTextareaClick}
         placeholder={placeholder}
         className="w-full h-64 p-4 bg-gray-50 border-0 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm transition-colors"
+        {...(persistenceKey ? { 'data-persistence-key': persistenceKey } : {})}
         style={{ fontFamily: 'ui-monospace, monospace' }}
       />
       
@@ -943,7 +968,8 @@ export function SmartTextEntry({
           <span>Characters: {(localValue || '').length}</span>
           <Button size="sm" variant="ghost" onClick={() => { 
             persistedState.clearPersistedState();
-            setHasUserEdited(false); 
+            setHasUserEdited(false);
+            userExplicitlyDeletedRef.current = true; // Mark as explicitly cleared
           }} className="h-6 px-2 text-xs">
             <RotateCcw className="w-3 h-3 mr-1" />
             Clear

@@ -1,4 +1,4 @@
-import { db } from "./database-neon.js";
+import { userQueries, teamGroupQueries, groupMemberQueries } from "./database-supabase.js";
 import { teamGroups, groupMembers, users } from "../shared/schema.js";
 import { eq, and, lt, gt } from "drizzle-orm";
 

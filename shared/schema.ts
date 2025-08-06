@@ -136,6 +136,15 @@ export const groupEvents = pgTable("group_events", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// User lab settings table for cross-platform preferences
+export const userLabSettings = pgTable("user_lab_settings", {
+  id: serial("id").primaryKey(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  settings: jsonb("settings").notNull(), // Lab settings JSON object
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   name: true,
@@ -219,6 +228,11 @@ export const insertGroupEventSchema = createInsertSchema(groupEvents).pick({
   createdByUserId: true,
 });
 
+export const insertUserLabSettingsSchema = createInsertSchema(userLabSettings).pick({
+  userId: true,
+  settings: true,
+});
+
 export const insertRosNoteSchema = createInsertSchema(rosNotes).pick({
   userId: true,
   patientName: true,
@@ -268,3 +282,5 @@ export type InsertGroupTodo = z.infer<typeof insertGroupTodoSchema>;
 export type GroupTodo = typeof groupTodos.$inferSelect;
 export type InsertGroupEvent = z.infer<typeof insertGroupEventSchema>;
 export type GroupEvent = typeof groupEvents.$inferSelect;
+export type InsertUserLabSettings = z.infer<typeof insertUserLabSettingsSchema>;
+export type UserLabSettings = typeof userLabSettings.$inferSelect;

@@ -1,4 +1,5 @@
 import React, { useCallback, useState, useMemo } from 'react';
+import { usePersistedState } from '@/hooks/usePersistedState';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -34,7 +35,17 @@ export function ImprovedLabInterface({
   setSelectedPanel
 }: ImprovedLabInterfaceProps) {
   const { language } = useLanguage();
-  const [pendingLabEntries, setPendingLabEntries] = useState<Record<string, string[]>>({});
+  // Use persistent state for pending lab entries to prevent data loss when switching sections
+  const { 
+    value: pendingLabEntries, 
+    setValue: setPendingLabEntries 
+  } = usePersistedState<Record<string, string[]>>(
+    'medical_pending_lab_entries',
+    {},
+    undefined,
+    undefined,
+    true // Enable session backup for tab persistence
+  );
   const [isConfirming, setIsConfirming] = useState(false);
 
   const handleLabAdd = useCallback((labValues: LabValue[]) => {
@@ -305,9 +316,6 @@ export function ImprovedLabInterface({
                 </Button>
               )}
               
-              <Button variant="outline" size="sm" className="px-3 py-2 h-auto">
-                <Settings className="h-4 w-4" />
-              </Button>
             </div>
           </div>
         </div>

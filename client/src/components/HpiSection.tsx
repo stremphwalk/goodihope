@@ -41,6 +41,11 @@ export function HpiSection({ selectedSymptoms: globalSelectedSymptoms, setSelect
 
   const [localSelectedSymptoms, setLocalSelectedSymptoms] = useState<Record<string, Set<SymptomObject>>>(globalSelectedSymptoms);
 
+  // Keep parent state in sync whenever the local selection changes
+  useEffect(() => {
+    setGlobalSelectedSymptoms(() => localSelectedSymptoms);
+  }, [localSelectedSymptoms, setGlobalSelectedSymptoms]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

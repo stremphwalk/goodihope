@@ -32,7 +32,7 @@ export class MemStorage implements IStorage {
     const id = this.currentId++;
     const user: User = { 
       ...insertUser, 
-      id, 
+      id: id.toString(), 
       createdAt: new Date(),
       updatedAt: new Date(),
       name: null,

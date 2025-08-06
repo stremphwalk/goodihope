@@ -1,5 +1,5 @@
 import { MainLayout } from "../components/MainLayout";
-import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { rosSymptomOptions } from "@/constants/rosSymptomOptions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -82,12 +82,16 @@ import { AllergiesSection } from "@/components/AllergiesSection";
 import { SocialHistorySection } from "@/components/SocialHistorySection";
 import { ChiefComplaintSection, type ChiefComplaintData } from "@/components/ChiefComplaintSection";
 import { type MedicationData, formatMedicationsForNote } from "@/lib/medicationUtils";
-import { LabImageUpload } from "@/components/LabImageUpload";
-import { LabValuesDisplay } from "@/components/LabValuesDisplay";
-import { ImprovedLabInterface } from "@/components/ImprovedLabInterface";
+import { LabTextPaste } from "@/components/LabTextPaste";
+import { LabSettingsPopover } from "@/components/LabSettingsPopover";
+import { LabValuesDisplay, LabValuesDisplayHandle } from "@/components/LabValuesDisplay";
+import { EnhancedLabEntry } from "@/components/EnhancedLabEntry";
 import { processLabValues, formatLabValuesForNote, type LabValue, type ProcessedLabValue } from "@/lib/labUtils";
+import { loadLabSettings, getPanelDefaultSelections } from "@/lib/labSettings";
+import { categorizeLabTest } from "@/lib/labCategorizer";
 import * as DiffMatchPatch from 'diff-match-patch';
 import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
+import { useGlobalScrollPreservation } from '@/hooks/useGlobalScrollPreservation';
 import HpiSection from '@/components/HpiSection';
 import { TemplateAwareLivePreview } from '@/components/TemplateAwareLivePreview';
 import { usePersistedState } from '@/hooks/usePersistedState';
@@ -226,6 +230,19 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   // Get centralized note state management
   const noteState = useNoteState();
   
+  // Global scroll preservation to survive page re-renders
+  const { preserveBeforeUpdate } = useGlobalScrollPreservation('review-of-systems');
+
+  // Wrapper to preserve scroll before any lab state updates that cause re-renders
+  const setProcessedLabValuesWithScrollPreservation = useCallback((labs: ProcessedLabValue[] | ((prev: ProcessedLabValue[]) => ProcessedLabValue[])) => {
+    preserveBeforeUpdate();
+    if (typeof labs === 'function') {
+      setProcessedLabValues(labs);
+    } else {
+      setProcessedLabValues(labs);
+    }
+  }, [preserveBeforeUpdate]);
+
   // Note state with diff-patch-merge tracking
   const [note, setNote] = useState("");
   const [initialGeneratedText, setInitialGeneratedText] = useState("");
@@ -249,6 +266,57 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   
+  // Lab settings state
+  const [labSettings, setLabSettings] = useState(() => loadLabSettings());
+  // Control visibility of the Lab Settings modal so it remains open across re-renders
+  const [isLabSettingsOpen, setLabSettingsOpen] = useState(false);
+  // Persistent tab state for lab settings modal
+  const [labSettingsActiveTab, setLabSettingsActiveTab] = useState('panels');
+  // Persistent panel state for lab order settings within the "Tests & Order" tab
+  const [labSettingsPanelSelection, setLabSettingsPanelSelection] = useState('CBC');
+  
+  // Stable callback for settings changes to prevent component remounting
+  const handleLabSettingsChange = useCallback((settings: any) => {
+    console.log('🏠 Main page: Lab settings updated:', settings);
+    setLabSettings(settings);
+  }, []);
+  
+  // Stable callback for modal open state changes
+  const handleLabSettingsOpenChange = useCallback((open: boolean) => {
+    console.log('🏠 Main page: Lab settings modal open state changed to:', open);
+    setLabSettingsOpen(open);
+  }, []);
+  
+  // Stable callback for tab state changes
+  const handleLabSettingsTabChange = useCallback((tab: string) => {
+    console.log('🏠 Main page: Lab settings tab changed to:', tab);
+    setLabSettingsActiveTab(tab);
+  }, []);
+  
+  // Stable callback for panel state changes
+  const handleLabSettingsPanelChange = useCallback((panel: string) => {
+    console.log('🏠 Main page: Lab settings panel changed to:', panel);
+    setLabSettingsPanelSelection(panel);
+  }, []);
+  
+  // Debug component re-renders
+  useEffect(() => {
+    console.log('🏠 Main page: Component rendered/updated, isLabSettingsOpen:', isLabSettingsOpen);
+  });
+  
+  // Memoized LabSettingsPopover to prevent re-creation on every render
+  const memoizedLabSettingsPopover = useMemo(() => (
+    <LabSettingsPopover 
+      onSettingsChange={handleLabSettingsChange}
+      isOpenExternal={isLabSettingsOpen}
+      setIsOpenExternal={handleLabSettingsOpenChange}
+      activeTabExternal={labSettingsActiveTab}
+      setActiveTabExternal={handleLabSettingsTabChange}
+      selectedPanelExternal={labSettingsPanelSelection}
+      setSelectedPanelExternal={handleLabSettingsPanelChange}
+    />
+  ), [handleLabSettingsChange, isLabSettingsOpen, handleLabSettingsOpenChange, labSettingsActiveTab, handleLabSettingsTabChange, labSettingsPanelSelection, handleLabSettingsPanelChange]);
+  
   // ROS state
   const [selectedSystem, setSelectedSystem] = useState<string | null>(null);
   interface SymptomObject {
@@ -256,7 +324,17 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     severity?: 'mild' | 'moderate' | 'severe';
     note?: string;
   }
-  const [selectedSymptoms, setSelectedSymptoms] = useState<Record<string, Set<SymptomObject>>>({});
+  // Persisted HPI symptom selections so they survive sub-menu switches and re-renders
+  const {
+    value: selectedSymptoms,
+    setValue: setSelectedSymptoms,
+  } = usePersistedState<Record<string, Set<SymptomObject>>>(
+    'medical_selected_symptoms',
+    {},
+    undefined,
+    undefined,
+    true // Enable sessionStorage backup for tab reloads
+  );
   const [selectedPeSystems, setSelectedPeSystems] = useState<Set<string>>(new Set());
   
   // ICU intubation
@@ -361,14 +439,139 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     setCustomNoteText(value);
   }, 500); // 500ms delay for live preview updates
 
-  const [labValues, setLabValues] = useState<LabValue[]>([]);
-  const [processedLabValues, setProcessedLabValues] = useState<ProcessedLabValue[]>([]);
-  const [selectedLabTests, setSelectedLabTests] = useState<Set<string>>(new Set());
-  const [selectedPanel, setSelectedPanel] = useState('bmp');
+  // Use persistent state for lab values to prevent data loss when switching sections
+  const { 
+    value: processedLabValues, 
+    setValue: setProcessedLabValues 
+  } = usePersistedState<ProcessedLabValue[]>(
+    'medical_processed_lab_values',
+    [],
+    undefined,
+    undefined,
+    true // Enable session backup for tab persistence
+  );
+
+  // Use persistent state for raw lab values to maintain complete lab state
+  const { 
+    value: labValues, 
+    setValue: setLabValues 
+  } = usePersistedState<LabValue[]>(
+    'medical_lab_values',
+    [],
+    undefined,
+    undefined,
+    true // Enable session backup for tab persistence
+  );
+  
+  // Use persistent state for pending lab changes to prevent data loss
+  const { 
+    value: pendingLabChanges, 
+    setValue: setPendingLabChanges 
+  } = usePersistedState<ProcessedLabValue[]>(
+    'medical_pending_lab_changes',
+    [],
+    undefined,
+    undefined,
+    true // Enable session backup for tab persistence
+  );
+  
+  // Use persistent state for pending changes flag to maintain status across section switches
+  const { 
+    value: hasPendingLabChanges, 
+    setValue: setHasPendingLabChanges 
+  } = usePersistedState<boolean>(
+    'medical_has_pending_lab_changes',
+    false,
+    undefined,
+    undefined,
+    true // Enable session backup for tab persistence
+  );
+  // Use persistent state for selected lab tests to maintain user's selections
+  const { 
+    value: selectedLabTests, 
+    setValue: setSelectedLabTests 
+  } = usePersistedState<Set<string>>(
+    'medical_selected_lab_tests',
+    new Set(),
+    undefined,
+    undefined,
+    true // Enable session backup for tab persistence
+  );
+  
+  // Use persistent state for selected lab panel to maintain user's last selection
+  const { 
+    value: selectedPanel, 
+    setValue: setSelectedPanel 
+  } = usePersistedState<string>(
+    'medical_selected_lab_panel',
+    'bmp',
+    undefined,
+    undefined,
+    true // Enable session backup for tab persistence
+  );
   
   const [activeTab, setActiveTab] = useState("note-type");
   
   const [showResetDialog, setShowResetDialog] = useState(false);
+
+  // Debounced handler to prevent rapid-fire updates
+  const debouncedSetPendingChanges = useDebounceCallback((labs: ProcessedLabValue[]) => {
+    const safeCopy = labs.map(lab => ({ ...lab }));
+    setPendingLabChanges(safeCopy);
+    setHasPendingLabChanges(safeCopy.length > 0);
+    console.debug('Deferred lab change applied (debounced):', safeCopy.length, 'labs in pending state');
+  }, 100); // 100ms debounce
+
+  // Handle deferred lab changes (updates pending changes without updating the note)
+  const handleDeferredLabChange = useCallback((updatedLabs: ProcessedLabValue[]) => {
+    if (!Array.isArray(updatedLabs)) {
+      console.error('Invalid labs provided to handleDeferredLabChange:', updatedLabs);
+      return;
+    }
+    
+    // Use debounced update to prevent race conditions
+    debouncedSetPendingChanges(updatedLabs);
+  }, [debouncedSetPendingChanges]);
+
+  // Ref to access pending labs inside LabValuesDisplay without re-rendering
+  const labRef = useRef<LabValuesDisplayHandle>(null);
+  // Helper toggled on the first local edit so we can show the floating chips
+  const markPendingLabChanges = useCallback(() => {
+    if (!hasPendingLabChanges) {
+      const labs = labRef.current?.getPendingLabs() ?? [];
+      setPendingLabChanges([...labs]);
+      setHasPendingLabChanges(true);
+    }
+  }, [hasPendingLabChanges]);
+
+  // Confirm all pending lab changes and update the live note
+  const handleConfirmLabChanges = useCallback(() => {
+    if (!hasPendingLabChanges) return;
+    const newLabs = labRef.current?.getPendingLabs() ?? processedLabValues;
+    preserveBeforeUpdate();
+    setProcessedLabValues([...newLabs]);
+    setPendingLabChanges([...newLabs]);
+    setHasPendingLabChanges(false);
+    console.debug('Lab changes confirmed:', newLabs.length, 'labs applied to live note');
+  }, [hasPendingLabChanges, preserveBeforeUpdate, processedLabValues]);
+
+  // Discard pending changes and revert to current state
+  const handleDiscardLabChanges = useCallback(() => {
+    if (!hasPendingLabChanges) return;
+    labRef.current?.reset();
+    setPendingLabChanges([...processedLabValues]);
+    setHasPendingLabChanges(false);
+    console.debug('Pending lab changes discarded, reverted to live note state');
+  }, [hasPendingLabChanges, processedLabValues]);
+
+  // Cleanup effect for component unmount - prevent memory leaks
+  useEffect(() => {
+    return () => {
+      // Clear any pending timeouts, intervals, or async operations
+      console.debug('ReviewOfSystems component unmounting, cleaning up lab states');
+      // Note: State cleanup happens automatically, but we log for debugging
+    };
+  }, []);
 
   const { toast } = useToast();
   const { language, setLanguage, t } = useLanguage();
@@ -583,8 +786,25 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       console.warn('Invalid lab values provided to handleManualLabAdd:', newLabValues);
       return;
     }
+    
+    // Process the new lab values - these are manually selected so they should show in note
+    const processed = processLabValues(newLabValues, labSettings).map(lab => ({
+      ...lab,
+      showInNote: true, // Manually added labs should always show in note
+      showTrending: lab.trending && lab.trending.length > 0, // Enable trending if data available
+      trendCount: lab.trending && lab.trending.length > 0 ? Math.min(2, lab.trending.length) : 0
+    }));
+    
+    setPendingLabChanges(prev => {
+      const combined = [...prev, ...processed];
+      console.debug('Manual lab values added to pending:', processed.length, 'new labs,', combined.length, 'total pending');
+      return combined;
+    });
+    setHasPendingLabChanges(true);
+    
+    // Keep the old labValues update for legacy compatibility
     setLabValues(prev => [...prev, ...newLabValues]);
-  }, []);
+  }, [labSettings]);
 
   const handleLabRemove = useCallback((testName: string) => {
     if (!testName) {
@@ -599,12 +819,30 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   useEffect(() => {
     console.log('🔬 Lab values state changed:', labValues);
     if (labValues.length > 0) {
-      const processed = processLabValues(labValues);
-      setProcessedLabValues(processed);
+      const processed = processLabValues(labValues, labSettings);
+      setProcessedLabValuesWithScrollPreservation(processed);
     } else {
-      setProcessedLabValues([]);
+      setProcessedLabValuesWithScrollPreservation([]);
     }
-  }, [labValues]);
+  }, [labValues, setProcessedLabValuesWithScrollPreservation]);
+
+  // Initialize pending changes whenever processedLabValues changes (but not when confirming)
+  useEffect(() => {
+    if (!hasPendingLabChanges && Array.isArray(processedLabValues)) {
+      try {
+        // Deep copy with validation
+        const validLabs = processedLabValues.filter(lab => 
+          lab && typeof lab === 'object' && lab.testName && lab.category
+        );
+        const safeCopy = validLabs.map(lab => ({ ...lab }));
+        setPendingLabChanges(safeCopy);
+        console.debug('Pending changes synced with processed labs:', safeCopy.length, 'valid labs');
+      } catch (error) {
+        console.error('Error syncing pending changes:', error);
+        setPendingLabChanges([]);
+      }
+    }
+  }, [processedLabValues, hasPendingLabChanges]);
 
   const handleCompleteReset = useCallback(() => {
     setNoteTypeState('');
@@ -636,9 +874,23 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       relievingFactors: "",
       previousTreatment: ""
     });
-    setLabValues([]);
-    setProcessedLabValues([]);
-    setSelectedLabTests(new Set());
+    // Reset lab states with proper cleanup
+    try {
+      setLabValues([]);
+      setProcessedLabValuesWithScrollPreservation([]);
+      setPendingLabChanges([]);
+      setHasPendingLabChanges(false);
+      setSelectedLabTests(new Set());
+      console.debug('Lab states reset successfully');
+    } catch (error) {
+      console.error('Error during lab states reset:', error);
+      // Force reset to empty states
+      setLabValues([]);
+      setProcessedLabValues([]);
+      setPendingLabChanges([]);
+      setHasPendingLabChanges(false);
+      setSelectedLabTests(new Set());
+    }
     
     setCurrentText("");
     setInitialGeneratedText("");
@@ -666,15 +918,36 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   const totalSystems = Object.keys(rosOptions).length + Object.keys(physicalExamOptions).length;
 
   const handleLabValuesExtracted = useCallback((newLabValues: LabValue[]) => {
+    if (!Array.isArray(newLabValues)) {
+      console.warn('Invalid lab values extracted:', newLabValues);
+      return;
+    }
+    
+    preserveBeforeUpdate();
+    
+    // Process the new lab values and add to pending changes (deferred)
+    if (newLabValues.length > 0) {
+      const processed = processLabValues(newLabValues, labSettings);
+      
+      // Add to pending changes without affecting the live note
+      setPendingLabChanges(prev => {
+        const combined = [...prev, ...processed];
+        console.debug('Lab values extracted and added to pending:', processed.length, 'new labs,', combined.length, 'total pending');
+        return combined;
+      });
+      setHasPendingLabChanges(true);
+    }
+    
+    // Keep the old labValues update for legacy compatibility
     setLabValues(newLabValues);
-  }, []);
+  }, [preserveBeforeUpdate]);
 
   useEffect(() => {
     if (labValues && labValues.length > 0) {
-      const processed = processLabValues(labValues);
-      setProcessedLabValues(processed);
+      const processed = processLabValues(labValues, labSettings);
+      setProcessedLabValuesWithScrollPreservation(processed);
     } else {
-      setProcessedLabValues([]);
+      setProcessedLabValuesWithScrollPreservation([]);
     }
   }, [labValues]);
 
@@ -911,6 +1184,42 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
           return `${allergiesText}\n\n${socialText.trim()}`;
         }
         
+        case 'home-meds': {
+          if (language === 'fr') {
+            if (medications.homeMedications.length > 0) {
+              const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'fr');
+              return `MÉDICAMENTS À DOMICILE :\n${organizedHomeMeds}`;
+            } else {
+              return `MÉDICAMENTS À DOMICILE :\n[Aucun médicament à domicile]`;
+            }
+          } else {
+            if (medications.homeMedications.length > 0) {
+              const organizedHomeMeds = formatMedicationsForNote(medications.homeMedications, 'en');
+              return `HOME MEDICATIONS:\n${organizedHomeMeds}`;
+            } else {
+              return `HOME MEDICATIONS:\n[No home medications]`;
+            }
+          }
+        }
+        
+        case 'hospital-meds': {
+          if (language === 'fr') {
+            if (medications.hospitalMedications.length > 0) {
+              const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'fr');
+              return `MÉDICAMENTS HOSPITALIERS :\n${organizedHospitalMeds}`;
+            } else {
+              return `MÉDICAMENTS HOSPITALIERS :\n[Aucun médicament hospitalier]`;
+            }
+          } else {
+            if (medications.hospitalMedications.length > 0) {
+              const organizedHospitalMeds = formatMedicationsForNote(medications.hospitalMedications, 'en');
+              return `HOSPITAL MEDICATIONS:\n${organizedHospitalMeds}`;
+            } else {
+              return `HOSPITAL MEDICATIONS:\n[No hospital medications]`;
+            }
+          }
+        }
+        
         case 'meds': {
           let medicationsText = "";
           
@@ -1012,7 +1321,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
             return language === 'fr' ? '[Entrer les résultats de laboratoire]' : '[Enter laboratory results]';
           }
           
-          const labText = formatLabValuesForNote(processedLabValues);
+          const labText = formatLabValuesForNote(processedLabValues, labSettings);
           return labText;
         }
         
@@ -1316,7 +1625,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   const generateLabValuesText = useCallback(() => {
     if (processedLabValues.length === 0) return "";
     
-    const labText = formatLabValuesForNote(processedLabValues);
+    const labText = formatLabValuesForNote(processedLabValues, labSettings);
     return labText ? (language === 'fr' ? `RÉSULTATS DE LABORATOIRE:\n${labText}` : `LABORATORY RESULTS:\n${labText}`) : "";
   }, [language, processedLabValues]);
 
@@ -1393,36 +1702,36 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     if (noteType === "admission") {
       if (isICU) {
         if (language === 'fr') {
-          sections.push(`MOTIF D'ADMISSION :\n${chiefComplaint.customComplaint || '[Entrer le motif d\'admission]'}\n\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`MOTIF D'ADMISSION :\n${chiefComplaint.customComplaint || '[Entrer le motif d\'admission]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         } else {
-          sections.push(`CHIEF COMPLAINT:\n${chiefComplaint.customComplaint || '[Enter chief complaint]'}\n\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`CHIEF COMPLAINT:\n${chiefComplaint.customComplaint || '[Enter chief complaint]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         }
       } else {
         if (language === 'fr') {
-          sections.push(`MOTIF D'ADMISSION :\n${chiefComplaint.customComplaint || '[Entrer le motif d\'admission]'}\n\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`MOTIF D'ADMISSION :\n${chiefComplaint.customComplaint || '[Entrer le motif d\'admission]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         } else {
-          sections.push(`CHIEF COMPLAINT:\n${chiefComplaint.customComplaint || '[Enter chief complaint]'}\n\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`CHIEF COMPLAINT:\n${chiefComplaint.customComplaint || '[Enter chief complaint]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         }
       }
     } else if (noteType === "progress") {
       if (isICU) {
         if (language === 'fr') {
-          sections.push(`NOTE D'ÉVOLUTION :\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`NOTE D'ÉVOLUTION :\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         } else {
-          sections.push(`PROGRESS NOTE:\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`PROGRESS NOTE:\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         }
       } else {
         if (language === 'fr') {
-          sections.push(`NOTE D'ÉVOLUTION :\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`NOTE D'ÉVOLUTION :\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         } else {
-          sections.push(`PROGRESS NOTE:\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`PROGRESS NOTE:\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         }
       }
     } else if (noteType === "consultation") {
       if (language === 'fr') {
-        sections.push(`NOTE DE CONSULTATION :\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        sections.push(`NOTE DE CONSULTATION :\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
       } else {
-        sections.push(`CONSULTATION NOTE:\n${generateHPIText()}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateRosText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        sections.push(`CONSULTATION NOTE:\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
       }
     }
 
@@ -1942,37 +2251,89 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         return (
           <SectionWrapper title={sectionTitle["labs"]} sectionKey="labs">
             <div className="space-y-6">
-              <ImprovedLabInterface
-                processedLabs={processedLabValues}
-                onLabsChange={setProcessedLabValues}
-                onLabAdd={handleManualLabAdd}
-                selectedLabs={Array.from(selectedLabTests)}
-                onLabRemove={handleLabRemove}
-                onLabValuesExtracted={handleLabValuesExtracted}
-                selectedPanel={selectedPanel}
-                setSelectedPanel={setSelectedPanel}
-              />
-              
-              <div className="bg-gray-50 border rounded-lg p-4">
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                  <Camera className="w-4 h-4" />
-                  {language === 'fr' ? 'Extraction d\'image' : 'Image Extraction'}
-                </h4>
-                <LabImageUpload onLabValuesExtracted={handleLabValuesExtracted} />
+              {/* Text Paste - Primary lab entry method */}
+              <div className="medical-card">
+                <div className="medical-card-header">
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center space-x-2">
+                      <FileText className="w-5 h-5" />
+                      <span className="medical-section-title">{language === 'fr' ? 'Collage de texte de laboratoire' : 'Laboratory Text Paste'}</span>
+                      <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                        {language === 'fr' ? 'Principal' : 'Primary'}
+                      </Badge>
+                    </div>
+                    {memoizedLabSettingsPopover}
+                  </div>
+                </div>
+                <div className="medical-card-content">
+                  <LabTextPaste onLabValuesExtracted={handleLabValuesExtracted} />
+                </div>
               </div>
 
-              {processedLabValues.length > 0 && (
-                <div className="medical-card">
+              {/* Quick Lab Entry - Secondary method */}
+              <div className="medical-card">
+                <div className="medical-card-header">
+                  <div className="flex items-center space-x-2">
+                    <TestTube className="w-5 h-5" />
+                    <span className="medical-section-title">{language === 'fr' ? 'Entrée rapide de laboratoire' : 'Quick Lab Entry'}</span>
+                  </div>
+                </div>
+                <div className="medical-card-content">
+                  <EnhancedLabEntry 
+                    onLabAdd={handleManualLabAdd}
+                    selectedLabs={Array.from(selectedLabTests)}
+                    selectedPanel={selectedPanel}
+                    setSelectedPanel={setSelectedPanel}
+                    pendingLabEntries={{}}
+                    setPendingLabEntries={() => {}}
+                  />
+                </div>
+              </div>
+
+              {/* Lab Values Display with Deferred Updates */}
+              {((Array.isArray(processedLabValues) && processedLabValues.length > 0) || 
+                (Array.isArray(pendingLabChanges) && pendingLabChanges.length > 0)) && (
+                <div className="medical-card relative">
                   <div className="medical-card-header">
                     <div className="flex items-center space-x-2">
                       <TestTube className="w-5 h-5" />
                       <span className="medical-section-title">{language === 'fr' ? 'Valeurs de laboratoire' : 'Laboratory Values'}</span>
-                      <span className="medical-badge">{processedLabValues.length}</span>
+                      <span className="medical-badge">{hasPendingLabChanges ? pendingLabChanges.length : processedLabValues.length}</span>
+                      {hasPendingLabChanges && (
+                        <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                          {language === 'fr' ? 'Modifications en attente' : 'Pending Changes'}
+                        </Badge>
+                      )}
                     </div>
                   </div>
-                  <div className="medical-card-content">
-                    <LabValuesDisplay processedLabs={processedLabValues} onLabsChange={setProcessedLabValues} />
+                  <div className="medical-card-content pb-16">
+                    <LabValuesDisplay
+                      ref={labRef}
+                      processedLabs={processedLabValues}
+                      onFirstChange={markPendingLabChanges}
+                    />
                   </div>
+                  
+                  {/* Floating Action Chips */}
+                  {hasPendingLabChanges && (
+                    <div className="sticky bottom-0 flex justify-end gap-2 pr-4 pb-4">
+                      <Button 
+                        onClick={handleDiscardLabChanges}
+                        variant="outline"
+                        className="bg-white hover:bg-gray-50 text-gray-700 border-gray-300 px-4 py-2 rounded-full shadow-lg flex items-center gap-2"
+                      >
+                        <X className="w-4 h-4" />
+                        {language === 'fr' ? 'Annuler' : 'Discard'}
+                      </Button>
+                      <Button 
+                        onClick={handleConfirmLabChanges}
+                        className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-2"
+                      >
+                        <CheckCircle className="w-5 h-5" />
+                        {language === 'fr' ? 'Confirmer les modifications' : 'Confirm Changes'}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2156,11 +2517,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         }
       }
       
-      const currentAllergies = allergiesRef.current;
-      if (currentAllergies && currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
-        noteData['allergies-social'] = `Allergies: ${currentAllergies.allergiesList.join(', ')}`;
-      }
-      
+      // HPI must follow immediately after the hospital medications section
       if (chiefComplaint || hpiText) {
         const hpiContent = [
           chiefComplaint?.customComplaint?.trim() || '',
@@ -2169,6 +2526,11 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         if (hpiContent) {
           noteData['hpi'] = hpiContent;
         }
+      }
+      
+      const currentAllergies = allergiesRef.current;
+      if (currentAllergies && currentAllergies.hasAllergies && Array.isArray(currentAllergies.allergiesList) && currentAllergies.allergiesList.length > 0) {
+        noteData['allergies-social'] = `Allergies: ${currentAllergies.allergiesList.join(', ')}`;
       }
       
       if (selectedPeSystems && selectedPeSystems.size > 0) {
@@ -2180,7 +2542,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       }
       
       if (processedLabValues && Array.isArray(processedLabValues) && processedLabValues.length > 0) {
-        noteData['labs'] = formatLabValuesForNote(processedLabValues);
+        noteData['labs'] = formatLabValuesForNote(processedLabValues, labSettings);
       }
       
       if (imageryStudies && Array.isArray(imageryStudies) && imageryStudies.length > 0) {
@@ -2224,45 +2586,137 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         const testName = match[1].trim();
         const mainValue = match[2];
         const trended = match[3] ? match[3].split(',').map(v => v.trim()) : [];
+        // Add the most recent value with current timestamp
+        const currentTime = new Date();
         newLabs.push({
           testName,
           value: mainValue,
           unit: '',
           category: '',
-          timestamp: new Date().toISOString(),
+          timestamp: currentTime.toISOString(),
           referenceRange: '',
         });
-        trended.forEach(val => {
+        
+        // Add trending values with progressively older timestamps
+        trended.forEach((val, index) => {
+          // Create timestamps that are progressively older (1 day, 2 days, etc.)
+          const olderDate = new Date(currentTime);
+          olderDate.setDate(currentTime.getDate() - (index + 1));
+          
           newLabs.push({
             testName,
             value: val,
             unit: '',
             category: '',
-            timestamp: new Date().toISOString(),
+            timestamp: olderDate.toISOString(),
             referenceRange: '',
           });
         });
       }
     });
-    if (newLabs.length > 0) {
-      const processedLabs = newLabs.map(lab => ({
-        testName: lab.testName,
-        category: lab.category,
-        mostRecent: lab,
-        trending: [],
-        showTrending: false,
-        trendCount: 0,
-        showInNote: true
-      }));
-      setProcessedLabValues(processedLabs);
+    if (newLabs && Array.isArray(newLabs) && newLabs.length > 0) {
+      try {
+        const processedLabs = newLabs
+          .filter(lab => {
+            // Filter out invalid lab entries
+            if (!lab || typeof lab !== 'object') {
+              console.warn('Invalid lab object:', lab);
+              return false;
+            }
+            
+            if (!lab.testName || typeof lab.testName !== 'string' || lab.testName.trim().length === 0) {
+              console.warn('Invalid lab test name:', lab.testName);
+              return false;
+            }
+            
+            return true;
+          })
+          .map(lab => {
+            try {
+              // Safely determine the lab category for visibility check
+              let labCategory = 'General'; // Default fallback
+              
+              if (lab.category && typeof lab.category === 'string' && lab.category.trim().length > 0) {
+                labCategory = lab.category.trim();
+              } else if (lab.testName && typeof lab.testName === 'string') {
+                try {
+                  const categorizedResult = categorizeLabTest(lab.testName);
+                  labCategory = categorizedResult || 'General';
+                } catch (categorizationError) {
+                  console.warn('Error categorizing lab test:', lab.testName, categorizationError);
+                  labCategory = 'General';
+                }
+              }
+              
+              // Check if this lab should be included in the note based on user default selections
+              // ALL labs will be visible in the display, but some may be "crossed out"
+              let shouldShowInNote = true; // Default to showing
+              
+              if (labSettings && typeof labSettings === 'object') {
+                try {
+                  const panelDefaultSelections = getPanelDefaultSelections(labSettings, labCategory);
+                  if (Array.isArray(panelDefaultSelections) && panelDefaultSelections.length > 0) {
+                    // If user has configured default selections for this panel,
+                    // only show labs that are in their selection list
+                    shouldShowInNote = panelDefaultSelections.some(selectedName => 
+                      selectedName && typeof selectedName === 'string' &&
+                      lab.testName && typeof lab.testName === 'string' &&
+                      selectedName.toLowerCase().trim() === lab.testName.toLowerCase().trim()
+                    );
+                  }
+                  // If no default selections configured (length === 0), show all labs
+                } catch (settingsError) {
+                  console.warn('Error checking lab visibility settings:', settingsError);
+                  shouldShowInNote = true; // Default to showing if settings check fails
+                }
+              }
+              
+              return {
+                testName: lab.testName ? lab.testName.toString().trim() : 'Unknown Test',
+                category: labCategory,
+                mostRecent: lab,
+                trending: [],
+                allTrendingValues: [], // No historical data in this context
+                showTrending: shouldShowInNote, // Enable trending based on user settings
+                trendCount: shouldShowInNote ? 2 : 0, // Default to 2 trending values if showing in note
+                maxTrendCount: 0, // No historical data available
+                showInNote: shouldShowInNote
+              };
+            } catch (labProcessingError) {
+              console.error('Error processing individual lab:', lab, labProcessingError);
+              // Return a safe fallback lab object
+              return {
+                testName: lab.testName ? lab.testName.toString().trim() : 'Unknown Test',
+                category: 'General',
+                mostRecent: lab,
+                trending: [],
+                allTrendingValues: [], // No historical data in this context
+                showTrending: false,
+                trendCount: 0,
+                maxTrendCount: 0, // No historical data available
+                showInNote: true
+              };
+            }
+          });
+          
+        if (processedLabs.length > 0) {
+          setProcessedLabValuesWithScrollPreservation(processedLabs);
+        } else {
+          console.warn('No valid labs to process after filtering');
+        }
+      } catch (overallError) {
+        console.error('Error processing lab array:', overallError);
+        // Don't crash the app - continue with empty lab list
+      }
     }
-  }, [note, setProcessedLabValues]);
+  }, [note, setProcessedLabValuesWithScrollPreservation, labSettings]);
 
   const renderLivePreview = () => {
     const safeNoteData = {
       'note-type': noteType || '',
       'pmh': pmhText || '',
       'meds': medications ? formatMedicationsForNote([...medications.homeMedications, ...medications.hospitalMedications]) : '',
+      'hpi': hpiText || '',
       'allergies-social': (() => {
         try {
           const currentAllergies = allergiesRef.current;
@@ -2287,9 +2741,8 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
           return 'No known allergies\n\nSocial History:\nNon-smoker\nNo alcohol use\nNo drug use';
         }
       })(),
-      'hpi': hpiText || '',
       'physical-exam': selectedPeSystems && selectedPeSystems.size > 0 ? Array.from(selectedPeSystems).map(system => `${system}: ${physicalExamOptions[system as keyof typeof physicalExamOptions] || 'Normal'}`).join('\n') : '',
-      'labs': processedLabValues && processedLabValues.length > 0 ? formatLabValuesForNote(processedLabValues) : '',
+      'labs': processedLabValues && processedLabValues.length > 0 ? formatLabValuesForNote(processedLabValues, labSettings) : '',
       'imagery': imageryStudies && imageryStudies.length > 0 ? imageryStudies.map(study => `${study.system} ${study.modality}: ${study.result}`).join('\n') : '',
       'impression': impressionText || ''
     };
@@ -2327,7 +2780,23 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     }
   }, [selectedSymptoms, scrollPosition]);
 
-  
+  useEffect(() => {
+    if (!hasPendingLabChanges) {
+      try { localStorage.removeItem('draft_labs'); } catch {}
+    }
+  }, [hasPendingLabChanges]);
+
+  useEffect(() => {
+    if (!hasPendingLabChanges) {
+      try { localStorage.removeItem('draft_labs'); } catch {}
+    }
+  }, [hasPendingLabChanges, preserveBeforeUpdate, processedLabValues]);
+
+  useEffect(() => {
+    if (!hasPendingLabChanges) {
+      try { localStorage.removeItem('draft_labs'); } catch {}
+    }
+  }, [hasPendingLabChanges, processedLabValues]);
 
   return (
     <MainLayout

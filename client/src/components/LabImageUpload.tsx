@@ -30,35 +30,45 @@ export function LabImageUpload({ onLabValuesExtracted }: LabImageUploadProps) {
   // Handle clipboard paste events
   useEffect(() => {
     const handlePaste = async (event: ClipboardEvent) => {
-      event.preventDefault();
-      
       if (!event.clipboardData) return;
       
       const items = Array.from(event.clipboardData.items);
       const imageItems = items.filter(item => item.type.startsWith('image/'));
       
-      if (imageItems.length === 0) {
-        toast({
-          title: language === 'fr' ? 'Aucune image trouvée' : 'No image found',
-          description: language === 'fr' 
-            ? 'Le presse-papiers ne contient pas d\'image. Copiez une capture d\'écran et réessayez.' 
-            : 'Clipboard does not contain an image. Copy a screenshot and try again.',
-          variant: 'destructive'
-        });
-        return;
-      }
-      
-      // Convert clipboard items to files for processing
-      const files: File[] = [];
-      for (const item of imageItems) {
-        const file = item.getAsFile();
-        if (file) {
-          files.push(file);
+      // Determine if clipboard contains plain text
+      const hasPlainText = event.clipboardData.types.includes('text/plain');
+      // Only prevent default if we have image content and *no* plain text (to avoid blocking text paste)
+      if (imageItems.length > 0 && !hasPlainText) {
+        event.preventDefault();
+        
+        // Convert clipboard items to files for processing
+        const files: File[] = [];
+        for (const item of imageItems) {
+          const file = item.getAsFile();
+          if (file) {
+            files.push(file);
+          }
         }
-      }
-      
-      if (files.length > 0) {
-        await processFiles(files);
+        
+        if (files.length > 0) {
+          await processFiles(files);
+        }
+      } else {
+        // Check if we're pasting into a textarea - if so, don't show error for text paste
+        const activeElement = document.activeElement;
+        const isTextarea = activeElement?.tagName === 'TEXTAREA' || 
+                          activeElement?.tagName === 'INPUT' ||
+                          (activeElement && (activeElement as HTMLElement).contentEditable === 'true');
+        
+        if (!isTextarea) {
+          toast({
+            title: language === 'fr' ? 'Aucune image trouvée' : 'No image found',
+            description: language === 'fr' 
+              ? 'Le presse-papiers ne contient pas d\'image. Copiez une capture d\'écran et réessayez.' 
+              : 'Clipboard does not contain an image. Copy a screenshot and try again.',
+            variant: 'destructive'
+          });
+        }
       }
     };
 

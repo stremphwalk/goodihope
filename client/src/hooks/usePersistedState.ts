@@ -22,15 +22,16 @@ export function usePersistedState<T>(
   enableSessionBackup: boolean = false
 ) {
   // Get persisted value or use initial value
+  // Now respects empty strings as valid persisted state (to preserve user deletions)
   const getInitialState = useCallback((): T => {
     // First try session storage if enabled
     if (enableSessionBackup) {
       try {
         const sessionValue = sessionStorage.getItem(key);
         if (sessionValue !== null) {
-          const parsed = JSON.parse(sessionValue);
-          // For string values, check if non-empty
-          if (typeof parsed === 'string' && parsed.trim().length > 0) {
+          const parsed = deserialize(sessionValue);
+          // Accept any string value, including empty strings (preserves deletions)
+          if (typeof parsed === 'string') {
             persistedStateStore.set(key, parsed);
             return parsed as T;
           }
@@ -48,8 +49,8 @@ export function usePersistedState<T>(
     // Then try in-memory store
     if (persistedStateStore.has(key)) {
       const persisted = persistedStateStore.get(key);
-      // For strings, only use if non-empty
-      if (typeof persisted === 'string' && persisted.trim().length > 0) {
+      // Accept any string value, including empty strings (preserves deletions)
+      if (typeof persisted === 'string') {
         return persisted as T;
       }
       // For non-strings, use if truthy or 0/false
@@ -83,7 +84,7 @@ export function usePersistedState<T>(
   const persistToSession = useCallback((value: T) => {
     if (enableSessionBackup) {
       try {
-        sessionStorage.setItem(key, JSON.stringify(value));
+        sessionStorage.setItem(key, serialize(value));
       } catch (error) {
         console.warn(`Failed to persist to session storage for key ${key}:`, error);
       }
@@ -91,6 +92,7 @@ export function usePersistedState<T>(
   }, [key, enableSessionBackup]);
 
   // Initialize from persisted state on mount - only once
+  // This preserves user's last state, including empty strings (deletions)
   useEffect(() => {
     const initialState = getInitialState();
     if (initialState !== localValue) {
@@ -99,15 +101,17 @@ export function usePersistedState<T>(
   }, []); // Empty dependency array - only run once on mount
 
   // Sync with parent value when it changes (for template defaults)
+  // Only sync when local state is truly empty, never overwrite user content
   useEffect(() => {
     if (parentValue !== undefined && parentValue !== localValue) {
-      // For strings: only sync if local is empty and parent has content
+      // For strings: only sync if local is completely empty and parent has content
       if (typeof parentValue === 'string') {
-        const shouldSync = 
-          (!localValue || (typeof localValue === 'string' && localValue.trim() === '')) &&
-          parentValue.trim() !== '';
+        const localIsEmpty = !localValue || (typeof localValue === 'string' && localValue.trim() === '');
+        const parentHasContent = parentValue.trim() !== '';
         
-        if (shouldSync) {
+        // Only sync if local is truly empty AND parent has meaningful content
+        // Never overwrite existing content, even if parent changes
+        if (localIsEmpty && parentHasContent) {
           setLocalValue(parentValue as T);
           persistedStateStore.set(key, parentValue);
           persistToSession(parentValue);
@@ -126,9 +130,11 @@ export function usePersistedState<T>(
   }, [parentValue, localValue, key, persistToSession]);
 
   // Update local state and persist it
+  // Always update persisted state, including empty values (to preserve deletions)
   const setPersistedValue = useCallback((value: T | ((prev: T) => T)) => {
     const newValue = typeof value === 'function' ? (value as (prev: T) => T)(localValue) : value;
     setLocalValue(newValue);
+    // Always persist the new value, even if it's empty (this preserves user deletions)
     persistedStateStore.set(key, newValue);
     persistToSession(newValue);
   }, [key, localValue, persistToSession]);
@@ -165,3 +171,19 @@ export function usePersistedState<T>(
     getAllPersistedKeys
   };
 }
+
+// Helper: serialize value with Set support
+const serialize = (value: any) => JSON.stringify(value, (_k, v) => {
+  if (v instanceof Set) {
+    return { __isSet: true, value: Array.from(v) };
+  }
+  return v;
+});
+
+// Helper: deserialize value with Set support
+const deserialize = (str: string) => JSON.parse(str, (_k, v) => {
+  if (v && v.__isSet) {
+    return new Set(v.value);
+  }
+  return v;
+});

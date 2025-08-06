@@ -54,8 +54,8 @@ export function MainLayout({
     return [
       { key: "note-type", label: "Type", icon: <FileText className="w-6 h-6 text-blue-500 bg-blue-100 rounded-full p-1" /> },
       { key: "pmh", label: "PMH", icon: <Stethoscope className="w-6 h-6 text-emerald-600 bg-emerald-100 rounded-full p-1" /> },
-      { key: "meds", label: "Meds", icon: <Pill className="w-6 h-6 text-purple-600 bg-purple-100 rounded-full p-1" /> },
       { key: "allergies-social", label: "Allergies & Social", icon: <Users className="w-6 h-6 text-pink-500 bg-pink-100 rounded-full p-1" /> },
+      { key: "meds", label: "Meds", icon: <Pill className="w-6 h-6 text-purple-600 bg-purple-100 rounded-full p-1" /> },
       { key: "hpi", label: "HPI", icon: <ClipboardList className="w-6 h-6 text-cyan-600 bg-cyan-100 rounded-full p-1" /> },
       { key: "physical-exam", label: "Physical Exam", icon: <HeartPulse className="w-6 h-6 text-red-500 bg-red-100 rounded-full p-1" /> },
       ...(isICU ? [{ key: "ventilation", label: "Vent", icon: <Wind className="w-6 h-6 text-sky-500 bg-sky-100 rounded-full p-1" /> }] : []),

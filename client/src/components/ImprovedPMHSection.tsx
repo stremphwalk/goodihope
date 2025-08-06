@@ -86,7 +86,50 @@ export function ImprovedPMHSection({ data, onChange }: ImprovedPMHSectionProps) 
     }
   }, [data.entries.length, onChange]);
 
+  // Helper to quickly insert a common condition
+  const insertCondition = useCallback((condition: string) => {
+    // do not insert duplicates
+    if (data.entries.some(e => e.mainCondition.toLowerCase() === condition.toLowerCase())) return;
 
+    // First, try to find an empty entry to use
+    const emptyEntry = data.entries.find(entry => !entry.mainCondition.trim());
+    
+    if (emptyEntry) {
+      // Use the empty entry
+      const updatedEntries = data.entries.map(entry =>
+        entry.id === emptyEntry.id 
+          ? { ...entry, mainCondition: condition }
+          : entry
+      );
+      onChange({ entries: updatedEntries });
+      // Expand the updated entry
+      setExpandedEntries(prev => new Set([...Array.from(prev), emptyEntry.id]));
+    } else {
+      // Create a new entry if no empty ones available
+      const newEntry: PMHEntry = {
+        id: uuidv4(),
+        mainCondition: condition,
+        subEntries: ['', '', '']
+      };
+      const newEntries = [...data.entries, newEntry];
+      onChange({ entries: newEntries });
+      // Expand the new entry
+      setExpandedEntries(prev => new Set([...Array.from(prev), newEntry.id]));
+    }
+  }, [data.entries, onChange]);
+
+  const COMMON_PMH_CONDITIONS = [
+    'Hypertension',
+    'Diabetes mellitus',
+    'Coronary artery disease',
+    'Chronic kidney disease',
+    'Congestive heart failure',
+    'Asthma',
+    'COPD',
+    'Hyperlipidemia',
+    'Atrial fibrillation',
+    'Stroke/TIA',
+  ];
 
   const updateMainCondition = useCallback((entryId: string, value: string) => {
     preserveScrollPosition();
@@ -278,6 +321,19 @@ export function ImprovedPMHSection({ data, onChange }: ImprovedPMHSectionProps) 
       </div>
       
       <CardContent className="p-6 space-y-4" ref={setContainer}>
+        {/* Quick suggestions */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {COMMON_PMH_CONDITIONS.map(cond => (
+            <Button
+              key={cond}
+              size="sm"
+              variant="secondary"
+              onClick={() => insertCondition(cond)}
+              className="px-2 text-xs"
+            >{cond}</Button>
+          ))}
+        </div>
+
         <Button onClick={addNewEntry} variant="outline" className="w-full">
           <Plus className="w-4 h-4 mr-2" /> 
           {language === 'fr' ? 'Ajouter un antécédent' : 'Add Medical History'}

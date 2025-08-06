@@ -1,4 +1,4 @@
-import { db } from "./database-neon.js";
+import { userQueries } from "./database-supabase.js";
 import { users } from "../shared/schema.js";
 import { eq } from "drizzle-orm";
 

@@ -1,68 +1,271 @@
 // Complete code for client/src/components/LabValuesDisplay.tsx with a new log
 
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo, useEffect, useState, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronUp, ChevronDown, X, ArrowUp, ArrowDown, Hash, CheckCircle, RotateCcw } from 'lucide-react';
+import { ChevronUp, ChevronDown, ArrowUp, ArrowDown, Hash, CheckCircle, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useScrollPreservation } from '@/hooks/useScrollPreservation';
-import { ProcessedLabValue, updateLabTrending, toggleLabShowInNote, moveLabUp, moveLabDown, parseLabTimestamp } from '@/lib/labUtils';
+import { ProcessedLabValue, updateLabTrending, updateLabTrendingCount, toggleLabShowInNote, moveLabUp, moveLabDown, parseLabTimestamp } from '@/lib/labUtils';
+import { loadLabSettings, getPanelLabOrder, getLabTrendingPreference } from '@/lib/labSettings';
 
 interface LabValuesDisplayProps {
   processedLabs: ProcessedLabValue[];
-  onLabsChange: (labs: ProcessedLabValue[]) => void;
+  // Callback fired only the FIRST time the user mutates the list (so parent can show confirm chip)
+  onFirstChange?: () => void;
 }
 
-export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDisplayProps) {
+// Exposed methods for the parent (confirm / discard)
+export interface LabValuesDisplayHandle {
+  /** Return the current draft list */
+  getPendingLabs: () => ProcessedLabValue[];
+  /** Reset the draft list back to the last confirmed props */
+  reset: () => void;
+}
+
+// Convert to forwardRef so parent can call the handle
+export const LabValuesDisplay = React.memo(forwardRef<LabValuesDisplayHandle, LabValuesDisplayProps>(function LabValuesDisplay(
+  {
+    processedLabs: initialLabs,
+    onFirstChange,
+  },
+  ref
+) {
+  // Local draft copy that is mutated by all UI interactions
+  const [draftLabs, setDraftLabs] = useState<ProcessedLabValue[]>(initialLabs);
+  // Helper that also persists to localStorage to survive unmounts
+  const setDraftAndPersist = (labs: ProcessedLabValue[]) => {
+    setDraftLabs(labs);
+    try {
+      localStorage.setItem('draft_labs', JSON.stringify(labs));
+    } catch {}
+  };
   const { language } = useLanguage();
-  const { preserveScrollPosition, restoreScrollPosition, setContainer } = useScrollPreservation();
+  const latestConfirmedLabsRef = useRef(initialLabs);
+  const firstChangeRef = useRef(false);
   const [reorderMode, setReorderMode] = useState(false);
   const [orderingQueue, setOrderingQueue] = useState<string[]>([]);
+  const pendingUpdatesRef = useRef<NodeJS.Timeout | null>(null);
+  const lastInteractionRef = useRef<number>(0);
+  const isProcessingRef = useRef<boolean>(false);
+  
+  // Load user settings for custom ordering and trending
+  const [labSettings] = useState(() => {
+    try {
+      return loadLabSettings();
+    } catch (error) {
+      console.error('Failed to load lab settings, using defaults:', error);
+      return {
+        version: 1,
+        panelOrder: [],
+        panelLabOrders: [],
+        trendingPreferences: [],
+        defaultSelections: [],
+        globalTrending: { defaultTrendCount: 2, enableByDefault: true },
+        ui: { showPanelHeaders: true, showLabIndices: true, compactMode: false }
+      };
+    }
+  });
 
-  // Always use window scroll
-  useEffect(() => {
-    setContainer(null);
-  }, [setContainer]);
 
-  // Restore scroll after DOM update
+  // Comprehensive cleanup on unmount
   useEffect(() => {
-    setTimeout(() => {
-      restoreScrollPosition();
-    }, 0);
-  }, [processedLabs, restoreScrollPosition]);
+    return () => {
+      // Clear any pending timeouts
+      if (pendingUpdatesRef.current) {
+        clearTimeout(pendingUpdatesRef.current);
+        pendingUpdatesRef.current = null;
+      }
+      
+      // Reset processing flags
+      isProcessingRef.current = false;
+      lastInteractionRef.current = 0;
+      
+      console.debug('LabValuesDisplay cleanup completed');
+    };
+  }, []);
+
+  // Additional cleanup when processedLabs changes significantly
+  useEffect(() => {
+    // Reset processing state when data changes
+    isProcessingRef.current = false;
+  }, [draftLabs]);
+
+  // Restore any saved draft when the component first mounts
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('draft_labs');
+      if (saved) {
+        const parsed: ProcessedLabValue[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setDraftLabs(parsed);
+        }
+      }
+    } catch {}
+  }, []);
 
   // Debug logging
-  console.log('🧪 LabValuesDisplay received processedLabs:', processedLabs);
-  console.log('🧪 LabValuesDisplay processedLabs length:', processedLabs?.length || 0);
+  console.log('🧪 LabValuesDisplay received processedLabs:', draftLabs);
+  console.log('🧪 LabValuesDisplay processedLabs length:', draftLabs?.length || 0);
 
-  const handleTrendingChange = (testName: string, change: 'increase' | 'decrease') => {
-    preserveScrollPosition();
-    const updatedLabs = updateLabTrending(processedLabs, testName, change);
-    onLabsChange(updatedLabs);
+  // Keep draft in sync if parent confirms new list
+  useEffect(() => {
+    latestConfirmedLabsRef.current = initialLabs;
+    // Only sync if the user has not started editing (i.e., no pending changes yet)
+    if (!firstChangeRef.current) {
+      setDraftLabs(initialLabs);
+    }
+  }, [initialLabs]);
+
+  // Helper to notify parent once on first mutation
+  const notifyFirstChange = () => {
+    if (!firstChangeRef.current) {
+      firstChangeRef.current = true;
+      onFirstChange?.();
+      try { localStorage.setItem('draft_labs', JSON.stringify(draftLabs)); } catch {}
+    }
   };
 
-  const handleToggleShowInNote = (testName: string) => {
-    preserveScrollPosition();
-    const updatedLabs = toggleLabShowInNote(processedLabs, testName);
-    onLabsChange(updatedLabs);
-  };
+  // Replace all usages of `processedLabs` with the local draft list
+  const processedLabs = draftLabs;
 
-  const handleMoveUp = (testName: string) => {
-    preserveScrollPosition();
-    const updatedLabs = moveLabUp(processedLabs, testName);
-    onLabsChange(updatedLabs);
-  };
+  // Imperative handle exposed to parent component
+  useImperativeHandle(ref, () => ({
+    getPendingLabs: () => processedLabs,
+    reset: () => setDraftLabs(latestConfirmedLabsRef.current),
+  }), [processedLabs]);
 
-  const handleMoveDown = (testName: string) => {
-    preserveScrollPosition();
-    const updatedLabs = moveLabDown(processedLabs, testName);
-    onLabsChange(updatedLabs);
-  };
+  const handleTrendingChange = useCallback((testName: string, change: 'increase' | 'decrease', event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
 
-  const handleRemoveLab = (testName: string) => {
-    preserveScrollPosition();
-    const updatedLabs = processedLabs.filter(lab => lab.testName !== testName);
-    onLabsChange(updatedLabs);
-  };
+    // Rate limiting for rapid clicks (max 10 per second)
+    const now = Date.now();
+    if (now - lastInteractionRef.current < 100) {
+      console.debug('Rate limiting triggered for trending change');
+      return;
+    }
+    lastInteractionRef.current = now;
+
+    // Prevent concurrent processing
+    if (isProcessingRef.current) {
+      console.debug('Already processing interaction, skipping');
+      return;
+    }
+
+    try {
+      isProcessingRef.current = true;
+      
+      notifyFirstChange();
+      // Use requestAnimationFrame to ensure DOM changes are handled properly
+      requestAnimationFrame(() => {
+        try {
+          const currentLab = draftLabs.find(lab => lab.testName === testName);
+          if (!currentLab) return;
+
+          const maxCount = currentLab.maxTrendCount || currentLab.allTrendingValues?.length || 0;
+          let newCount = currentLab.trendCount || 0;
+
+          if (change === 'increase') {
+            newCount = Math.min(newCount + 1, maxCount);
+          } else {
+            newCount = Math.max(newCount - 1, 0);
+          }
+
+          const updatedLabs = updateLabTrendingCount(draftLabs, testName, newCount);
+          if (updatedLabs && Array.isArray(updatedLabs)) {
+            setDraftAndPersist(updatedLabs);
+          } else {
+            console.warn('Invalid lab data returned from updateLabTrendingCount');
+          }
+        } catch (error) {
+          console.error('Error in handleTrendingChange:', error);
+        } finally {
+          isProcessingRef.current = false;
+        }
+      });
+    } catch (error) {
+      console.error('Error in handleTrendingChange setup:', error);
+      isProcessingRef.current = false;
+    }
+  }, [draftLabs, setDraftAndPersist, notifyFirstChange]);
+
+  const handleToggleShowInNote = useCallback((testName: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
+    requestAnimationFrame(() => {
+      const updatedLabs = toggleLabShowInNote(processedLabs, testName);
+      notifyFirstChange();
+      setDraftAndPersist(updatedLabs);
+    });
+  }, [processedLabs, setDraftAndPersist, notifyFirstChange]);
+
+  const handleMoveUp = useCallback((testName: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
+    requestAnimationFrame(() => {
+      const updatedLabs = moveLabUp(processedLabs, testName);
+      notifyFirstChange();
+      setDraftAndPersist(updatedLabs);
+    });
+  }, [processedLabs, setDraftAndPersist, notifyFirstChange]);
+
+  const handleMoveDown = useCallback((testName: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
+    requestAnimationFrame(() => {
+      const updatedLabs = moveLabDown(processedLabs, testName);
+      notifyFirstChange();
+      setDraftAndPersist(updatedLabs);
+    });
+  }, [processedLabs, setDraftAndPersist, notifyFirstChange]);
+
+  const handleRemoveLab = useCallback((testName: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    // Rate limiting and concurrency protection
+    const now = Date.now();
+    if (now - lastInteractionRef.current < 100 || isProcessingRef.current) {
+      console.debug('Rate limiting or processing conflict for remove lab');
+      return;
+    }
+    lastInteractionRef.current = now;
+
+    try {
+      isProcessingRef.current = true;
+      
+      requestAnimationFrame(() => {
+        try {
+          const updatedLabs = processedLabs.filter(lab => lab.testName !== testName);
+          if (updatedLabs && Array.isArray(updatedLabs)) {
+            notifyFirstChange();
+            setDraftAndPersist(updatedLabs);
+          } else {
+            console.warn('Invalid lab data after removal');
+          }
+        } catch (error) {
+          console.error('Error in handleRemoveLab:', error);
+        } finally {
+          isProcessingRef.current = false;
+        }
+      });
+    } catch (error) {
+      console.error('Error in handleRemoveLab setup:', error);
+      isProcessingRef.current = false;
+    }
+  }, [processedLabs, setDraftAndPersist, notifyFirstChange]);
 
   const handleLabClick = (testName: string, category: string) => {
     if (!reorderMode) return;
@@ -92,11 +295,11 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
     ];
 
     // Find the position of the first lab in this category in the original array
-    const firstCategoryIndex = processedLabs.findIndex(lab => lab.category === category);
+    const firstCategoryIndex = draftLabs.findIndex(lab => lab.category === category);
     
     // Replace the category labs in the original array while preserving other categories
-    const updatedLabs = [...processedLabs];
-    const categoryIndices = processedLabs
+    const updatedLabs = [...draftLabs];
+    const categoryIndices = draftLabs
       .map((lab, index) => lab.category === category ? index : -1)
       .filter(index => index !== -1);
     
@@ -106,9 +309,10 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
     // Insert reordered category labs at the original position
     updatedLabs.splice(firstCategoryIndex, 0, ...reorderedCategoryLabs);
 
-    onLabsChange(updatedLabs);
+    setDraftAndPersist(updatedLabs);
     setOrderingQueue(prev => prev.filter(key => !key.startsWith(category)));
     setReorderMode(false);
+    notifyFirstChange();
   };
 
   const cancelReorder = () => {
@@ -116,25 +320,126 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
     setOrderingQueue([]);
   };
 
+
   const labsByCategory = useMemo(() => {
-    return processedLabs.reduce((acc, lab) => {
-      (acc[lab.category] = acc[lab.category] || []).push(lab);
-      return acc;
-    }, {} as Record<string, ProcessedLabValue[]>);
-  }, [processedLabs]);
+    try {
+      if (!draftLabs || !Array.isArray(draftLabs)) {
+        return {};
+      }
+
+      const grouped = draftLabs.reduce((acc, lab) => {
+        // Validate lab object structure
+        if (lab && typeof lab === 'object' && lab.category && lab.testName) {
+          const category = String(lab.category);
+          (acc[category] = acc[category] || []).push(lab);
+        } else {
+          console.warn('Invalid lab object found:', lab);
+        }
+        return acc;
+      }, {} as Record<string, ProcessedLabValue[]>);
+
+      // Apply custom lab ordering within each category if user has defined it
+      Object.keys(grouped).forEach(category => {
+        try {
+          if (!category || typeof category !== 'string') {
+            return;
+          }
+          
+          const customOrder = getPanelLabOrder(labSettings, category);
+          if (customOrder && Array.isArray(customOrder) && customOrder.length > 0) {
+            const labs = grouped[category];
+            if (!labs || !Array.isArray(labs)) {
+              return;
+            }
+            
+            const orderedLabs: ProcessedLabValue[] = [];
+            const remainingLabs: ProcessedLabValue[] = [];
+            
+            // First, add labs in the custom order
+            customOrder.forEach(testName => {
+              if (testName && typeof testName === 'string') {
+                const lab = labs.find(l => 
+                  l && l.testName && typeof l.testName === 'string' && 
+                  l.testName.toLowerCase() === testName.toLowerCase()
+                );
+                if (lab) {
+                  orderedLabs.push(lab);
+                }
+              }
+            });
+            
+            // Then add any remaining labs that weren't in the custom order
+            labs.forEach(lab => {
+              if (lab && lab.testName && typeof lab.testName === 'string') {
+                if (!orderedLabs.some(ol => 
+                  ol && ol.testName && typeof ol.testName === 'string' &&
+                  ol.testName.toLowerCase() === lab.testName.toLowerCase()
+                )) {
+                  remainingLabs.push(lab);
+                }
+              }
+            });
+            
+            grouped[category] = [...orderedLabs, ...remainingLabs];
+          }
+        } catch (error) {
+          console.error(`Error applying custom order for category ${category}:`, error);
+        }
+      });
+
+      return grouped;
+    } catch (error) {
+      console.error('Error in labsByCategory calculation:', error);
+      return {};
+    }
+  }, [draftLabs, labSettings]);
 
   const orderedCategories = useMemo(() => {
-    const categoryOrder = processedLabs.reduce((acc, lab, index) => {
-      if (!acc[lab.category]) {
-        acc[lab.category] = index;
+    try {
+      if (!draftLabs || !Array.isArray(draftLabs) || draftLabs.length === 0) {
+        return [];
       }
-      return acc;
-    }, {} as Record<string, number>);
-    return Object.keys(labsByCategory).sort((a, b) => categoryOrder[a] - categoryOrder[b]);
-  }, [labsByCategory, processedLabs]);
+
+      const availableCategories = Object.keys(labsByCategory);
+      
+      // Use user's custom panel order if available
+      if (labSettings && labSettings.panelOrder && Array.isArray(labSettings.panelOrder) && labSettings.panelOrder.length > 0) {
+        try {
+          // Start with user's preferred order, then add any missing categories
+          const validPanelOrder = labSettings.panelOrder.filter(cat => 
+            cat && typeof cat === 'string' && cat.trim().length > 0
+          );
+          const userOrderedCategories = validPanelOrder.filter(cat => availableCategories.includes(cat));
+          const remainingCategories = availableCategories.filter(cat => !validPanelOrder.includes(cat));
+          return [...userOrderedCategories, ...remainingCategories];
+        } catch (error) {
+          console.error('Error processing custom panel order:', error);
+        }
+      }
+
+      // Fallback to original logic if no custom order is set
+      const categoryOrder = draftLabs.reduce((acc, lab, index) => {
+        if (lab && lab.category && typeof lab.category === 'string') {
+          if (!acc[lab.category]) {
+            acc[lab.category] = index;
+          }
+        }
+        return acc;
+      }, {} as Record<string, number>);
+      
+      return availableCategories.sort((a, b) => {
+        const orderA = categoryOrder[a] ?? 999;
+        const orderB = categoryOrder[b] ?? 999;
+        return orderA - orderB;
+      });
+    } catch (error) {
+      console.error('Error in orderedCategories calculation:', error);
+      return [];
+    }
+  }, [labsByCategory, draftLabs, labSettings.panelOrder]);
 
 
-  if (processedLabs.length === 0) {
+  if (!draftLabs || !Array.isArray(draftLabs) || draftLabs.length === 0) {
     return (
       <div className="text-sm text-gray-500 dark:text-gray-400 italic">
         {language === 'fr' ? 'Aucune valeur de laboratoire disponible' : 'No lab values available'}
@@ -144,12 +449,23 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
 
   return (
     <div className="space-y-6">
-      {orderedCategories.map(category => (
+      {orderedCategories.map(category => {
+        // Validate category and its labs
+        if (!category || typeof category !== 'string' || !labsByCategory[category] || !Array.isArray(labsByCategory[category])) {
+          return null;
+        }
+        
+        const categoryLabs = labsByCategory[category];
+        if (categoryLabs.length === 0) {
+          return null;
+        }
+        
+        return (
         <div key={category} className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wide">{category}</h3>
-              {labsByCategory[category].length > 1 && (
+              {categoryLabs.length > 1 && (
                 <div className="flex gap-2">
                   {!reorderMode ? (
                     <Button
@@ -192,16 +508,21 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
             </div>
           </div>
           <div className="p-4 space-y-3">
-            {labsByCategory[category].map((lab, index) => {
+            {categoryLabs.map((lab, index) => {
+              // Validate individual lab object
+              if (!lab || typeof lab !== 'object' || !lab.testName || typeof lab.testName !== 'string') {
+                console.warn('Invalid lab object:', lab);
+                return null;
+              }
               const isFirstInCategory = index === 0;
-              const isLastInCategory = index === labsByCategory[category].length - 1;
+              const isLastInCategory = index === categoryLabs.length - 1;
               const canMoveUp = !isFirstInCategory;
               const canMoveDown = !isLastInCategory;
               
               // The most recent value is lab.mostRecent.
               // The trending values are older values, which should be displayed chronologically.
               const firstValue = lab.mostRecent;
-              const subsequentValues = [...lab.trending].reverse();
+              const subsequentValues = Array.isArray(lab.trending) ? [...lab.trending].reverse() : [];
 
               const fullLabKey = `${category}-${lab.testName}`;
               const queueIndex = orderingQueue.indexOf(fullLabKey);
@@ -264,7 +585,7 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
                     <div className="flex flex-col space-y-1">
                       <Button
                         variant="ghost" size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleMoveUp(lab.testName); }}
+                        onClick={(e) => handleMoveUp(lab.testName, e)}
                         disabled={!canMoveUp}
                         className={`h-6 w-6 p-0 rounded ${
                           canMoveUp ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-600' : 'text-gray-300 cursor-not-allowed'
@@ -275,7 +596,7 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
                       </Button>
                       <Button
                         variant="ghost" size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleMoveDown(lab.testName); }}
+                        onClick={(e) => handleMoveDown(lab.testName, e)}
                         disabled={!canMoveDown}
                         className={`h-6 w-6 p-0 rounded ${
                           canMoveDown ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-600' : 'text-gray-300 cursor-not-allowed'
@@ -289,20 +610,25 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
 
                   <div className="h-8 w-px bg-gray-300 dark:bg-gray-600"></div>
 
+                  {/* Toggle visibility button */}
                   <Button
                     variant="ghost" size="sm"
-                    onClick={(e) => { e.stopPropagation(); handleRemoveLab(lab.testName); }}
+                    onClick={(e) => handleToggleShowInNote(lab.testName, e)}
                     className={`h-8 w-8 p-0 rounded ${
-                      !lab.showInNote 
-                        ? 'text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950' 
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-600'
+                      lab.showInNote 
+                        ? 'text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950' 
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700'
                     }`}
-                    title={language === 'fr' ? 'Supprimer la valeur de laboratoire' : 'Remove lab value'}
+                    title={lab.showInNote 
+                      ? (language === 'fr' ? 'Cacher de la note' : 'Hide from note')
+                      : (language === 'fr' ? 'Afficher dans la note' : 'Show in note')
+                    }
                   >
-                    <X className="h-4 w-4" />
+                    {lab.showInNote ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   </Button>
 
-                  {lab.trending && lab.trending.length > 0 && (
+                  {/* Show trending controls for all labs to allow user customization */}
+                  {true && (
                     <div className="flex flex-col items-center space-y-1">
                       <div className="text-xs text-gray-500 dark:text-gray-400 font-medium">
                         {language === 'fr' ? 'Tendance' : 'Trending'}
@@ -311,7 +637,7 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          onClick={(e) => { e.stopPropagation(); handleTrendingChange(lab.testName, 'decrease'); }} 
+                          onClick={(e) => handleTrendingChange(lab.testName, 'decrease', e)} 
                           disabled={lab.trendCount === 0} 
                           className="h-9 w-9 p-0 rounded-none hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-30"
                           title={language === 'fr' ? 'Afficher moins de valeurs' : 'Show fewer values'}
@@ -324,26 +650,30 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
                             {lab.trendCount}
                           </span>
                           <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
-                            /{lab.trending.length}
+                            /{lab.maxTrendCount || lab.trending.length}
                           </span>
                         </div>
 
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          onClick={(e) => { e.stopPropagation(); handleTrendingChange(lab.testName, 'increase'); }} 
-                          disabled={lab.trendCount === lab.trending.length} 
+                          onClick={(e) => handleTrendingChange(lab.testName, 'increase', e)} 
+                          disabled={lab.trendCount >= (lab.maxTrendCount || lab.trending.length)} 
                           className="h-9 w-9 p-0 rounded-none hover:bg-green-50 dark:hover:bg-green-950 disabled:opacity-30"
                           title={language === 'fr' ? 'Afficher plus de valeurs' : 'Show more values'}
                         >
                           <ChevronUp className="h-4 w-4" />
                         </Button>
                       </div>
-                      {lab.trendCount > 0 && (
+                      {lab.trendCount > 0 ? (
                         <div className="text-xs text-green-600 dark:text-green-400 font-medium">
                           {language === 'fr' ? 'Inclus dans la note' : 'Included in note'}
                         </div>
-                      )}
+                      ) : (lab.maxTrendCount === 0 && (lab.allTrendingValues?.length === 0 || !lab.allTrendingValues) ? (
+                        <div className="text-xs text-gray-400 dark:text-gray-500 font-medium">
+                          {language === 'fr' ? 'Aucune donnée historique' : 'No historical data'}
+                        </div>
+                      ) : null)}
                     </div>
                   )}
                 </div>
@@ -352,7 +682,8 @@ export function LabValuesDisplay({ processedLabs, onLabsChange }: LabValuesDispl
             })}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
-}
+}));

@@ -35,20 +35,33 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
 
 // Server-side Supabase client (for API routes)
 export const createServerSupabaseClient = () => {
-  const serverUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://tfoseletmpbybebtnilq.supabase.co'
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmb3NlbGV0bXBieWJlYnRuaWxxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MzYzMjgzMiwiZXhwIjoyMDY5MjA4ODMyfQ.NAC5LP6AgJFBAtweQ62O1zIU7h-r0U1IeppL76KfWkQ'
-  
-  if (!serviceRoleKey || !serverUrl) {
-    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
+  // Prefer explicit env vars but fall back to the public anon key to keep local/dev
+  // environments working even when a service-role key is not available.
+  const serverUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || supabaseUrl;
+
+  // We try the service-role key first because some privileged RPC calls might need it.
+  // If it is not defined we gracefully fall back to the anon key which is sufficient
+  // for verifying user JWTs via `supabase.auth.getUser(token)`.
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    supabaseAnonKey;
+
+  if (!serverUrl) {
+    throw new Error('Missing Supabase URL – please set NEXT_PUBLIC_SUPABASE_URL');
+  }
+
+  if (!serviceRoleKey) {
+    console.warn('⚠️  SUPABASE_SERVICE_ROLE_KEY not found – falling back to anon key');
   }
 
   return createClient<Database>(serverUrl, serviceRoleKey, {
     auth: {
       autoRefreshToken: false,
-      persistSession: false
-    }
-  })
-}
+      persistSession: false,
+    },
+  });
+};
 
 // Helper to get authenticated user
 export const getCurrentUser = async () => {

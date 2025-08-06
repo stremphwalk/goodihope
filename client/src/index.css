@@ -311,4 +311,51 @@ body {
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background-color: rgba(156, 163, 175, 0.8);
   }
+
+  /* Popover scrollbar styling */
+  .popover-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+    /* Ensure smooth scrolling */
+    scroll-behavior: smooth;
+    /* Ensure the container can be scrolled */
+    overscroll-behavior: contain;
+  }
+
+  .popover-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .popover-scrollbar::-webkit-scrollbar-track {
+    background: rgba(243, 244, 246, 0.5);
+    border-radius: 4px;
+  }
+
+  .popover-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.4);
+    border-radius: 4px;
+    border: 1px solid rgba(243, 244, 246, 0.8);
+  }
+
+  .popover-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(107, 114, 128, 0.6);
+  }
+
+  /* Dark mode scrollbar for popover */
+  .dark .popover-scrollbar {
+    scrollbar-color: rgba(75, 85, 99, 0.4) transparent;
+  }
+
+  .dark .popover-scrollbar::-webkit-scrollbar-track {
+    background: rgba(31, 41, 55, 0.5);
+  }
+
+  .dark .popover-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(75, 85, 99, 0.4);
+    border: 1px solid rgba(31, 41, 55, 0.8);
+  }
+
+  .dark .popover-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(107, 114, 128, 0.6);
+  }
 }

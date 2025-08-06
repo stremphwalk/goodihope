@@ -18,10 +18,15 @@ export function StableInput({ value, onChange, placeholder, className }: StableI
     }
   }, [value]);
 
+  // Propagate changes on every keystroke so that parent state stays in sync when
+  // the user performs another action (e.g., clicking a quick-add chip) without
+  // leaving the input first. We still keep the onBlur call below as a safety
+  // net, but pushing updates here ensures the most up-to-date value is always
+  // available.
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setInternalValue(newValue);
-    // Don't call onChange during typing - only on blur
+    onChange(newValue);
   };
 
   const handleBlur = () => {

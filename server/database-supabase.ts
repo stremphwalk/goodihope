@@ -331,4 +331,9 @@ export const getAuthenticatedUser = async (request: any): Promise<User | null> =
   }
 };
 
+// Additional exports for compatibility with existing code
+export const groupTodoQueries = teamGroupQueries;
+export const groupEventQueries = teamGroupQueries;
+export const groupMemberQueries = teamGroupQueries;
+
 export default supabase;

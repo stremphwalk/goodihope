@@ -4,8 +4,8 @@ import { storage } from "./storage";
 import { searchMedications, getCommonDosages } from "./parseCSVMedications";
 import { extractLabValuesFromImage, extractMedicationsFromImage } from "./vision";
 import { sanitizeString, validateBase64Image, SECURITY_CONFIG } from "./security";
-import { db } from "./database-neon";
-import { dotPhrases, users, userPresets, teamGroups, groupMembers, groupTodos, groupEvents, templates, templateUsage } from "../shared/schema";
+import { userQueries, dotPhraseQueries, rosNoteQueries, userPresetQueries, teamGroupQueries, groupTodoQueries, groupEventQueries } from "./database-supabase";
+import { dotPhrases, users, userPresets, teamGroups, groupMembers, groupTodos, groupEvents, templates, templateUsage, userLabSettings } from "../shared/schema";
 import { eq, desc, and, ne, sql, gt, lt, gte, lte } from "drizzle-orm";
 import { checkJwt } from './auth';
 import { generateUniqueShareCode, isValidShareCode, normalizeShareCode } from './shareCodeUtils';
@@ -1892,6 +1892,255 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error) {
         console.error('Error creating event:', error);
         res.status(500).json({ error: 'Failed to create event' });
+      }
+    });
+
+    // Lab Settings endpoints
+    // GET /api/lab-settings - Get user's lab settings
+    app.get("/api/lab-settings", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        const userSettings = await db
+          .select()
+          .from(userLabSettings)
+          .where(eq(userLabSettings.userId, user.id))
+          .limit(1);
+        
+        if (userSettings.length === 0) {
+          return res.status(404).json({ error: 'Lab settings not found' });
+        }
+        
+        res.json({
+          settings: userSettings[0].settings,
+          updatedAt: userSettings[0].updatedAt
+        });
+      } catch (error) {
+        console.error('Error getting lab settings:', error);
+        res.status(500).json({ error: 'Failed to retrieve lab settings' });
+      }
+    });
+
+    // POST /api/lab-settings - Save user's lab settings
+    app.post("/api/lab-settings", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        const { settings } = req.body;
+        
+        if (!settings || typeof settings !== 'object') {
+          return res.status(400).json({ error: 'Invalid settings object' });
+        }
+        
+        // Comprehensive settings validation
+        if (!settings.version || typeof settings.version !== 'number' || settings.version < 1) {
+          return res.status(400).json({ error: 'Invalid or missing settings version' });
+        }
+        
+        if (!settings.panelOrder || !Array.isArray(settings.panelOrder)) {
+          return res.status(400).json({ error: 'Invalid panel order format' });
+        }
+        
+        // Validate panel order contains only strings
+        if (!settings.panelOrder.every((panel: any) => panel && typeof panel === 'string' && panel.trim().length > 0)) {
+          return res.status(400).json({ error: 'Panel order must contain valid panel names' });
+        }
+        
+        // Check for reasonable panel order length
+        if (settings.panelOrder.length > 50) {
+          return res.status(400).json({ error: 'Too many panels in panel order (max 50)' });
+        }
+        
+        // Validate other required arrays
+        if (!Array.isArray(settings.panelLabOrders)) {
+          return res.status(400).json({ error: 'Invalid panel lab orders format' });
+        }
+        
+        // Check reasonable limits for arrays
+        if (settings.panelLabOrders.length > 100) {
+          return res.status(400).json({ error: 'Too many panel lab orders (max 100)' });
+        }
+        
+        if (!Array.isArray(settings.trendingPreferences)) {
+          return res.status(400).json({ error: 'Invalid trending preferences format' });
+        }
+        
+        if (settings.trendingPreferences.length > 500) {
+          return res.status(400).json({ error: 'Too many trending preferences (max 500)' });
+        }
+        
+        if (!Array.isArray(settings.defaultSelections)) {
+          return res.status(400).json({ error: 'Invalid default selections format' });
+        }
+        
+        if (settings.defaultSelections.length > 100) {
+          return res.status(400).json({ error: 'Too many default selections (max 100)' });
+        }
+        
+        // Validate global trending settings
+        if (!settings.globalTrending || typeof settings.globalTrending !== 'object') {
+          return res.status(400).json({ error: 'Invalid global trending settings' });
+        }
+        
+        if (typeof settings.globalTrending.defaultTrendCount !== 'number' || 
+            settings.globalTrending.defaultTrendCount < 0 || 
+            settings.globalTrending.defaultTrendCount > 10) {
+          return res.status(400).json({ error: 'Invalid default trend count' });
+        }
+        
+        if (typeof settings.globalTrending.enableByDefault !== 'boolean') {
+          return res.status(400).json({ error: 'Invalid enable by default setting' });
+        }
+        
+        // Validate UI settings
+        if (!settings.ui || typeof settings.ui !== 'object') {
+          return res.status(400).json({ error: 'Invalid UI settings' });
+        }
+        
+        // Check settings size (max 100KB)
+        const settingsSize = JSON.stringify(settings).length;
+        if (settingsSize > 100 * 1024) {
+          return res.status(413).json({ error: 'Settings data too large (max 100KB)' });
+        }
+        
+        // Check if user already has settings
+        const existingSettings = await db
+          .select()
+          .from(userLabSettings)
+          .where(eq(userLabSettings.userId, user.id))
+          .limit(1);
+        
+        let result;
+        const now = new Date();
+        
+        if (existingSettings.length > 0) {
+          // Update existing settings
+          result = await db
+            .update(userLabSettings)
+            .set({
+              settings,
+              updatedAt: now
+            })
+            .where(eq(userLabSettings.userId, user.id))
+            .returning();
+        } else {
+          // Create new settings
+          result = await db
+            .insert(userLabSettings)
+            .values({
+              userId: user.id,
+              settings,
+              createdAt: now,
+              updatedAt: now
+            })
+            .returning();
+        }
+        
+        if (!result || result.length === 0) {
+          return res.status(500).json({ error: 'Failed to save settings - no result returned' });
+        }
+        
+        res.json({
+          success: true,
+          settings: result[0].settings,
+          updatedAt: result[0].updatedAt
+        });
+      } catch (error) {
+        console.error('Error saving lab settings:', error);
+        
+        // Handle specific database errors
+        if ((error as any).code === '23505') { // Unique constraint violation
+          return res.status(409).json({ error: 'Settings conflict - please refresh and try again' });
+        }
+        
+        if ((error as any).code === '23503') { // Foreign key violation
+          return res.status(400).json({ error: 'Invalid user reference' });
+        }
+        
+        if ((error as any).message?.includes('timeout')) {
+          return res.status(408).json({ error: 'Database timeout - please try again' });
+        }
+        
+        if ((error as any).message?.includes('connection')) {
+          return res.status(503).json({ error: 'Database connection error - please try again later' });
+        }
+        
+        res.status(500).json({ error: 'Failed to save lab settings' });
+      }
+    });
+
+    // PUT /api/lab-settings - Update user's lab settings
+    app.put("/api/lab-settings", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        const { settings } = req.body;
+        
+        if (!settings || typeof settings !== 'object') {
+          return res.status(400).json({ error: 'Invalid settings object' });
+        }
+        
+        // Validate settings structure
+        if (!settings.version || !settings.panelOrder || !Array.isArray(settings.panelOrder)) {
+          return res.status(400).json({ error: 'Invalid settings format' });
+        }
+        
+        const result = await db
+          .update(userLabSettings)
+          .set({
+            settings,
+            updatedAt: new Date()
+          })
+          .where(eq(userLabSettings.userId, user.id))
+          .returning();
+        
+        if (result.length === 0) {
+          return res.status(404).json({ error: 'Lab settings not found' });
+        }
+        
+        res.json({
+          success: true,
+          settings: result[0].settings,
+          updatedAt: result[0].updatedAt
+        });
+      } catch (error) {
+        console.error('Error updating lab settings:', error);
+        res.status(500).json({ error: 'Failed to update lab settings' });
+      }
+    });
+
+    // DELETE /api/lab-settings - Delete user's lab settings
+    app.delete("/api/lab-settings", checkJwt, async (req: AuthenticatedRequest, res) => {
+      try {
+        if (!req.auth?.sub) {
+          return res.status(401).json({ error: 'Unauthorized: User identifier not found in token' });
+        }
+        
+        const user = await getOrCreateUser(req.auth);
+        
+        const result = await db
+          .delete(userLabSettings)
+          .where(eq(userLabSettings.userId, user.id))
+          .returning();
+        
+        if (result.length === 0) {
+          return res.status(404).json({ error: 'Lab settings not found' });
+        }
+        
+        res.json({ success: true, message: 'Lab settings deleted successfully' });
+      } catch (error) {
+        console.error('Error deleting lab settings:', error);
+        res.status(500).json({ error: 'Failed to delete lab settings' });
       }
     });
 

@@ -1,5 +1,9 @@
 // FINAL, DEFINITIVE, AND CORRECTED CODE for client/src/lib/labUtils.ts
 
+import type { LabSettings } from './labSettings';
+import { getPanelLabOrder } from './labSettings';
+import { getChemistrySubCategory } from './labCategorizer';
+
 export interface LabValue {
   testName: string;
   value: string;
@@ -13,21 +17,21 @@ export interface ProcessedLabValue {
   testName: string;
   category: string;
   mostRecent: LabValue;
-  trending: LabValue[];
+  trending: LabValue[]; // All available trending values
+  allTrendingValues: LabValue[]; // Complete historical dataset for user adjustment
   showTrending: boolean;
-  trendCount: number;
+  trendCount: number; // Currently displayed count (user can adjust)
+  maxTrendCount: number; // Maximum available trending values
   showInNote: boolean;
 }
 
 const CATEGORY_ORDER: { [key: string]: number } = {
   'CBC': 1,
-  'Hématologie': 1,
   'Coagulation': 2,
-  'Chemistry': 3,
-  'Biochimie': 3,
-  'CRP': 4,
-  'Lipids': 5,
-  'Endocrinology': 6,
+  'Inflammatory': 3,
+  'Chemistry': 4,
+  'Blood gas': 5,
+  'Cardiac': 6,
   'General': 99,
 };
 
@@ -39,7 +43,98 @@ const LAB_ABBREVIATIONS: { [key: string]: string } = {
   'Potassium': 'K',
   'Chlore': 'Cl',
   'Créatinine': 'Creat',
+  'Protéine C réactive': 'CRP',
+  'Triglycérides': 'TG',
+  'Cholestérol': 'Chol',
+  'Fibrinogène': 'Fibrinogen',
+  'Protéines totales': 'Total Protein',
+  'Leucocytes': 'WBC',
+  'Érythrocytes': 'RBC',
+  'Neutrophiles': 'Neutrophils',
+  'Albumine': 'Albumin',
+  'Magnésium': 'Mg',
+  'Insuline': 'Insulin'
 };
+
+// Bidirectional lab name mapping for matching settings to parsed text
+const LAB_NAME_MAPPINGS: { [key: string]: string[] } = {
+  // Coagulation - key mappings for the discrepancies you mentioned
+  'INR': ['RNI', 'INR'],
+  'RNI': ['INR', 'RNI'], 
+  'PTT': ['TTPA', 'PTT', 'APTT'],
+  'TTPA': ['PTT', 'TTPA', 'APTT'],
+  'PT': ['TP', 'PT'],
+  'TP': ['PT', 'TP'],
+  
+  // Chemistry - sodium/potassium mappings
+  'Na': ['Sodium', 'Na'],
+  'Sodium': ['Na', 'Sodium'],
+  'K': ['Potassium', 'K'], 
+  'Potassium': ['K', 'Potassium'],
+  'Creatinine': ['Créatinine', 'Creat', 'Creatinine'],
+  'Créatinine': ['Creatinine', 'Creat', 'Créatinine'],
+  'Creat': ['Créatinine', 'Creatinine', 'Creat'],
+  
+  // CBC mappings
+  'Hb': ['Hémoglobine', 'Hemoglobin', 'Hb', 'HGB'],
+  'Hémoglobine': ['Hb', 'Hemoglobin', 'Hémoglobine'],
+  'Hct': ['Hématocrite', 'Hematocrit', 'Hct'],
+  'Hématocrite': ['Hct', 'Hematocrit', 'Hématocrite'],
+  'WBC': ['Leucocytes', 'GB', 'WBC'],
+  'Leucocytes': ['WBC', 'GB', 'Leucocytes'],
+  'RBC': ['Érythrocytes', 'GR', 'RBC'],
+  'Érythrocytes': ['RBC', 'GR', 'Érythrocytes'],
+  'Plt': ['Plaquettes', 'Platelets', 'Plt'],
+  'Plaquettes': ['Plt', 'Platelets', 'Plaquettes'],
+  
+  // Other common mappings
+  'CRP': ['Protéine C réactive', 'C-reactive protein', 'CRP'],
+  'Protéine C réactive': ['CRP', 'C-reactive protein', 'Protéine C réactive'],
+  'Cholesterol': ['Cholestérol', 'Cholesterol', 'Chol'],
+  'Cholestérol': ['Cholesterol', 'Chol', 'Cholestérol'],
+  'Albumin': ['Albumine', 'Albumin', 'Alb'],
+  'Albumine': ['Albumin', 'Alb', 'Albumine']
+};
+
+/**
+ * Check if two lab names are equivalent using bidirectional mapping
+ * This handles French/English variations and abbreviations
+ */
+function labNamesMatch(name1: string, name2: string): boolean {
+  if (!name1 || !name2 || typeof name1 !== 'string' || typeof name2 !== 'string') {
+    return false;
+  }
+  
+  const normalized1 = name1.toLowerCase().trim();
+  const normalized2 = name2.toLowerCase().trim();
+  
+  // Direct match
+  if (normalized1 === normalized2) {
+    return true;
+  }
+  
+  // Check if name1 maps to name2 or vice versa
+  const mappings1 = LAB_NAME_MAPPINGS[name1] || LAB_NAME_MAPPINGS[normalized1];
+  const mappings2 = LAB_NAME_MAPPINGS[name2] || LAB_NAME_MAPPINGS[normalized2];
+  
+  if (mappings1 && mappings1.some(mapped => mapped.toLowerCase() === normalized2)) {
+    return true;
+  }
+  
+  if (mappings2 && mappings2.some(mapped => mapped.toLowerCase() === normalized1)) {
+    return true;
+  }
+  
+  // Check if both names exist in the same mapping array
+  for (const [key, variants] of Object.entries(LAB_NAME_MAPPINGS)) {
+    const normalizedVariants = variants.map(v => v.toLowerCase());
+    if (normalizedVariants.includes(normalized1) && normalizedVariants.includes(normalized2)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
 
 /**
  * Get current system date in YYMMDD format for intelligent date comparison
@@ -159,7 +254,7 @@ function getCachedCurrentDateYYMMDD(): string {
   return cachedCurrentDate;
 }
 
-export function processLabValues(labValues: LabValue[]): ProcessedLabValue[] {
+export function processLabValues(labValues: LabValue[], userSettings?: LabSettings): ProcessedLabValue[] {
   // Input validation
   if (!labValues || !Array.isArray(labValues)) {
     console.warn('processLabValues: Invalid input - expected array of LabValue');
@@ -171,11 +266,40 @@ export function processLabValues(labValues: LabValue[]): ProcessedLabValue[] {
   console.log(`Current system date (YYMMDD): ${currentYYMMDD}`);
 
   // First, filter out any invalid lab values
-  const validLabs = labValues.filter(lab => 
-    lab.value && lab.value.trim() !== '' && 
-    lab.value.trim() !== '>' && 
-    lab.testName && lab.testName.trim() !== ''
-  );
+  const validLabs = labValues.filter(lab => {
+    // Check for null/undefined lab object
+    if (!lab || typeof lab !== 'object') {
+      console.warn('processLabValues: Invalid lab object found:', lab);
+      return false;
+    }
+    
+    // Check for valid test name
+    if (!lab.testName || typeof lab.testName !== 'string' || lab.testName.trim() === '') {
+      console.warn('processLabValues: Lab missing valid testName:', lab);
+      return false;
+    }
+    
+    // Check for valid value (allow '0', 'negative', etc.)
+    if (!lab.value || typeof lab.value !== 'string') {
+      console.warn('processLabValues: Lab missing valid value:', lab);
+      return false;
+    }
+    
+    const trimmedValue = lab.value.trim();
+    // Filter out completely empty values or just '>' (incomplete values)
+    if (trimmedValue === '' || trimmedValue === '>') {
+      console.warn('processLabValues: Lab has empty or incomplete value:', lab);
+      return false;
+    }
+    
+    // Check for valid category
+    if (!lab.category || typeof lab.category !== 'string' || lab.category.trim() === '') {
+      console.warn('processLabValues: Lab missing valid category:', lab);
+      return false;
+    }
+    
+    return true;
+  });
 
   if (validLabs.length === 0) {
     return [];
@@ -281,17 +405,87 @@ export function processLabValues(labValues: LabValue[]): ProcessedLabValue[] {
     }
 
     const mostRecent = sortedByDate[0]; 
-    const trendingValues = sortedByDate.slice(1);
+    const trendingValues = sortedByDate.slice(1); // Include ALL historical values, not just limited count
     const hasTrending = trendingValues.length > 0;
+    
+    // Apply user trending preferences if available - default to showing trending
+    let showTrending = hasTrending; // Show trending if data is available
+    let trendCount = hasTrending ? Math.min(3, trendingValues.length) : 0; // Default to 3 trending values (but all are available)
+    
+    if (userSettings && typeof userSettings === 'object') {
+      try {
+        // Check for specific test preference first
+        let testPreference = null;
+        if (Array.isArray(userSettings.trendingPreferences)) {
+          testPreference = userSettings.trendingPreferences.find(p => 
+            p && p.testName && typeof p.testName === 'string' &&
+            p.testName.toLowerCase() === mostRecent.testName.toLowerCase()
+          );
+        }
+        
+        if (testPreference) {
+          showTrending = Boolean(testPreference.enableTrending) && hasTrending;
+          const prefTrendCount = typeof testPreference.defaultTrendCount === 'number' ? testPreference.defaultTrendCount : 0;
+          trendCount = showTrending ? Math.min(Math.max(0, prefTrendCount), trendingValues.length) : 0;
+        } else if (userSettings.globalTrending && typeof userSettings.globalTrending === 'object') {
+          // Use global defaults
+          showTrending = Boolean(userSettings.globalTrending.enableByDefault) && hasTrending;
+          const globalTrendCount = typeof userSettings.globalTrending.defaultTrendCount === 'number' ? userSettings.globalTrending.defaultTrendCount : 2;
+          trendCount = showTrending ? Math.min(Math.max(0, globalTrendCount), trendingValues.length) : 0;
+        }
+      } catch (error) {
+        console.error('Error applying user trending preferences:', error);
+      }
+    }
+    
+    // Check if this lab should be shown in note based on user lab order settings
+    // Labs are included in notes based on whether they exist in the user's lab order for this panel
+    let shouldShowInNote = true; // Default to showing
+    
+    if (userSettings && typeof userSettings === 'object') {
+      try {
+        // Check if user has a custom lab order for this panel
+        const panelLabOrder = getPanelLabOrder(userSettings, mostRecent.category);
+        
+        // Validate that the returned lab order is a proper array
+        if (!Array.isArray(panelLabOrder)) {
+          console.warn('getPanelLabOrder returned non-array:', panelLabOrder, 'for category:', mostRecent.category);
+          shouldShowInNote = true; // Default to showing if invalid order
+        } else if (panelLabOrder.length > 0) {
+          // If user has configured a lab order, only include labs that are in their list
+          const normalizedTestName = mostRecent.testName?.toLowerCase().trim();
+          if (!normalizedTestName) {
+            console.warn('mostRecent.testName is null or invalid:', mostRecent);
+            shouldShowInNote = false; // Skip invalid test names
+          } else {
+            shouldShowInNote = panelLabOrder.some(labName => {
+              if (!labName || typeof labName !== 'string') {
+                console.warn('Invalid lab name in panelLabOrder:', labName);
+                return false;
+              }
+              // Use enhanced matching to handle French/English variations
+              return labNamesMatch(labName, mostRecent.testName);
+            });
+          }
+        }
+        // If panelLabOrder is empty array (length === 0), show all labs (default behavior)
+        // If no custom lab order (length === 0), show all labs
+      } catch (settingsError) {
+        console.warn('Error checking lab order settings:', settingsError);
+        shouldShowInNote = true; // Default to showing if settings check fails
+      }
+    }
     
     processed.push({
       testName: mostRecent.testName,
       category: mostRecent.category,
       mostRecent: mostRecent,
-      trending: trendingValues,
-      showTrending: hasTrending, // Auto-enable trending if there are multiple values
-      trendCount: hasTrending ? trendingValues.length : 0, // Show all trending values by default
-      showInNote: true,
+      trending: trendingValues.slice(0, trendCount), // Currently displayed trending values based on user preference
+      allTrendingValues: trendingValues, // All available historical values for user adjustment
+      showTrending: showTrending, // Show trending as configured
+      trendCount: trendCount, // Use configured trend count
+      maxTrendCount: trendingValues.length, // Maximum available trending values
+      showInNote: shouldShowInNote,
     });
   });
 
@@ -301,56 +495,108 @@ export function processLabValues(labValues: LabValue[]): ProcessedLabValue[] {
     if (orderA !== orderB) {
       return orderA - orderB;
     }
+    
+    // For Chemistry category, sort by clinical sub-groups
+    if (a.category === 'Chemistry' && b.category === 'Chemistry') {
+      const subCategoryA = getChemistrySubCategory(a.testName);
+      const subCategoryB = getChemistrySubCategory(b.testName);
+      
+      // Define clinical order: Renal -> Liver -> Metabolic -> Other
+      const subCategoryOrder = { 'Renal': 1, 'Liver': 2, 'Metabolic': 3 };
+      const orderSubA = subCategoryOrder[subCategoryA as keyof typeof subCategoryOrder] || 4;
+      const orderSubB = subCategoryOrder[subCategoryB as keyof typeof subCategoryOrder] || 4;
+      
+      if (orderSubA !== orderSubB) {
+        return orderSubA - orderSubB;
+      }
+      
+      // Within same sub-category, sort by canonical order (as defined in CANONICAL_LABS)
+      const canonicalOrder = ['NA', 'K', 'Cl', 'Créat', 'Urée', 'DFG ca', 'ALT', 'GGT', 'BILIT', 'P alc', 'LDH', 'Gluc', 'Ca', 'Mg', 'PHOSP', 'Alb'];
+      const indexA = canonicalOrder.indexOf(a.testName);
+      const indexB = canonicalOrder.indexOf(b.testName);
+      
+      if (indexA !== -1 && indexB !== -1) {
+        return indexA - indexB;
+      }
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+    }
+    
     return a.testName.localeCompare(b.testName);
   });
 }
 
-// No changes needed to the functions below
-export function formatLabValuesForNote(processedLabs: ProcessedLabValue[]): string {
-  const groupedByCategory = new Map<string, string[]>();
+export function formatLabValuesForNote(
+  processedLabs: ProcessedLabValue[],
+  userSettings?: LabSettings
+): string {
+  if (!Array.isArray(processedLabs) || processedLabs.length === 0) return '';
 
-  processedLabs.forEach(lab => {
-    if (!lab.showInNote) return;
-    const name = LAB_ABBREVIATIONS[lab.testName] || lab.testName;
-    
-    if (lab.showTrending && lab.trendCount > 0 && lab.trending && lab.trending.length > 0) {
-      const principalValue = lab.mostRecent.value;
+  // Map category -> array of { testName, line }
+  const grouped = new Map<string, { testName: string; line: string }[]>();
+
+  for (const lab of processedLabs) {
+    if (!lab || !lab.showInNote) continue;
+    if (!lab.testName || !lab.category || !lab.mostRecent?.value) continue;
+
+    const canonicalName = LAB_ABBREVIATIONS[lab.testName] || lab.testName;
+    let line = `${canonicalName} ${lab.mostRecent.value}`;
+    if (lab.showTrending && lab.trendCount > 0 && Array.isArray(lab.trending) && lab.trending.length > 0) {
       const trendingValues = lab.trending
         .slice(0, lab.trendCount)
+        .filter(v => v && v.value)
         .map(v => v.value);
-
-      let line = `${name} ${principalValue}`;
-
       if (trendingValues.length > 0) {
         line += ` (${trendingValues.join(', ')})`;
       }
-
-      if (!groupedByCategory.has(lab.category)) {
-        groupedByCategory.set(lab.category, []);
-      }
-      groupedByCategory.get(lab.category)!.push(line);
-    } else {
-      // No trending - just show the most recent value
-      let line = `${name} ${lab.mostRecent.value}`;
-
-      if (!groupedByCategory.has(lab.category)) {
-        groupedByCategory.set(lab.category, []);
-      }
-      groupedByCategory.get(lab.category)!.push(line);
     }
-  });
 
-  const finalLines: string[] = [];
-  const categories: string[] = [];
-  groupedByCategory.forEach((_, key) => categories.push(key));
-  const sortedCategories = categories.sort((a, b) => {
+    if (!grouped.has(lab.category)) grouped.set(lab.category, []);
+    grouped.get(lab.category)!.push({ testName: lab.testName, line });
+  }
+
+  if (grouped.size === 0) return '';
+
+  // Determine category order
+  const presentCategories = Array.from(grouped.keys());
+  let orderedCategories: string[] = [];
+  if (userSettings && Array.isArray(userSettings.panelOrder) && userSettings.panelOrder.length > 0) {
+    const validPanelOrder = userSettings.panelOrder.filter(c => presentCategories.includes(c));
+    const remaining = presentCategories.filter(c => !validPanelOrder.includes(c));
+    orderedCategories = [...validPanelOrder, ...remaining];
+  } else {
+    orderedCategories = presentCategories.sort((a, b) => {
       const orderA = CATEGORY_ORDER[a] || 99;
       const orderB = CATEGORY_ORDER[b] || 99;
       return orderA - orderB;
-  });
+    });
+  }
 
-  for(const category of sortedCategories) {
-      finalLines.push(...groupedByCategory.get(category)!);
+  const finalLines: string[] = [];
+
+  for (const category of orderedCategories) {
+    const items = grouped.get(category)!;
+
+    let orderedItems: { testName: string; line: string }[] = items;
+
+    if (userSettings) {
+      const customLabOrder = getPanelLabOrder(userSettings, category);
+      if (customLabOrder && customLabOrder.length > 0) {
+        const lowerMap = new Map<string, { testName: string; line: string }>();
+        items.forEach(it => lowerMap.set(it.testName.toLowerCase(), it));
+        orderedItems = [];
+        customLabOrder.forEach(name => {
+          const it = lowerMap.get(name.toLowerCase());
+          if (it) orderedItems.push(it);
+        });
+        // Append any items not present in custom order
+        items.forEach(it => {
+          if (!orderedItems.includes(it)) orderedItems.push(it);
+        });
+      }
+    }
+
+    finalLines.push(...orderedItems.map(it => it.line));
   }
 
   return finalLines.join('\n');
@@ -361,11 +607,34 @@ export function updateLabTrending(
   testName: string,
   change: 'increase' | 'decrease'
 ): ProcessedLabValue[] {
+  if (!processedLabs || !Array.isArray(processedLabs)) {
+    console.warn('updateLabTrending: Invalid processedLabs array');
+    return [];
+  }
+  
+  if (!testName || typeof testName !== 'string' || testName.trim().length === 0) {
+    console.warn('updateLabTrending: Invalid testName');
+    return processedLabs;
+  }
+  
+  if (change !== 'increase' && change !== 'decrease') {
+    console.warn('updateLabTrending: Invalid change parameter');
+    return processedLabs;
+  }
+  
   return processedLabs.map(lab => {
-    if (lab.testName.toLowerCase() === testName.toLowerCase()) {
+    if (!lab || typeof lab !== 'object' || !lab.testName || typeof lab.testName !== 'string') {
+      console.warn('updateLabTrending: Invalid lab object', lab);
+      return lab;
+    }
+    
+    if (labNamesMatch(lab.testName, testName)) {
       // Ensure trending array exists and is valid
-      const trendingLength = lab.trending?.length || 0;
-      let newCount = lab.trendCount || 0;
+      const trendingLength = Array.isArray(lab.trending) ? lab.trending.length : 0;
+      let newCount = typeof lab.trendCount === 'number' ? lab.trendCount : 0;
+      
+      // Clamp current value
+      newCount = Math.max(0, Math.min(newCount, trendingLength));
       
       if (change === 'increase') {
         newCount = Math.min(newCount + 1, trendingLength);
@@ -387,8 +656,23 @@ export function toggleLabShowInNote(
   processedLabs: ProcessedLabValue[],
   testName: string
 ): ProcessedLabValue[] {
+  if (!processedLabs || !Array.isArray(processedLabs)) {
+    console.warn('toggleLabShowInNote: Invalid processedLabs array');
+    return [];
+  }
+  
+  if (!testName || typeof testName !== 'string' || testName.trim().length === 0) {
+    console.warn('toggleLabShowInNote: Invalid testName');
+    return processedLabs;
+  }
+  
   return processedLabs.map(lab => {
-    if (lab.testName.toLowerCase() === testName.toLowerCase()) {
+    if (!lab || typeof lab !== 'object' || !lab.testName || typeof lab.testName !== 'string') {
+      console.warn('toggleLabShowInNote: Invalid lab object', lab);
+      return lab;
+    }
+    
+    if (labNamesMatch(lab.testName, testName)) {
       return {
         ...lab,
         showInNote: !lab.showInNote
@@ -407,7 +691,7 @@ export function moveLabUp(
   }
   
   const currentIndex = processedLabs.findIndex(lab => 
-    lab.testName.toLowerCase() === testName.toLowerCase()
+    labNamesMatch(lab.testName, testName)
   );
   
   if (currentIndex <= 0) return processedLabs;
@@ -443,7 +727,7 @@ export function moveLabDown(
   }
   
   const currentIndex = processedLabs.findIndex(lab => 
-    lab.testName.toLowerCase() === testName.toLowerCase()
+    labNamesMatch(lab.testName, testName)
   );
   
   if (currentIndex === -1 || currentIndex >= processedLabs.length - 1) {
@@ -471,3 +755,23 @@ export function moveLabDown(
   
   return newOrder;
 }
+/**
+ * Update the trending count for a specific lab test
+ */
+export function updateLabTrendingCount(labs: ProcessedLabValue[], testName: string, newTrendCount: number): ProcessedLabValue[] {
+  return labs.map(lab => {
+    if (lab.testName === testName) {
+      const maxCount = lab.allTrendingValues?.length || 0;
+      const validCount = Math.max(0, Math.min(newTrendCount, maxCount));
+      
+      return {
+        ...lab,
+        trendCount: validCount,
+        trending: lab.allTrendingValues?.slice(0, validCount) || [],
+        showTrending: validCount > 0
+      };
+    }
+    return lab;
+  });
+}
+

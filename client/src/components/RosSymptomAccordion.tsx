@@ -227,7 +227,9 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
             if (!systemObj) return null;
             const allSymptoms = systemObj.symptoms;
             const filtered = filteredSymptoms(systemKey);
-            const selectedSet = selectedSymptoms[systemKey] || new Set<SymptomObject>();
+            const rawSet = selectedSymptoms[systemKey] as any;
+            const selectedSet: Set<SymptomObject> =
+              rawSet instanceof Set ? rawSet : Array.isArray(rawSet) ? new Set(rawSet) : new Set<SymptomObject>();
             const selectedCount = selectedSet.size;
             const completion = (selectedCount / allSymptoms.length) * 100;
             const isExpanded = expandedSystems.has(systemKey);

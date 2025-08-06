@@ -39,6 +39,19 @@ interface ImpressionSectionProps {
   onChange: (data: ImpressionData) => void;
 }
 
+const COMMON_IMPRESSIONS = [
+  'Sepsis',
+  'Pneumonia',
+  'Congestive heart failure exacerbation',
+  'Chronic obstructive pulmonary disease exacerbation',
+  'Acute kidney injury',
+  'Gastrointestinal bleed',
+  'Diabetic ketoacidosis',
+  'Atrial fibrillation with RVR',
+  'STEMI',
+  'Non-ST elevation MI',
+];
+
 function DraggableImpressionEntry({ entry, entryIndex, children, id }: any) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   return (
@@ -280,6 +293,18 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
     return impressionText.trim();
   };
 
+  // helper add impression
+  const insertImpression = useCallback((impr: string) => {
+    if (data.entries.some(e => e.mainImpression.toLowerCase() === impr.toLowerCase())) return;
+    const newEntry: ImpressionEntry = {
+      id: (data.entries.length + 1).toString(),
+      mainImpression: impr,
+      subEntries: ['', '', '']
+    };
+    onChange({ entries: [...data.entries, newEntry] });
+    setExpandedEntries(prev => new Set([...Array.from(prev), newEntry.id]));
+  }, [data.entries, onChange]);
+
   return (
     <div className="space-y-4">
       <div className="bg-gradient-to-r from-orange-600 to-orange-700 px-6 py-4">
@@ -310,7 +335,15 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
           </div>
         </div>
       </div>
-      <div className="p-6 space-y-4 flex-1 overflow-y-auto min-h-0">
+      <CardContent className="p-6 space-y-4">
+        {/* Quick suggestion chips */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {COMMON_IMPRESSIONS.map(text => (
+            <Button key={text} size="sm" variant="secondary" className="px-2 text-xs" onClick={() => insertImpression(text)}>
+              {text}
+            </Button>
+          ))}
+        </div>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleMainDragEnd}>
           <SortableContext items={data.entries.map(e => e.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-4">
@@ -404,7 +437,7 @@ export function ImpressionSection({ data, onChange }: ImpressionSectionProps) {
             </div>
           </SortableContext>
         </DndContext>
-      </div>
+      </CardContent>
     </div>
   );
 }
