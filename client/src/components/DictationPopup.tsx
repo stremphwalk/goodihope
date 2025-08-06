@@ -76,11 +76,11 @@ export function DictationPopup({
       // Draw circular waveform
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
-      const baseRadius = 25;
+      const baseRadius = 15;
       
       waveformData.current.forEach((value, index) => {
         const angle = (index / waveformData.current.length) * Math.PI * 2;
-        const radius = baseRadius + (value * 15);
+        const radius = baseRadius + (value * 8);
         
         const x = centerX + Math.cos(angle) * radius;
         const y = centerY + Math.sin(angle) * radius;
@@ -118,8 +118,8 @@ export function DictationPopup({
     }
 
     const interval = setInterval(() => {
-      setPulseScale(prev => prev === 1 ? 1.1 : 1);
-    }, 800);
+      setPulseScale(prev => prev === 1 ? 1.05 : 1);
+    }, 1200);
 
     return () => clearInterval(interval);
   }, [isRecording]);
@@ -129,34 +129,40 @@ export function DictationPopup({
     switch (transcriptionState) {
       case TRANSCRIPTION_STATES.CONNECTING:
         return {
-          background: 'linear-gradient(135deg, #3B82F6 0%, #1E40AF 100%)',
-          boxShadow: '0 8px 32px rgba(59, 130, 246, 0.4)'
+          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.85) 0%, rgba(30, 64, 175, 0.85) 100%)',
+          boxShadow: '0 4px 16px rgba(59, 130, 246, 0.25)',
+          border: '1px solid rgba(59, 130, 246, 0.3)'
         };
       case TRANSCRIPTION_STATES.LISTENING:
         return {
-          background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
-          boxShadow: '0 8px 32px rgba(239, 68, 68, 0.5)',
-          animation: 'pulse 1.5s ease-in-out infinite'
+          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.85) 0%, rgba(30, 64, 175, 0.85) 100%)',
+          boxShadow: '0 4px 16px rgba(59, 130, 246, 0.3)',
+          border: '1px solid rgba(59, 130, 246, 0.4)',
+          animation: 'subtle-pulse 2s ease-in-out infinite'
         };
       case TRANSCRIPTION_STATES.PROCESSING:
         return {
-          background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
-          boxShadow: '0 8px 32px rgba(245, 158, 11, 0.4)'
+          background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.85) 0%, rgba(217, 119, 6, 0.85) 100%)',
+          boxShadow: '0 4px 16px rgba(245, 158, 11, 0.25)',
+          border: '1px solid rgba(245, 158, 11, 0.3)'
         };
       case TRANSCRIPTION_STATES.SUCCESS:
         return {
-          background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-          boxShadow: '0 8px 32px rgba(16, 185, 129, 0.4)'
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.85) 0%, rgba(5, 150, 105, 0.85) 100%)',
+          boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)',
+          border: '1px solid rgba(16, 185, 129, 0.3)'
         };
       case TRANSCRIPTION_STATES.ERROR:
         return {
-          background: 'linear-gradient(135deg, #EF4444 0%, #B91C1C 100%)',
-          boxShadow: '0 8px 32px rgba(239, 68, 68, 0.5)'
+          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.85) 0%, rgba(185, 28, 28, 0.85) 100%)',
+          boxShadow: '0 4px 16px rgba(239, 68, 68, 0.25)',
+          border: '1px solid rgba(239, 68, 68, 0.3)'
         };
       default:
         return {
-          background: 'linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)',
-          boxShadow: '0 8px 32px rgba(99, 102, 241, 0.4)'
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.85) 0%, rgba(139, 92, 246, 0.85) 100%)',
+          boxShadow: '0 4px 16px rgba(99, 102, 241, 0.25)',
+          border: '1px solid rgba(99, 102, 241, 0.3)'
         };
     }
   }, [transcriptionState]);
@@ -164,9 +170,9 @@ export function DictationPopup({
   // Get icon based on state
   const getIcon = () => {
     if (transcriptionState === TRANSCRIPTION_STATES.ERROR) {
-      return <MicOff className="w-8 h-8 text-white" />;
+      return <MicOff className="w-5 h-5 text-white" />;
     }
-    return <Mic className="w-8 h-8 text-white" />;
+    return <Mic className="w-5 h-5 text-white" />;
   };
 
   if (!isVisible) return null;
@@ -178,11 +184,7 @@ export function DictationPopup({
           @keyframes dictation-popup-entrance {
             0% {
               opacity: 0;
-              transform: scale(0.3);
-            }
-            50% {
-              opacity: 1;
-              transform: scale(1.1);
+              transform: scale(0.5);
             }
             100% {
               opacity: 1;
@@ -190,17 +192,19 @@ export function DictationPopup({
             }
           }
           
-          @keyframes pulse {
+          @keyframes subtle-pulse {
             0%, 100% {
               transform: scale(1);
+              opacity: 0.85;
             }
             50% {
-              transform: scale(1.05);
+              transform: scale(1.02);
+              opacity: 0.95;
             }
           }
           
           .dictation-popup {
-            animation: dictation-popup-entrance 0.3s ease-out;
+            animation: dictation-popup-entrance 0.2s ease-out;
           }
         `}
       </style>
@@ -212,14 +216,14 @@ export function DictationPopup({
           className
         )}
         style={{
-          left: `${position.x - 50}px`,
-          top: `${position.y - 50}px`,
+          left: `${position.x - 30}px`,
+          top: `${position.y - 30}px`,
           pointerEvents: 'none'
         }}
       >
         {/* Main circular popup */}
         <div
-          className="relative w-20 h-20 rounded-full flex items-center justify-center backdrop-blur-sm"
+          className="relative w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-sm"
           style={{
             ...getPopupStyle,
             transform: `scale(${pulseScale})`,
@@ -236,9 +240,9 @@ export function DictationPopup({
             <div className="absolute inset-0 rounded-full overflow-hidden">
               <canvas
                 ref={canvasRef}
-                width="80"
-                height="80"
-                className="w-full h-full opacity-30"
+                width="48"
+                height="48"
+                className="w-full h-full opacity-20"
               />
             </div>
           )}
@@ -248,8 +252,8 @@ export function DictationPopup({
             <div 
               className="absolute inset-0 rounded-full animate-ping"
               style={{
-                background: 'radial-gradient(circle, rgba(239, 68, 68, 0.3) 0%, transparent 70%)',
-                transform: 'scale(1.5)'
+                background: 'radial-gradient(circle, rgba(59, 130, 246, 0.2) 0%, transparent 60%)',
+                transform: 'scale(1.3)'
               }}
             />
           )}
@@ -257,8 +261,8 @@ export function DictationPopup({
         
         {/* Confidence indicator */}
         {confidence > 0 && (
-          <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
-            <div className="bg-black/70 text-white text-xs px-2 py-1 rounded-full backdrop-blur-sm">
+          <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2">
+            <div className="bg-black/50 text-white text-xs px-1.5 py-0.5 rounded-full backdrop-blur-sm border border-white/10">
               {Math.round(confidence * 100)}%
             </div>
           </div>
@@ -267,13 +271,13 @@ export function DictationPopup({
         {/* Current transcript preview */}
         {currentTranscript && currentTranscript.length > 0 && (
           <div 
-            className="absolute top-24 left-1/2 transform -translate-x-1/2 max-w-xs"
+            className="absolute top-16 left-1/2 transform -translate-x-1/2 max-w-xs"
             style={{ pointerEvents: 'none' }}
           >
-            <div className="bg-white/95 text-gray-800 text-sm px-3 py-2 rounded-lg shadow-lg backdrop-blur-sm border border-white/50">
+            <div className="bg-white/90 text-gray-700 text-xs px-2 py-1 rounded-md shadow-sm backdrop-blur-sm border border-white/30">
               <div className="truncate">
-                {currentTranscript.length > 50 
-                  ? `${currentTranscript.substring(0, 50)}...` 
+                {currentTranscript.length > 40 
+                  ? `${currentTranscript.substring(0, 40)}...` 
                   : currentTranscript
                 }
               </div>
@@ -282,8 +286,8 @@ export function DictationPopup({
         )}
         
         {/* State indicator text */}
-        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
-          <div className="bg-black/70 text-white text-xs px-2 py-1 rounded-full backdrop-blur-sm">
+        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
+          <div className="bg-black/50 text-white text-xs px-2 py-0.5 rounded-full backdrop-blur-sm border border-white/10">
             {transcriptionState === TRANSCRIPTION_STATES.CONNECTING && 'Connecting...'}
             {transcriptionState === TRANSCRIPTION_STATES.LISTENING && 'Listening...'}
             {transcriptionState === TRANSCRIPTION_STATES.PROCESSING && 'Processing...'}
