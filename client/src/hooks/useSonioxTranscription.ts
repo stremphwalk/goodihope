@@ -78,6 +78,7 @@ export function useSonioxTranscription(options = {}) {
   const durationTimerRef = useRef(null);
   const volumeMeterRef = useRef(null);
   const currentTokensRef = useRef([]);
+  const audioStreamRef = useRef<MediaStream | null>(null);
 
   // Create medical context based on section and language
   const getMedicalContextConfig = useCallback(() => {
@@ -346,20 +347,35 @@ export function useSonioxTranscription(options = {}) {
         throw new Error('Voice input is not supported in this browser. Try Chrome, Firefox, or Safari.');
       }
 
-      // Check microphone permission with direct getUserMedia test
+      console.log('✅ Microphone access confirmed for transcription');
+
+      // Initialize transcription instance if needed
+      const recordTranscribe = await initializeTranscription();
+      
+      // Ensure the instance is properly initialized before starting
+      if (!recordTranscribe) {
+        throw new Error('Failed to initialize transcription service');
+      }
+      
+      // Validate that the RecordTranscribe instance has required methods
+      if (typeof recordTranscribe.start !== 'function') {
+        throw new Error('Transcription service not properly initialized - missing start method');
+      }
+
+      // Get microphone stream for actual recording
+      let audioStream;
       try {
-        // Directly test getUserMedia - more reliable than permissions API
-        const stream = await navigator.mediaDevices.getUserMedia({ 
+        audioStream = await navigator.mediaDevices.getUserMedia({ 
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true
           }
         });
+        console.log('✅ Audio stream acquired for transcription');
         
-        // Stop the stream immediately since we just needed permission
-        stream.getTracks().forEach(track => track.stop());
-        console.log('✅ Microphone access confirmed for transcription');
+        // Store the stream ref for cleanup
+        audioStreamRef.current = audioStream;
         
       } catch (mediaError: any) {
         let errorMessage = 'Microphone access failed';
@@ -389,38 +405,23 @@ export function useSonioxTranscription(options = {}) {
       setError(null);
       setDuration(0);
       currentTokensRef.current = [];
-
-      // Initialize if needed
-      const recordTranscribe = await initializeTranscription();
       
-      // Ensure the instance is properly initialized before starting
-      if (!recordTranscribe) {
-        throw new Error('Failed to initialize transcription service');
-      }
-      
-      // Validate that the RecordTranscribe instance has required methods
-      if (typeof recordTranscribe.start !== 'function') {
-        throw new Error('Transcription service not properly initialized - missing start method');
-      }
-      
-      // Start recording with additional error handling
+      // Start recording with the audio stream
       try {
-        await recordTranscribe.start();
+        await recordTranscribe.start(audioStream);
         setIsRecording(true);
         setState(TRANSCRIPTION_STATES.LISTENING);
+        console.log('✅ Transcription recording started successfully');
       } catch (startError) {
         console.error('Failed to start Soniox recording:', startError);
         
-        // Try to reinitialize and start again
-        recordTranscribeRef.current = null;
-        const newInstance = await initializeTranscription();
-        if (newInstance && typeof newInstance.start === 'function') {
-          await newInstance.start();
-          setIsRecording(true);
-          setState(TRANSCRIPTION_STATES.LISTENING);
-        } else {
-          throw new Error('Unable to initialize Soniox recording service. Please check your internet connection and try again.');
+        // Clean up the audio stream
+        if (audioStream) {
+          audioStream.getTracks().forEach(track => track.stop());
         }
+        audioStreamRef.current = null;
+        
+        throw new Error(`Failed to start recording: ${startError.message || 'Unknown error'}`);
       }
 
       // Start duration timer
@@ -462,6 +463,12 @@ export function useSonioxTranscription(options = {}) {
       // Stop recording
       await recordTranscribeRef.current.stop();
       setIsRecording(false);
+
+      // Stop and clean up audio stream
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+        audioStreamRef.current = null;
+      }
 
       // Clear timers
       if (durationTimerRef.current) {
@@ -581,6 +588,9 @@ export function useSonioxTranscription(options = {}) {
       }
       if (recordTranscribeRef.current) {
         recordTranscribeRef.current.cancel().catch(console.error);
+      }
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
       }
     };
   }, []);
