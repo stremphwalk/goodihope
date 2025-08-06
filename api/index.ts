@@ -91,7 +91,8 @@ async function handleTranscriptionToken(req: VercelRequest, res: VercelResponse)
         expiresIn: tempKeyData.expires_in_seconds || 3600,
         config: {
           maxDuration: 30000,
-          model: 'en_v2',
+          model: 'stt-rt-preview',
+          audio_format: 'auto',
           supportedLanguages: ['en', 'fr']
         }
       });

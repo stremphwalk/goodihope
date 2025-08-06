@@ -27,9 +27,10 @@ export const TRANSCRIPTION_STATES = {
   RECONNECTING: 'reconnecting'
 };
 
-// Default configuration
+// Default configuration aligned with Soniox WebSocket API
 const DEFAULT_CONFIG = {
-  model: 'en_v2_medical', // Use standard medical model instead of preview
+  model: 'stt-rt-preview', // Use WebSocket real-time model as per docs
+  audio_format: 'auto', // Required by WebSocket API
   minConfidence: 0.7,
   maxDuration: 30000, // 30 seconds max per session
   reconnectAttempts: 3,
@@ -154,15 +155,19 @@ export function useSonioxTranscription(options = {}) {
 
       console.log('Creating Soniox RecordTranscribe instance...');
       console.log('Using API key:', effectiveApiKey.substring(0, 8) + '...' + effectiveApiKey.slice(-4));
-      console.log('Model:', finalConfig.model || 'en_v2');
+      console.log('Model:', finalConfig.model || 'stt-rt-preview');
+      console.log('Audio format:', finalConfig.audio_format || 'auto');
       
       let recordTranscribe;
       try {
-        // Try with minimal configuration first to avoid any parameter issues
+        // Configure according to WebSocket API specification
         recordTranscribe = new RecordTranscribe({
           apiKey: effectiveApiKey,
-          // Use standard English model instead of medical to test
-          model: 'en_v2',
+          model: finalConfig.model || 'stt-rt-preview',
+          audio_format: finalConfig.audio_format || 'auto',
+          language_hints: [language || 'en'],
+          context: medicalContext.context?.join(' ') || '',
+          enable_non_final_tokens: true,
           
           // Callback for partial results (real-time)
           onPartialResult: (result) => {
