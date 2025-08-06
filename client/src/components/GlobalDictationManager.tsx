@@ -55,6 +55,13 @@ export function GlobalDictationManager() {
    * Hide dictation popup
    */
   const hideDictationPopup = useCallback(async () => {
+    let finalTranscriptText = '';
+    
+    // Get final transcript before stopping
+    if (transcriptionInstanceRef.current && transcriptionInstanceRef.current.finalTranscript) {
+      finalTranscriptText = transcriptionInstanceRef.current.finalTranscript.trim();
+    }
+    
     // Stop transcription through ref to avoid circular dependency
     if (transcriptionInstanceRef.current && transcriptionInstanceRef.current.isRecording) {
       try {
@@ -69,6 +76,18 @@ export function GlobalDictationManager() {
       audioAnalyzerRef.current.stopAnalysis();
     }
     
+    // Insert the final transcribed text at cursor position
+    if (finalTranscriptText) {
+      console.log('🎯 Inserting final transcript:', finalTranscriptText);
+      const insertResult = insertTextAtCursor(finalTranscriptText);
+      
+      if (insertResult.success) {
+        console.log('✅ Text inserted successfully at cursor position');
+      } else {
+        console.warn('❌ Failed to insert transcribed text:', insertResult.error);
+      }
+    }
+    
     setDictationState(prev => ({
       ...prev,
       isVisible: false,
@@ -80,21 +99,15 @@ export function GlobalDictationManager() {
   }, []);
 
   /**
-   * Handle transcription result
+   * Handle transcription result - collect text but don't insert yet
    */
   const handleTranscriptionResult = useCallback((result) => {
     if (!result || !result.text) return;
     
-    // Insert text at cursor position
-    const insertResult = insertTextAtCursor(result.text);
-    
-    if (insertResult.success) {
-      // Hide popup after successful insertion
-      hideDictationPopup();
-    } else {
-      console.warn('Failed to insert transcribed text:', insertResult.error);
-    }
-  }, [hideDictationPopup]);
+    // Store the transcribed text but don't insert it yet
+    // It will be inserted when the user releases the Alt key
+    console.log('📝 Transcribed text:', result.text);
+  }, []);
   
   /**
    * Handle transcription error
