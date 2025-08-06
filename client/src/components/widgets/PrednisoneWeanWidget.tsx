@@ -27,13 +27,12 @@ interface PrednisoneWeanWidgetProps extends Omit<WidgetInstance, 'data' | 'onDat
 
 export function PrednisoneWeanWidget({ data, onDataChange, mode }: PrednisoneWeanWidgetProps) {
   const { language } = useLanguage();
-  const [localData, setLocalData] = useState<PrednisoneWeanData>({
-    startingDose: 60,
-    targetDose: 0,
-    steps: [],
-    useCustomSteps: false,
-    ...data
-  });
+  const [localData, setLocalData] = useState<PrednisoneWeanData>(() => ({
+    startingDose: data.startingDose ?? 60,
+    targetDose: data.targetDose ?? 0,
+    steps: data.steps ?? [],
+    useCustomSteps: data.useCustomSteps ?? false
+  }));
 
   // Generate automatic weaning schedule based on starting dose
   const generateAutoSteps = (startDose: number, targetDose: number): WeaningStep[] => {
@@ -126,7 +125,7 @@ export function PrednisoneWeanWidget({ data, onDataChange, mode }: PrednisoneWea
     }));
   };
 
-  if (mode === 'display') {
+  if (mode === 'text') {
     return (
       <div className="inline-flex items-center gap-1 px-2 py-1 bg-orange-50 border border-orange-200 rounded text-sm">
         <TrendingDown className="w-3 h-3 text-orange-600" />

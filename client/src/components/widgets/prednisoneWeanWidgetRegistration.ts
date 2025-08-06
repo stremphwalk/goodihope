@@ -2,11 +2,18 @@ import { widgetRegistry } from '@/lib/widgetRegistry';
 import { PrednisoneWeanWidget, generatePrednisoneWeanText } from './PrednisoneWeanWidget';
 import { WidgetComponent } from '@/types/widgets';
 
+interface PrednisoneWeanData {
+  startingDose: number;
+  targetDose: number;
+  steps: Array<{ dose: number; duration: number; unit: 'days' | 'weeks' }>;
+  useCustomSteps: boolean;
+}
+
 const prednisoneWeanWidget: WidgetComponent = {
-  Component: PrednisoneWeanWidget,
-  generateText: (data, config) => {
+  component: PrednisoneWeanWidget as any,
+  generateText: (data: Record<string, any>, config?: Record<string, any>) => {
     const language = config?.language || 'en';
-    return generatePrednisoneWeanText(data, language);
+    return generatePrednisoneWeanText(data as PrednisoneWeanData, language as 'en' | 'fr');
   },
   validateData: (data) => {
     if (!data.startingDose || data.startingDose <= 0) return false;
@@ -15,17 +22,15 @@ const prednisoneWeanWidget: WidgetComponent = {
     return true;
   },
   config: {
-    name: 'Prednisone Weaning Protocol',
+    label: 'Prednisone Weaning Protocol',
     description: 'Generate a customizable prednisone tapering schedule',
-    icon: 'TrendingDown',
-    category: 'medications',
+    icon: 'TrendingDown' as any,
     defaultData: {
       startingDose: 60,
       targetDose: 0,
       steps: [],
       useCustomSteps: false
-    },
-    version: '1.0.0'
+    }
   }
 };
 
