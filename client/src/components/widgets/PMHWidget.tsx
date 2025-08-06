@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { FileText, Plus, X, History, Edit3 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { SmartTextEntry } from '../SmartTextEntry';
+import { PMHSmartTextEntry } from '../SmartTextEntryWithTranscription';
 import { WidgetInstance } from '@/types/widgets';
 import { formatStructuredMedicalText } from '@/lib/textFormatting';
 
@@ -121,7 +121,7 @@ ${condition}`.trim() });    setSearchTerm('');  };
             {language === 'fr' ? 'Antécédents Médicaux' : 'Past Medical History'}
           </span>
         </div>
-        <SmartTextEntry
+        <PMHSmartTextEntry
           title={language === 'fr' ? 'Antécédents Médicaux' : 'Past Medical History'}
           placeholder={language === 'fr' ? 'Diabète de type 2\n- Bien contrôlé sous metformine\n- Dernière HbA1c 7.2%\n\nHypertension artérielle\n- Bien contrôlée\n- Sous lisinopril 10mg par jour\n\nTapez: dm, htn, cad pour des modèles\nEntrée: nouvelle ligne\nTab: ajouter sous-point' : 'Diabetes mellitus type 2\n- Well controlled on metformin\n- Last HbA1c 7.2%\n\nHypertension\n- Well controlled\n- On lisinopril 10mg daily\n\nType: dm, htn, cad for templates\nEnter: new line\nTab: add sub-point'}
           value={data.formattedText}

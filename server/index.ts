@@ -5,6 +5,7 @@ import compression from "compression";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { securityHeaders, corsMiddleware, createRateLimiter, errorHandler } from "./security";
+import transcriptionRoutes from "./routes/transcription.js";
 import 'dotenv/config';
 
 const app = express();
@@ -84,6 +85,9 @@ app.get('/health', (req, res) => {
     log('Starting server initialization...');
     log(`Environment: ${process.env.NODE_ENV}`);
     log(`Port: ${process.env.PORT || 'not set, using 5001'}`);
+    
+    // Register transcription routes with specific rate limiting
+    app.use('/api/transcription', createRateLimiter(30), transcriptionRoutes);
     
     // Register routes with error handling
     let server;

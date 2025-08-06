@@ -7,6 +7,7 @@ import { sanitizeString, validateBase64Image, SECURITY_CONFIG } from "./security
 import { userQueries, dotPhraseQueries, rosNoteQueries, userPresetQueries, teamGroupQueries, groupTodoQueries, groupEventQueries } from "./database-supabase";
 import { dotPhrases, users, userPresets, teamGroups, groupMembers, groupTodos, groupEvents, templates, templateUsage, userLabSettings } from "../shared/schema";
 import { eq, desc, and, ne, sql, gt, lt, gte, lte } from "drizzle-orm";
+import { db } from "./database";
 import { checkJwt } from './auth';
 import { generateUniqueShareCode, isValidShareCode, normalizeShareCode } from './shareCodeUtils';
 import { generateUniqueCustomIdentifier, isValidCustomIdentifier, formatCustomIdentifier } from './customIdentifierUtils';
@@ -45,6 +46,11 @@ const getOrCreateUser = async (authPayload: any) => {
   const cached = userCache.get(supabaseUserId);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.user;
+  }
+
+  // Check if database is available
+  if (!db) {
+    throw new Error('Database connection not available');
   }
 
   // Look up user by UUID (not email) since Supabase uses UUIDs as primary keys
@@ -621,6 +627,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const userTime = Date.now() - userStartTime;
         console.log(`[PERF] User lookup took ${userTime}ms`);
         
+        // Check if database is available
+        if (!db) {
+          return res.status(503).json({ error: 'Database temporarily unavailable' });
+        }
+
         // Use the optimized query function from database.ts
         const presetsStartTime = Date.now();
         const userPresetsData = await db

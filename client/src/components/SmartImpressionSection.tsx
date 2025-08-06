@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SmartTextEntry } from './SmartTextEntry';
+import { ImpressionSmartTextEntry } from './SmartTextEntryWithTranscription';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -118,7 +118,7 @@ Tab at start: convert to sub-point`;
           </Button>
         ))}
       </div>
-      <SmartTextEntry
+      <ImpressionSmartTextEntry
         title={language === 'fr' ? 'Impression Clinique' : 'Clinical Impression'}
         placeholder={placeholder}
         value={value}

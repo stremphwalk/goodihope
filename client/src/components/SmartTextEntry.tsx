@@ -26,6 +26,7 @@ interface SmartTextEntryProps {
    * Defaults to false to preserve existing live-update behaviour.
    */
   updateOnBlurOnly?: boolean;
+  disabled?: boolean;
 }
 
 const commonConditions = {
@@ -74,6 +75,7 @@ export function SmartTextEntry({
   templates,
   persistenceKey,
   updateOnBlurOnly = false,
+  disabled = false,
 }: SmartTextEntryProps) {
   const { language } = useLanguage();
   const auth = useAuth();
@@ -797,7 +799,8 @@ export function SmartTextEntry({
         onKeyDown={handleKeyDown}
         onClick={handleTextareaClick}
         placeholder={placeholder}
-        className="w-full h-64 p-4 bg-gray-50 border-0 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm transition-colors"
+        disabled={disabled}
+        className="w-full h-64 p-4 bg-gray-50 border-0 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         {...(persistenceKey ? { 'data-persistence-key': persistenceKey } : {})}
         style={{ fontFamily: 'ui-monospace, monospace' }}
       />

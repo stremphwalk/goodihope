@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { ClipboardList, Plus, X, Target, Edit3 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { SmartTextEntry } from '../SmartTextEntry';
+import { ImpressionSmartTextEntry } from '../SmartTextEntryWithTranscription';
 import { WidgetInstance } from '@/types/widgets';
 import { formatStructuredMedicalText } from '@/lib/textFormatting';
 
@@ -148,7 +148,7 @@ export const ImpressionWidget: React.FC<ImpressionWidgetProps> = ({
             {language === 'fr' ? 'Impression Clinique' : 'Clinical Impression'}
           </span>
         </div>
-        <SmartTextEntry
+        <ImpressionSmartTextEntry
           title={language === 'fr' ? 'Impression Clinique' : 'Clinical Impression'}
           placeholder={language === 'fr' ? 'Diabète de type 2 mal contrôlé\n- Ajuster les médicaments\n- Counseling sur le mode de vie\n\nHypertension non contrôlée\n- Augmenter les antihypertenseurs\n\nTapez: dm, htn, uti pour des modèles\nEntrée: nouvelle ligne\nTab: ajouter sous-point' : 'Diabetes mellitus type 2, poorly controlled\n- Adjust medications\n- Lifestyle counseling\n\nHypertension, uncontrolled\n- Increase antihypertensive\n\nType: dm, htn, uti for templates\nEnter: new line\nTab: add sub-point'}
           value={data.formattedText}

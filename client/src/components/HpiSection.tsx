@@ -63,22 +63,6 @@ export function HpiSection({ selectedSymptoms: globalSelectedSymptoms, setSelect
     };
   }, [isDropdownOpen]);
 
-  useEffect(() => {
-    if (auth.user?.id_token && !loading && auth.isAuthenticated) {
-      const now = Date.now();
-      // Prevent requests more frequent than 2 seconds
-      if (now - lastRequestTime > 2000) {
-        console.log('[DEBUG] HpiSection: Loading presets, token changed or initial load');
-        setLastRequestTime(now);
-        loadPresets();
-      } else {
-        console.log('[DEBUG] HpiSection: Skipping request, too frequent');
-      }
-    } else {
-      console.log('[DEBUG] HpiSection: Not authenticated or no token, skipping request');
-    }
-  }, [auth.user?.id_token, auth.isAuthenticated]); // Added auth.isAuthenticated to dependencies
-
   const loadPresets = useCallback(async () => {
     if (!auth.user?.id_token || !auth.isAuthenticated) {
       console.log('[DEBUG] HpiSection: Not authenticated, skipping loadPresets');
@@ -103,14 +87,36 @@ export function HpiSection({ selectedSymptoms: globalSelectedSymptoms, setSelect
       // Sort favorites first
       setPresets(data.sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0)));
       console.log('[DEBUG] HpiSection: Loaded presets successfully');
-    } catch (err) {
-      console.error(err);
-      toast({ title: 'Error', description: 'Failed to load presets', variant: 'destructive' });
+    } catch (err: any) {
+      console.error('HPI preset loading error:', err);
+      // Only show toast for network errors, not for expected database unavailability
+      if (err?.message && !err.message.includes('Database') && !err.message.includes('503')) {
+        toast({ title: 'Error', description: 'Failed to load presets', variant: 'destructive' });
+      }
       setPresets([]); // Set empty array on error
     } finally {
       setLoading(false);
     }
   }, [auth.user?.id_token, auth.isAuthenticated, toast]);
+
+  useEffect(() => {
+    if (auth.user?.id_token && !loading && auth.isAuthenticated) {
+      const now = Date.now();
+      // Prevent requests more frequent than 2 seconds
+      if (now - lastRequestTime > 2000) {
+        console.log('[DEBUG] HpiSection: Loading presets, token changed or initial load');
+        setLastRequestTime(now);
+        loadPresets().catch(() => {
+          // Silently handle load failures - component will work without presets
+          console.log('[DEBUG] HpiSection: Preset loading failed, continuing without presets');
+        });
+      } else {
+        console.log('[DEBUG] HpiSection: Skipping request, too frequent');
+      }
+    } else {
+      console.log('[DEBUG] HpiSection: Not authenticated or no token, skipping request');
+    }
+  }, [auth.user?.id_token, auth.isAuthenticated, loadPresets]); // Fixed dependencies
 
   const savePreset = async () => {
     if (!auth.user?.id_token || !auth.isAuthenticated) {

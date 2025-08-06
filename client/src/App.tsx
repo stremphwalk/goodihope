@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { NoteStateProvider } from "@/contexts/NoteStateContext";
+import { MedicalTranscriptionProvider } from "@/contexts/MedicalTranscriptionContext";
 import { Stethoscope } from "lucide-react";
 
 // Lazy load pages for better code splitting
@@ -111,8 +112,10 @@ function App() {
         <TooltipProvider>
           <AuthProvider>
             <NoteStateProvider>
-              <Toaster position="top-right" />
-              <ProtectedApp />
+              <MedicalTranscriptionProvider>
+                <Toaster position="top-right" />
+                <ProtectedApp />
+              </MedicalTranscriptionProvider>
             </NoteStateProvider>
           </AuthProvider>
         </TooltipProvider>

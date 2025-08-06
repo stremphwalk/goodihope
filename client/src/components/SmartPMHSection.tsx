@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SmartTextEntry } from './SmartTextEntry';
+import { PMHSmartTextEntry } from './SmartTextEntryWithTranscription';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -99,7 +99,7 @@ Tab at start: convert to sub-point`;
           </Button>
         ))}
       </div>
-      <SmartTextEntry
+      <PMHSmartTextEntry
         title={language === 'fr' ? 'Antécédents Médicaux' : 'Past Medical History'}
         placeholder={placeholder}
         value={value}
