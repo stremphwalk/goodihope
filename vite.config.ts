@@ -81,6 +81,7 @@ export default defineConfig(({ mode }) => ({
   },
   // Development server optimizations
   server: mode === "development" ? {
+    host: true, // Allow external connections
     fs: {
       // Restrict file system access for security
       strict: true,

@@ -8,6 +8,8 @@ import { LanguageProvider } from "@/contexts/LanguageContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { NoteStateProvider } from "@/contexts/NoteStateContext";
 import { MedicalTranscriptionProvider } from "@/contexts/MedicalTranscriptionContext";
+import { GlobalDictationManager } from "@/components/GlobalDictationManager";
+import { GlobalDictationHint } from "@/components/GlobalDictationHint";
 import { Stethoscope } from "lucide-react";
 
 // Lazy load pages for better code splitting
@@ -114,6 +116,8 @@ function App() {
             <NoteStateProvider>
               <MedicalTranscriptionProvider>
                 <Toaster position="top-right" />
+                <GlobalDictationManager />
+                <GlobalDictationHint />
                 <ProtectedApp />
               </MedicalTranscriptionProvider>
             </NoteStateProvider>
