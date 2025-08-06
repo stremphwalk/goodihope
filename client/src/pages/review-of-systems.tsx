@@ -259,33 +259,33 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   const noteType = noteState.noteType as NoteType;
   const setNoteTypeState = noteState.setNoteType;
   
-  // Use local state for immediate updates with persistent storage sync
-  const [localCustomNoteText, setLocalCustomNoteText] = useState(() => 
-    noteState.getFormData('customNoteText') || ''
-  );
+  // Simplified: Use the main note directly for custom notes to avoid cursor issues
+  const customNoteText = noteType === 'custom' ? note : (noteState.getFormData('customNoteText') || '');
   
-  // Sync custom note to main note when switching to custom mode
-  useEffect(() => {
-    if (noteType === 'custom' && localCustomNoteText) {
-      setNote(localCustomNoteText);
-    }
-  }, [noteType, localCustomNoteText, setNote]);
-  
-  // Sync local state to persistent storage
+  // Direct handler that updates both main note and persistent storage
   const setCustomNoteText = useCallback((value: string) => {
-    setLocalCustomNoteText(value);
-    // If we're in custom note mode, also update the main note
     if (noteType === 'custom') {
+      // For custom notes, update the main note immediately for live preview
       setNote(value);
     }
-    // Debounce the persistent storage update to avoid too many writes
+    // Always update the persistent custom note storage (debounced)
     debouncedPersistCustomNote(value);
   }, [noteType, setNote]);
   
-  // Debounced function to persist to noteState
+  // Debounced function to persist custom note text
   const debouncedPersistCustomNote = useDebounceCallback((value: string) => {
     noteState.setFormData('customNoteText', value);
   }, 500);
+  
+  // Load custom note into main note when switching to custom mode
+  useEffect(() => {
+    if (noteType === 'custom') {
+      const savedCustomNote = noteState.getFormData('customNoteText') || '';
+      if (savedCustomNote && savedCustomNote !== note) {
+        setNote(savedCustomNote);
+      }
+    }
+  }, [noteType, noteState, note, setNote]);
   // Use persistent storage for admission and progress types
   const admissionType = (noteState.getFormData('admissionType') as NoteSubtype) || 'general';
   const setAdmissionType = (value: NoteSubtype) => noteState.setFormData('admissionType', value);
@@ -1994,7 +1994,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
           </div>
           <div className="flex-1">
             <DotPhraseTextarea
-              value={localCustomNoteText}
+              value={customNoteText}
               onChange={setCustomNoteText}
               placeholder={language === 'fr' ? 
                 'Commencez à taper votre note personnalisée...\n\nUtilisez / pour accéder aux phrases prédéfinies (ex: /dm2, /htn, /predwean)' : 
