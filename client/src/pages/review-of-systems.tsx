@@ -259,47 +259,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   const noteType = noteState.noteType as NoteType;
   const setNoteTypeState = noteState.setNoteType;
   
-  // Use local state for custom note to avoid cursor position issues
-  const [localCustomNoteText, setLocalCustomNoteText] = useState(() => {
-    if (noteType === 'custom') {
-      return note || '';
-    }
-    return noteState.getFormData('customNoteText') || '';
-  });
-  
-  const customNoteText = localCustomNoteText;
-  
-  // Handler that updates local state immediately and persistent state with delay
-  const setCustomNoteText = useCallback((value: string) => {
-    // Always update local state immediately for responsive UI
-    setLocalCustomNoteText(value);
-    
-    // Update persistent states with debouncing to prevent cursor issues
-    debouncedUpdatePersistentState(value);
-  }, [noteType]);
-  
-  // Debounced function to update both main note and persistent storage
-  const debouncedUpdatePersistentState = useDebounceCallback((value: string) => {
-    if (noteType === 'custom') {
-      setNote(value);
-    }
-    noteState.setFormData('customNoteText', value);
-  }, 300);
-  
-  // Load custom note into local state when switching to custom mode
-  useEffect(() => {
-    if (noteType === 'custom') {
-      const savedCustomNote = noteState.getFormData('customNoteText') || note || '';
-      setLocalCustomNoteText(savedCustomNote);
-      if (savedCustomNote && savedCustomNote !== note) {
-        setNote(savedCustomNote);
-      }
-    } else {
-      // When not in custom mode, load from persistent storage
-      const savedCustomNote = noteState.getFormData('customNoteText') || '';
-      setLocalCustomNoteText(savedCustomNote);
-    }
-  }, [noteType, noteState, note, setNote]);
+  // Custom note now uses the main note state directly - no separate state needed
   // Use persistent storage for admission and progress types
   const admissionType = (noteState.getFormData('admissionType') as NoteSubtype) || 'general';
   const setAdmissionType = (value: NoteSubtype) => noteState.setFormData('admissionType', value);
@@ -1987,38 +1947,33 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       case "note-type":
   if ((noteType as string) === "custom") {
     return (
-      <SectionWrapper title={language === 'fr' ? 'Note Personnalisée' : 'Custom Note'} sectionKey="note-type">
-        <div className="flex flex-col h-full">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Edit3 className="w-5 h-5 text-orange-600" />
-              <span className="text-sm font-medium text-gray-700">
-                {language === 'fr' ? 'Rédigez votre note médicale personnalisée' : 'Write your custom medical note'}
-              </span>
-            </div>
-            <Button
-              onClick={() => setNoteTypeState('')}
-              variant="outline"
-              size="sm"
-              className="text-xs"
-            >
-              <ChevronLeft className="w-3 h-3 mr-1" />
-              {language === 'fr' ? 'Retour' : 'Back to Note Types'}
-            </Button>
+      <div className="flex flex-col h-full">
+        {/* Header with back button */}
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Edit3 className="w-6 h-6 text-orange-600" />
+            <h2 className="text-xl font-semibold text-gray-900">
+              {language === 'fr' ? 'Note Personnalisée' : 'Custom Note'}
+            </h2>
           </div>
-          <div className="flex-1">
-            <DotPhraseTextarea
-              value={customNoteText}
-              onChange={setCustomNoteText}
-              placeholder={language === 'fr' ? 
-                'Commencez à taper votre note personnalisée...\n\nUtilisez / pour accéder aux phrases prédéfinies (ex: /dm2, /htn, /predwean)' : 
-                'Start typing your custom note...\n\nUse / to access dot phrases (e.g., /dm2, /htn, /predwean)'}
-              rows={20}
-              className="w-full h-full p-4 bg-gray-50 border-0 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm transition-colors min-h-[32rem]"
-            />
+          <Button
+            onClick={() => setNoteTypeState('')}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-1"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            {language === 'fr' ? 'Retour' : 'Back to Note Types'}
+          </Button>
+        </div>
+        
+        {/* Centered Live Preview - larger and focused */}
+        <div className="flex-1 flex justify-center">
+          <div className="w-full max-w-4xl">
+            {renderLivePreview()}
           </div>
         </div>
-      </SectionWrapper>
+      </div>
     );
   }
         return (
@@ -2764,7 +2719,18 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   }, [note, setProcessedLabValuesWithScrollPreservation, labSettings]);
 
   const renderLivePreview = () => {
-    const safeNoteData = {
+    // For custom mode, provide minimal data to start with blank note
+    const safeNoteData = noteType === 'custom' ? {
+      'note-type': 'custom',
+      'pmh': '',
+      'meds': '',
+      'hpi': '',
+      'allergies-social': '',
+      'physical-exam': '',
+      'labs': '',
+      'imagery': '',
+      'impression': ''
+    } : {
       'note-type': noteType || '',
       'pmh': pmhText || '',
       'meds': medications ? formatMedicationsForNote([...medications.homeMedications, ...medications.hospitalMedications]) : '',
@@ -2856,12 +2822,12 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       setSelectedMenu={setSelectedMenu}
       selectedSubOption={selectedSubOption}
       setSelectedSubOption={setSelectedSubOption}
-      livePreview={renderLivePreview()}
+      livePreview={noteType === 'custom' ? null : renderLivePreview()}
       isICU={
         (noteType === "admission" && admissionType === "icu") ||
         (noteType === "progress" && progressType === "icu")
       }
-      hasLivePreview={renderLivePreview() !== null}
+      hasLivePreview={noteType !== 'custom' && renderLivePreview() !== null}
     >
       <div className="flex flex-1 h-full min-h-[600px] bg-gray-50">
         <div className="flex-1 min-w-0 flex flex-col p-0">

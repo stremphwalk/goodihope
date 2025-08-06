@@ -84,6 +84,18 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const [widgets, setWidgets] = useState<Map<string, WidgetInstance>>(new Map());
   const [activeWidgetModal, setActiveWidgetModal] = useState<{type: string, position: number} | null>(null);
   const [currentPosition, setCurrentPosition] = useState(0);
+  // --- Caret restoration helpers -------------------------------------------------
+  // When the user types, React re-renders the controlled textarea with the new
+  // value. In some cases (especially on fast re-renders when no smart-options or
+  // dot-phrase logic is active) the browser may briefly reset the caret to the
+  // beginning of the textarea, which makes the text look like it is being typed
+  // "backwards". We record the caret position before the parent updates and then
+  // restore it immediately after the new value is rendered.
+
+  // Stores the caret position that should be restored after the next render
+  const pendingCursorPosRef = useRef<number | null>(null);
+  // Flag so we only attempt to restore once per change cycle
+  const shouldRestoreCaretRef = useRef<boolean>(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [dropdownPos, setDropdownPos] = useState<{top: number, left: number}>({top: 0, left: 0});
   const [customInput, setCustomInput] = useState<string>("");
@@ -95,6 +107,8 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const [calendarIsOpen, setCalendarIsOpen] = useState(false);
   const auth = useAuth();
   const { language } = useLanguage();
+  // Track previous prop value so we know when the *external* value changes
+  const previousValueRef = useRef<string>(value);
 
   // Expose textarea ref to parent
   useEffect(() => {
@@ -166,6 +180,17 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     const cursor = e.target.selectionStart;
+    // Record the intended cursor position for the new value
+    pendingCursorPosRef.current = cursor;
+    shouldRestoreCaretRef.current = true;
+    // Immediate restoration in next frame (covers rare focus/caret jumps)
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        const clampedPos = Math.max(0, Math.min(newValue.length, cursor));
+        textareaRef.current.selectionStart = clampedPos;
+        textareaRef.current.selectionEnd = clampedPos;
+      }
+    });
     setCurrentPosition(cursor);
     onChange(newValue);
 
@@ -184,7 +209,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       setShowSuggestions(false);
       setCurrentDot(null);
     }
-  }, [onChange]);
+  }, [onChange, value]);
 
   // Handle keydown for autocomplete and smart options
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -633,7 +658,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     }
   }, [smartOptions]);
 
-  // Auto-open dropdown for single smart option covering whole textarea
+  // Auto-open dropdown/calendar for single smart option covering whole textarea
   useEffect(() => {
     if (
       smartOptions.length === 1 &&
@@ -765,6 +790,33 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     />
   );
 
+  // ---------------------------------------------------------------------------
+  // Restore the caret position after the parent value update, *only* for plain
+  // typing scenarios (no smart-option, widget, or suggestion interactions).
+  // ---------------------------------------------------------------------------
+  useLayoutEffect(() => {
+    // Only run when the external `value` actually changed
+    if (previousValueRef.current === value) return;
+    previousValueRef.current = value;
+
+    if (!shouldRestoreCaretRef.current) return;
+
+    // Skip when other flows own the caret
+    if (showSuggestions || activeSmartIdx !== null || calendarIsOpen) {
+      shouldRestoreCaretRef.current = false;
+      return;
+    }
+
+    if (textareaRef.current && pendingCursorPosRef.current !== null) {
+      const pos = pendingCursorPosRef.current;
+      const clampedPos = Math.max(0, Math.min(value.length, pos));
+      textareaRef.current.selectionStart = clampedPos;
+      textareaRef.current.selectionEnd = clampedPos;
+    }
+
+    shouldRestoreCaretRef.current = false;
+  }, [value, showSuggestions, activeSmartIdx, calendarIsOpen]);
+
   return (
     <div className="relative">
       {renderTextarea()}
@@ -803,8 +855,8 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         </div>
       )}
       
-      {/* Smart Options Dropdown */}
-      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && (
+      {/* Smart Options Dropdown - Only for complex cases like date pickers */}
+      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options.includes('DATE') && (
         <div
           className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-lg min-w-48"
           style={{
@@ -1006,78 +1058,178 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         </div>
       )}
 
-      {/* Inline Smart Option Selector Popup */}
-      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && (() => {
+      {/* Inline Smart Option Popup - Primary UI for smart options (except DATE) */}
+      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && !smartOptions[activeSmartIdx].options.includes('DATE') && (() => {
         const opt = smartOptions[activeSmartIdx];
-        // Only show for any smart option (multi, widget, date)
-        const caretTop = dropdownPos.top - 48; // 48px above caret
-        const caretLeft = dropdownPos.left;
+        
+        // Calculate safe positioning to avoid window clipping
+        const calculateSafePosition = () => {
+          const baseTop = dropdownPos.top - 50; // Position above caret
+          const baseLeft = dropdownPos.left;
+          
+          // Get viewport dimensions
+          const viewportWidth = window.innerWidth;
+          const viewportHeight = window.innerHeight;
+          
+          // Estimated popup dimensions
+          const popupWidth = 300;
+          const popupHeight = 60;
+          
+          // Adjust horizontal position if it would overflow
+          let safeLeft = baseLeft;
+          if (baseLeft + popupWidth > viewportWidth - 20) {
+            safeLeft = viewportWidth - popupWidth - 20;
+          }
+          if (safeLeft < 20) {
+            safeLeft = 20;
+          }
+          
+          // Adjust vertical position if it would overflow
+          let safeTop = baseTop;
+          if (baseTop < 20) {
+            safeTop = dropdownPos.top + 30; // Position below caret instead
+          }
+          if (safeTop + popupHeight > viewportHeight - 20) {
+            safeTop = viewportHeight - popupHeight - 20;
+          }
+          
+          return { top: safeTop, left: safeLeft };
+        };
+        
+        const safePos = calculateSafePosition();
+        
         return (
           <div
-            className="fixed z-50 bg-white border border-blue-200 rounded shadow-lg px-2 py-1 flex items-center gap-2"
+            className="fixed z-50 bg-white border border-blue-200 rounded-lg shadow-lg px-3 py-2"
             style={{
-              top: caretTop,
-              left: caretLeft,
-              minWidth: 120,
-              maxWidth: 320,
-              pointerEvents: 'auto',
+              top: safePos.top,
+              left: safePos.left,
+              minWidth: 200,
+              maxWidth: 400,
             }}
+            onPointerDown={() => { dropdownMouseDownRef.current = true; }}
+            onPointerUp={() => { dropdownMouseDownRef.current = false; }}
+            onMouseDown={() => { dropdownMouseDownRef.current = true; }}
+            onMouseUp={() => { dropdownMouseDownRef.current = false; }}
           >
-            {opt.options.map((option: string, idx: number) => {
-              // Widget option
-              if (opt.isWidget || option.startsWith('WIDGET:')) {
-                const widgetType = opt.widgetType || option.split(':')[1];
-                return (
-                  <button
-                    key={option + idx}
-                    className={`px-2 py-1 rounded border text-xs font-mono ${opt.selectedIdx === idx ? 'bg-purple-100 border-purple-400 text-purple-800' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-purple-50`}
-                    onMouseDown={e => {
-                      e.preventDefault();
-                      setActiveWidgetModal({ type: widgetType, position: opt.start });
-                      setActiveSmartIdx(null);
-                    }}
-                  >
-                    {widgetType.charAt(0).toUpperCase() + widgetType.slice(1)} Widget
-                  </button>
-                );
-              }
-              // Date picker option
-              if (option === 'DATE') {
-                return (
-                  <button
-                    key={option + idx}
-                    className={`px-2 py-1 rounded border text-xs font-mono ${opt.selectedIdx === idx ? 'bg-blue-100 border-blue-400 text-blue-800' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-blue-50`}
-                    onMouseDown={e => {
-                      e.preventDefault();
-                      setActiveSmartIdx(activeSmartIdx);
-                      updateSmartOptionsIdx(activeSmartIdx, idx);
-                    }}
-                  >
-                    📅 Date
-                  </button>
-                );
-              }
-              // Regular option
-              return (
+            {/* Header with navigation */}
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500 font-medium">
+                Smart Option {activeSmartIdx + 1}/{smartOptions.length}
+              </span>
+              <div className="flex items-center gap-1">
+                {smartOptions.length > 1 && (
+                  <>
+                    <button
+                      className="px-1 py-0.5 text-xs rounded bg-gray-100 hover:bg-gray-200"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        setActiveSmartIdx((activeSmartIdx - 1 + smartOptions.length) % smartOptions.length);
+                      }}
+                      title="Previous option"
+                    >
+                      ←
+                    </button>
+                    <button
+                      className="px-1 py-0.5 text-xs rounded bg-gray-100 hover:bg-gray-200"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        setActiveSmartIdx((activeSmartIdx + 1) % smartOptions.length);
+                      }}
+                      title="Next option"
+                    >
+                      →
+                    </button>
+                  </>
+                )}
                 <button
-                  key={option + idx}
-                  className={`px-2 py-1 rounded border text-xs font-mono ${opt.selectedIdx === idx ? 'bg-green-100 border-green-400 text-green-800' : 'bg-gray-50 border-gray-200 text-gray-700'} hover:bg-green-50`}
+                  className="px-1 py-0.5 text-xs rounded bg-red-100 hover:bg-red-200 text-red-600"
                   onMouseDown={e => {
                     e.preventDefault();
-                    handleSmartOptionSelect(activeSmartIdx, idx);
+                    handleCancelOption(activeSmartIdx);
+                  }}
+                  title="Remove"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            
+            {/* Content based on option type */}
+            {opt.isWidget ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">
+                  {opt.widgetType?.charAt(0).toUpperCase()}{opt.widgetType?.slice(1)} Widget
+                </span>
+                <button
+                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    setActiveWidgetModal({ type: opt.widgetType!, position: opt.start });
+                    setActiveSmartIdx(null);
                   }}
                 >
-                  {option}
+                  Open
                 </button>
-              );
-            })}
-            <span className="text-xs text-gray-500 ml-2">
-              {((opt.selectedIdx ?? 0) + 1)} / {opt.options.length}
-            </span>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {/* Option buttons */}
+                <div className="flex flex-wrap gap-1">
+                  {opt.options.map((option: string, idx: number) => (
+                    <button
+                      key={option + idx}
+                      className={`px-2 py-1 rounded text-xs font-mono border ${
+                        opt.selectedIdx === idx 
+                          ? 'bg-green-100 border-green-400 text-green-800' 
+                          : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-green-50'
+                      }`}
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        handleSmartOptionSelect(activeSmartIdx, idx);
+                      }}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+                
+                {/* Custom input */}
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={customInputRef}
+                    type="text"
+                    className="flex-1 border px-2 py-1 rounded text-xs"
+                    placeholder="Other..."
+                    value={customInput}
+                    onChange={e => setCustomInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && customInput.trim()) {
+                        e.preventDefault();
+                        handleCustomOptionSelect(activeSmartIdx, customInput.trim());
+                        setCustomInput("");
+                      }
+                    }}
+                  />
+                  <button
+                    className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-300"
+                    disabled={!customInput.trim()}
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      if (customInput.trim()) {
+                        handleCustomOptionSelect(activeSmartIdx, customInput.trim());
+                        setCustomInput("");
+                      }
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}
-
 
       <CalculationModal
         isOpen={isCalculationModalOpen}
