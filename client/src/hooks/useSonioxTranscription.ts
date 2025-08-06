@@ -126,6 +126,12 @@ export function useSonioxTranscription(options = {}) {
             const data = await response.json();
             effectiveApiKey = data.token;
             console.log('✅ Transcription token received from server');
+            console.log('Token details:', {
+              tokenLength: data.token?.length,
+              tokenPrefix: data.token?.substring(0, 12) + '...',
+              expiresIn: data.expiresIn,
+              config: data.config
+            });
           } else {
             const errorText = await response.text();
             console.error(`Token request failed: ${response.status} - ${errorText}`);
