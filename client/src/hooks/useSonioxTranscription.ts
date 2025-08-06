@@ -97,10 +97,12 @@ export function useSonioxTranscription(options = {}) {
       if (!effectiveApiKey) {
         try {
           console.log('Requesting transcription token from server...');
+          const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           const response = await fetch('/api/transcription/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include'
+            credentials: 'include',
+            body: JSON.stringify({ sessionId })
           });
           
           console.log(`Token request response status: ${response.status}`);
