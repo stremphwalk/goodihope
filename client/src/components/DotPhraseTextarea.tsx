@@ -8,6 +8,7 @@ import { CalculationResult } from './CalculationModal';
 import { WidgetModal } from './WidgetModal';
 import getCaretCoordinates from 'textarea-caret';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useDotPhrases } from '@/hooks/useDotPhrases';
 import { widgetRegistry, parseWidgetSyntax } from '@/lib/widgetRegistry';
 import { WidgetWrapper } from './WidgetWrapper';
@@ -93,6 +94,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const justExpandedToSmartOption = useRef(false);
   const [calendarIsOpen, setCalendarIsOpen] = useState(false);
   const auth = useAuth();
+  const { language } = useLanguage();
 
   // Expose textarea ref to parent
   useEffect(() => {
@@ -536,7 +538,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     if (!activeWidgetModal || !textareaRef.current) return;
     
     const textarea = textareaRef.current;
-    const widgetText = widgetRegistry.generateText(activeWidgetModal.type, widgetData);
+    const widgetText = widgetRegistry.generateText(activeWidgetModal.type, widgetData, { language });
     
     // Find the widget placeholder in the text
     const beforeWidget = value.substring(0, activeWidgetModal.position);
@@ -566,7 +568,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         setActiveSmartIdx(0);
       }
     }, 0);
-  }, [activeWidgetModal, value, onChange]);
+  }, [activeWidgetModal, value, onChange, language]);
 
   // Handle cursor position changes
   const handleSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {

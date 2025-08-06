@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { widgetRegistry } from '@/lib/widgetRegistry';
 import { WidgetWrapper } from './WidgetWrapper';
 import { X } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface WidgetModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export const WidgetModal: React.FC<WidgetModalProps> = ({
   onResult
 }) => {
   const [widgetInstance, setWidgetInstance] = useState<any>(null);
+  const { language } = useLanguage();
 
   useEffect(() => {
     if (isOpen && widgetType) {
@@ -52,7 +54,7 @@ export const WidgetModal: React.FC<WidgetModalProps> = ({
         <DialogHeader className="bg-white border-b border-gray-200 pb-3">
           <div className="flex items-center justify-between">
             <DialogTitle className="capitalize text-gray-900 font-semibold">
-              {widgetType} Widget
+              {widgetType === 'prednisone-wean' ? 'Prednisone Weaning Protocol' : `${widgetType} Widget`}
             </DialogTitle>
             <Button
               variant="ghost"
