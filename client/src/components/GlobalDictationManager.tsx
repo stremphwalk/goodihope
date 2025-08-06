@@ -50,17 +50,31 @@ export function GlobalDictationManager() {
   const audioAnalyzerRef = useRef<AudioLevelAnalyzer | null>(null);
   const transcriptionInstanceRef = useRef<any>(null);
   const activeKeysRef = useRef<Set<string>>(new Set());
+  const finalTranscriptRef = useRef<string>('');
   
   /**
    * Hide dictation popup
    */
   const hideDictationPopup = useCallback(async () => {
-    let finalTranscriptText = '';
+    console.log('🔄 Hiding dictation popup...');
     
-    // Get final transcript before stopping
-    if (transcriptionInstanceRef.current && transcriptionInstanceRef.current.finalTranscript) {
-      finalTranscriptText = transcriptionInstanceRef.current.finalTranscript.trim();
+    // Get stored transcript text
+    const finalTranscriptText = finalTranscriptRef.current.trim();
+    console.log('📋 Final transcript from ref:', finalTranscriptText);
+    
+    // Also try to get from transcription instance as backup
+    let backupText = '';
+    if (transcriptionInstanceRef.current) {
+      if (transcriptionInstanceRef.current.finalTranscript) {
+        backupText = transcriptionInstanceRef.current.finalTranscript.trim();
+      } else if (transcriptionInstanceRef.current.currentTranscript) {
+        backupText = transcriptionInstanceRef.current.currentTranscript.trim();
+      }
+      console.log('📋 Backup transcript from instance:', backupText);
     }
+    
+    // Use whichever text is available
+    const textToInsert = finalTranscriptText || backupText;
     
     // Stop transcription through ref to avoid circular dependency
     if (transcriptionInstanceRef.current && transcriptionInstanceRef.current.isRecording) {
@@ -77,16 +91,56 @@ export function GlobalDictationManager() {
     }
     
     // Insert the final transcribed text at cursor position
-    if (finalTranscriptText) {
-      console.log('🎯 Inserting final transcript:', finalTranscriptText);
-      const insertResult = insertTextAtCursor(finalTranscriptText);
+    if (textToInsert) {
+      console.log('🎯 Attempting to insert text:', textToInsert);
       
-      if (insertResult.success) {
-        console.log('✅ Text inserted successfully at cursor position');
+      // Check if we still have a target element
+      if (dictationState.targetElement) {
+        console.log('🎯 Target element found:', dictationState.targetElement.tagName);
+        
+        // Try to focus the target element first
+        dictationState.targetElement.focus();
+        
+        // Small delay to ensure focus
+        setTimeout(() => {
+          const insertResult = insertTextAtCursor(textToInsert);
+          
+          if (insertResult.success) {
+            console.log('✅ Text inserted successfully at cursor position');
+          } else {
+            console.warn('❌ Failed to insert transcribed text:', insertResult.error);
+            
+            // Fallback: try direct insertion if target element is an input
+            if (dictationState.targetElement && ('value' in dictationState.targetElement)) {
+              const input = dictationState.targetElement as HTMLInputElement;
+              const cursorPos = input.selectionStart || 0;
+              const currentValue = input.value;
+              const newValue = currentValue.slice(0, cursorPos) + textToInsert + currentValue.slice(cursorPos);
+              input.value = newValue;
+              input.setSelectionRange(cursorPos + textToInsert.length, cursorPos + textToInsert.length);
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              console.log('✅ Fallback insertion successful');
+            }
+          }
+        }, 50);
       } else {
-        console.warn('❌ Failed to insert transcribed text:', insertResult.error);
+        console.warn('❌ No target element found for text insertion');
+        // Try current active element as fallback
+        const activeElement = document.activeElement as HTMLElement;
+        if (activeElement) {
+          console.log('🔄 Trying active element:', activeElement.tagName);
+          const insertResult = insertTextAtCursor(textToInsert);
+          if (insertResult.success) {
+            console.log('✅ Text inserted into active element');
+          }
+        }
       }
+    } else {
+      console.warn('❌ No transcript text available for insertion');
     }
+    
+    // Clear the stored transcript
+    finalTranscriptRef.current = '';
     
     setDictationState(prev => ({
       ...prev,
@@ -96,7 +150,7 @@ export function GlobalDictationManager() {
     }));
     
     setAudioLevel(0);
-  }, []);
+  }, [dictationState.targetElement]);
 
   /**
    * Handle transcription result - collect text but don't insert yet
@@ -104,9 +158,9 @@ export function GlobalDictationManager() {
   const handleTranscriptionResult = useCallback((result) => {
     if (!result || !result.text) return;
     
-    // Store the transcribed text but don't insert it yet
-    // It will be inserted when the user releases the Alt key
-    console.log('📝 Transcribed text:', result.text);
+    // Store the transcribed text in ref for later insertion
+    finalTranscriptRef.current = result.text;
+    console.log('📝 Transcribed text stored:', result.text);
   }, []);
   
   /**
