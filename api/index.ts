@@ -84,6 +84,11 @@ async function handleTranscriptionToken(req: VercelRequest, res: VercelResponse)
       
       const tempKeyData = await tempKeyResponse.json();
       console.log('✅ Temporary Soniox API key generated successfully');
+      console.log('Temporary key details:', {
+        keyLength: tempKeyData.api_key?.length,
+        keyPrefix: tempKeyData.api_key?.substring(0, 12) + '...',
+        expiresIn: tempKeyData.expires_in_seconds
+      });
       
       return res.json({
         token: tempKeyData.api_key,

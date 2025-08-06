@@ -166,14 +166,9 @@ export function useSonioxTranscription(options = {}) {
       
       let recordTranscribe;
       try {
-        // Configure according to WebSocket API specification
+        // Use minimal configuration as shown in Soniox documentation examples
         recordTranscribe = new RecordTranscribe({
           apiKey: effectiveApiKey,
-          model: finalConfig.model || 'stt-rt-preview',
-          audio_format: finalConfig.audio_format || 'auto',
-          language_hints: [language || 'en'],
-          context: medicalContext.context?.join(' ') || '',
-          enable_non_final_tokens: true,
           
           // Callback for partial results (real-time)
           onPartialResult: (result) => {
@@ -426,9 +421,14 @@ export function useSonioxTranscription(options = {}) {
       setDuration(0);
       currentTokensRef.current = [];
       
-      // Start recording with the audio stream
+      // Start recording with the audio stream and configuration
       try {
-        await recordTranscribe.start(audioStream);
+        await recordTranscribe.start({
+          model: finalConfig.model || 'stt-rt-preview',
+          audio_format: finalConfig.audio_format || 'auto',
+          language_hints: [language || 'en'],
+          enable_non_final_tokens: true
+        }, audioStream);
         setIsRecording(true);
         setState(TRANSCRIPTION_STATES.LISTENING);
         console.log('✅ Transcription recording started successfully');
