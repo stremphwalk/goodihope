@@ -72,3 +72,4 @@ terraform.tfstate*
 desktop-companion/release/
 bundle-analysis.html
 .vercel
+.env.production
