@@ -259,31 +259,55 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   const noteType = noteState.noteType as NoteType;
   const setNoteTypeState = noteState.setNoteType;
   
-  // Simplified: Use the main note directly for custom notes to avoid cursor issues
-  const customNoteText = noteType === 'custom' ? note : (noteState.getFormData('customNoteText') || '');
-  
-  // Direct handler that updates both main note and persistent storage
-  const setCustomNoteText = useCallback((value: string) => {
+  // Use local state for custom note to avoid cursor position issues
+  const [localCustomNoteText, setLocalCustomNoteText] = useState(() => {
     if (noteType === 'custom') {
-      // For custom notes, update the main note immediately for live preview
+      return note || '';
+    }
+    return noteState.getFormData('customNoteText') || '';
+  });
+  
+  const customNoteText = localCustomNoteText;
+  
+  // Handler that updates local state immediately and persistent state with delay
+  const setCustomNoteText = useCallback((value: string) => {
+    console.log('setCustomNoteText called:', {
+      value,
+      noteType,
+      currentNote: note,
+      localText: localCustomNoteText
+    });
+    
+    // Always update local state immediately for responsive UI
+    setLocalCustomNoteText(value);
+    
+    // Update persistent states with debouncing to prevent cursor issues
+    debouncedUpdatePersistentState(value);
+  }, [noteType, note, localCustomNoteText]);
+  
+  // Debounced function to update both main note and persistent storage
+  const debouncedUpdatePersistentState = useDebounceCallback((value: string) => {
+    console.log('Debounced update - persisting:', value);
+    if (noteType === 'custom') {
+      console.log('Updating main note (debounced):', value);
       setNote(value);
     }
-    // Always update the persistent custom note storage (debounced)
-    debouncedPersistCustomNote(value);
-  }, [noteType, setNote]);
-  
-  // Debounced function to persist custom note text
-  const debouncedPersistCustomNote = useDebounceCallback((value: string) => {
     noteState.setFormData('customNoteText', value);
-  }, 500);
+  }, 300);
   
-  // Load custom note into main note when switching to custom mode
+  // Load custom note into local state when switching to custom mode
   useEffect(() => {
     if (noteType === 'custom') {
-      const savedCustomNote = noteState.getFormData('customNoteText') || '';
+      const savedCustomNote = noteState.getFormData('customNoteText') || note || '';
+      console.log('Loading custom note on mode switch:', savedCustomNote);
+      setLocalCustomNoteText(savedCustomNote);
       if (savedCustomNote && savedCustomNote !== note) {
         setNote(savedCustomNote);
       }
+    } else {
+      // When not in custom mode, load from persistent storage
+      const savedCustomNote = noteState.getFormData('customNoteText') || '';
+      setLocalCustomNoteText(savedCustomNote);
     }
   }, [noteType, noteState, note, setNote]);
   // Use persistent storage for admission and progress types
@@ -1993,12 +2017,21 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
             </Button>
           </div>
           <div className="flex-1">
-            <DotPhraseTextarea
+            {/* Temporary debug: using regular textarea */}
+            <textarea
               value={customNoteText}
-              onChange={setCustomNoteText}
+              onChange={(e) => {
+                console.log('Textarea onChange:', {
+                  value: e.target.value,
+                  selectionStart: e.target.selectionStart,
+                  selectionEnd: e.target.selectionEnd,
+                  inputType: (e.nativeEvent as any)?.inputType
+                });
+                setCustomNoteText(e.target.value);
+              }}
               placeholder={language === 'fr' ? 
-                'Commencez à taper votre note personnalisée...\n\nUtilisez / pour accéder aux phrases prédéfinies (ex: /dm2, /htn, /predwean)' : 
-                'Start typing your custom note...\n\nUse / to access dot phrases (e.g., /dm2, /htn, /predwean)'}
+                'Commencez à taper votre note personnalisée (DEBUG MODE)...' : 
+                'Start typing your custom note (DEBUG MODE)...'}
               rows={20}
               className="w-full h-full p-4 bg-gray-50 border-0 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm transition-colors min-h-[32rem]"
             />
