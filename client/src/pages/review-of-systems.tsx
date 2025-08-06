@@ -1952,29 +1952,33 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   if ((noteType as string) === "custom") {
     return (
       <SectionWrapper title={language === 'fr' ? 'Note Personnalisée' : 'Custom Note'} sectionKey="note-type">
-        <div className="flex flex-col h-full flex-1">
+        <div className="flex flex-col h-full">
           <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Edit3 className="w-6 h-6 text-orange-600" />
-              <h1 className="text-xl font-semibold text-gray-900">
-                {language === 'fr' ? 'Note Personnalisée' : 'Custom Note'}
-              </h1>
+            <div className="flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-orange-600" />
+              <span className="text-sm font-medium text-gray-700">
+                {language === 'fr' ? 'Rédigez votre note médicale personnalisée' : 'Write your custom medical note'}
+              </span>
             </div>
             <Button
               onClick={() => setNoteTypeState('')}
               variant="outline"
               size="sm"
+              className="text-xs"
             >
-              {language === 'fr' ? 'Retour' : 'Back'}
+              <ChevronLeft className="w-3 h-3 mr-1" />
+              {language === 'fr' ? 'Retour' : 'Back to Note Types'}
             </Button>
           </div>
-          <div className="flex-1 flex flex-col rounded-lg border border-gray-200 shadow-sm">
+          <div className="flex-1">
             <DotPhraseTextarea
               value={customNoteText}
               onChange={debouncedSetCustomNoteText}
-              placeholder={language === 'fr' ? 'Commencez à taper votre note personnalisée...' : 'Start typing your custom note...'}
-              rows={25}
-              className="flex-1 w-full h-full resize-none border-0 focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm p-4 bg-gray-50"
+              placeholder={language === 'fr' ? 
+                'Commencez à taper votre note personnalisée...\n\nUtilisez / pour accéder aux phrases prédéfinies (ex: /dm2, /htn, /prednisone)' : 
+                'Start typing your custom note...\n\nUse / to access dot phrases (e.g., /dm2, /htn, /prednisone)'}
+              rows={20}
+              className="w-full h-full p-4 bg-gray-50 border-0 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono text-sm transition-colors min-h-[32rem]"
             />
           </div>
         </div>
