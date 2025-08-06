@@ -76,7 +76,7 @@ async function handleTranscriptionToken(req: VercelRequest, res: VercelResponse)
         expiresIn: 3600,
         config: {
           maxDuration: 30000,
-          model: 'stt-rt-preview',
+          model: 'en_v2',
           supportedLanguages: ['en', 'fr']
         }
       });

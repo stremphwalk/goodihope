@@ -29,7 +29,7 @@ export const TRANSCRIPTION_STATES = {
 
 // Default configuration
 const DEFAULT_CONFIG = {
-  model: 'stt-rt-preview',
+  model: 'en_v2_medical', // Use standard medical model instead of preview
   minConfidence: 0.7,
   maxDuration: 30000, // 30 seconds max per session
   reconnectAttempts: 3,
@@ -153,15 +153,16 @@ export function useSonioxTranscription(options = {}) {
       }
 
       console.log('Creating Soniox RecordTranscribe instance...');
+      console.log('Using API key:', effectiveApiKey.substring(0, 8) + '...' + effectiveApiKey.slice(-4));
+      console.log('Model:', finalConfig.model || 'en_v2');
       
       let recordTranscribe;
       try {
+        // Try with minimal configuration first to avoid any parameter issues
         recordTranscribe = new RecordTranscribe({
           apiKey: effectiveApiKey,
-          model: finalConfig.model || 'stt-rt-preview',
-          languageHints: [language || 'en'],
-          context: medicalContext.context || [],
-          enableVAD: finalConfig.enableVAD,
+          // Use standard English model instead of medical to test
+          model: 'en_v2',
           
           // Callback for partial results (real-time)
           onPartialResult: (result) => {
