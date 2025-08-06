@@ -64,7 +64,6 @@ Sat ≥90%, VNI PRN
 "/DRS": `Le patient consulte pour une DRS, de type pression, présente depuis _, irradiant vers le [[bras|le dos|le cou|la mâchoire]]. Intensité /10. Soulagée par la nitroglycérine et le repos.`,
 "/date": '[[DATE]]',
 "/calc": "Open calculation modal",
-"/prednisone": "[[WIDGET:prednisone-wean]]",
 "/predwean": "[[WIDGET:prednisone-wean]]",
 "/steroidtaper": "[[WIDGET:prednisone-wean]]",
 
