@@ -1967,10 +1967,12 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
           </Button>
         </div>
         
-        {/* Centered Live Preview - larger and focused */}
-        <div className="flex-1 flex justify-center">
-          <div className="w-full max-w-4xl">
-            {renderLivePreview()}
+        {/* Expanded Live Preview - optimized for custom note editing */}
+        <div className="flex-1 flex">
+          <div className="w-full max-w-none px-4">
+            <div className="h-full">
+              {renderLivePreview()}
+            </div>
           </div>
         </div>
       </div>
@@ -2585,14 +2587,14 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   const handleNoteBlur = useCallback(() => {
     const labSectionMatch = note.match(/LABORATORY RESULTS:\n([\s\S]*?)(\n\w+:|$)/i);
     if (!labSectionMatch) return;
-    const labLines = labSectionMatch[1].split('\n').map(l => l.trim()).filter(Boolean);
+    const labLines = labSectionMatch[1].split('\n').map((l: string) => l.trim()).filter(Boolean);
     const newLabs: LabValue[] = [];
-    labLines.forEach(line => {
+    labLines.forEach((line: string) => {
       const match = line.match(/^(\w[\w\s\-\/]+)\s+([\d\.]+)(?:\s*\(([^)]+)\))?/);
       if (match) {
         const testName = match[1].trim();
         const mainValue = match[2];
-        const trended = match[3] ? match[3].split(',').map(v => v.trim()) : [];
+        const trended = match[3] ? match[3].split(',').map((v: string) => v.trim()) : [];
         // Add the most recent value with current timestamp
         const currentTime = new Date();
         newLabs.push({
@@ -2605,7 +2607,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         });
         
         // Add trending values with progressively older timestamps
-        trended.forEach((val, index) => {
+        trended.forEach((val: string, index: number) => {
           // Create timestamps that are progressively older (1 day, 2 days, etc.)
           const olderDate = new Date(currentTime);
           olderDate.setDate(currentTime.getDate() - (index + 1));

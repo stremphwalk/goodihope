@@ -25,6 +25,7 @@ interface DotPhraseTextareaProps {
   onRef?: (ref: React.RefObject<HTMLTextAreaElement>) => void;
   isCreationMode?: boolean;
   onBlur?: () => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
 // Helper to find slash phrase at cursor
@@ -47,7 +48,6 @@ function parseSmartOptions(text: string) {
   while ((match = regex.exec(text))) {
     const options = match[1].split('|');
     
-    // Check if this is a widget option (starts with WIDGET:)
     const isWidget = options.length === 1 && options[0].startsWith('WIDGET:');
     
     matches.push({
@@ -62,6 +62,123 @@ function parseSmartOptions(text: string) {
   return matches;
 }
 
+// Helper function to calculate optimal scroll position for smart options
+function calculateOptimalScrollPosition(
+  textarea: HTMLTextAreaElement,
+  smartOptions: any[],
+  activeIdx: number | null = null
+): { scrollTop: number; scrollLeft: number } {
+  if (!smartOptions.length || activeIdx === null || activeIdx >= smartOptions.length) {
+    return { scrollTop: textarea.scrollTop, scrollLeft: textarea.scrollLeft };
+  }
+
+  const activeOption = smartOptions[activeIdx];
+  if (!activeOption) {
+    return { scrollTop: textarea.scrollTop, scrollLeft: textarea.scrollLeft };
+  }
+
+  try {
+    const coordinates = getCaretCoordinates(textarea, activeOption.start);
+    
+    const computedStyle = window.getComputedStyle(textarea);
+    let lineHeight = parseInt(computedStyle.lineHeight);
+    if (isNaN(lineHeight) || lineHeight < 1 || computedStyle.lineHeight === 'normal') {
+      const fontSize = parseInt(computedStyle.fontSize) || 16;
+      lineHeight = Math.ceil(fontSize * 1.2);
+    }
+    lineHeight = Math.max(lineHeight, 16);
+    
+    const padding = 20;
+    const popupHeight = 120; // Estimated popup height
+    
+    const optionTop = coordinates.top;
+    const optionBottom = optionTop + lineHeight;
+    const popupBottom = optionBottom + popupHeight;
+    
+    const viewportTop = textarea.scrollTop;
+    const viewportBottom = viewportTop + textarea.clientHeight;
+    
+    let newScrollTop = textarea.scrollTop;
+    let newScrollLeft = textarea.scrollLeft;
+    
+    // Ensure the smart option line is visible with space below for popup
+    if (popupBottom > viewportBottom - padding) {
+      // Need to scroll down to fit popup below the line
+      newScrollTop = Math.max(0, optionTop - (textarea.clientHeight - popupHeight - padding));
+    } else if (optionTop < viewportTop + padding) {
+      // Need to scroll up to show the line
+      newScrollTop = Math.max(0, optionTop - padding);
+    }
+    
+    const optionLeft = coordinates.left;
+    const viewportLeft = textarea.scrollLeft;
+    const viewportRight = viewportLeft + textarea.clientWidth;
+    
+    if (optionLeft < viewportLeft + padding) {
+      newScrollLeft = Math.max(0, optionLeft - padding);
+    } else if (optionLeft > viewportRight - padding) {
+      newScrollLeft = optionLeft - textarea.clientWidth + padding;
+    }
+    
+    return { scrollTop: newScrollTop, scrollLeft: newScrollLeft };
+  } catch (error) {
+    return { scrollTop: textarea.scrollTop, scrollLeft: textarea.scrollLeft };
+  }
+}
+
+// Helper function to calculate geometry for smart phrase highlighting
+function calculateSmartPhraseGeometry(
+  textarea: HTMLTextAreaElement,
+  smartOption: any
+): { top: number; left: number; width: number; height: number } | null {
+  try {
+    if (!textarea || !smartOption || 
+        typeof smartOption.start !== 'number' || 
+        typeof smartOption.end !== 'number' ||
+        smartOption.start < 0 || 
+        smartOption.end > textarea.value.length ||
+        smartOption.start >= smartOption.end) {
+      return null;
+    }
+
+    const startCoords = getCaretCoordinates(textarea, smartOption.start);
+    const endCoords = getCaretCoordinates(textarea, smartOption.end);
+    
+    const computedStyle = window.getComputedStyle(textarea);
+    const paddingTop = parseInt(computedStyle.paddingTop) || 0;
+    const paddingLeft = parseInt(computedStyle.paddingLeft) || 0;
+    
+    let lineHeight = parseInt(computedStyle.lineHeight);
+    if (isNaN(lineHeight) || lineHeight < 1 || computedStyle.lineHeight === 'normal') {
+      const fontSize = parseInt(computedStyle.fontSize) || 16;
+      const fontFamily = computedStyle.fontFamily || '';
+      let ratio = 1.2;
+      if (fontFamily.includes('monospace') || fontFamily.includes('Courier')) {
+        ratio = 1.15;
+      } else if (fontFamily.includes('serif')) {
+        ratio = 1.3;
+      }
+      lineHeight = Math.ceil(fontSize * ratio);
+    }
+    
+    lineHeight = Math.max(lineHeight, 12);
+    
+    const width = endCoords.left - startCoords.left;
+    
+    const maxTop = textarea.scrollHeight - lineHeight;
+    const clampedTop = Math.max(0, Math.min(startCoords.top, maxTop));
+    
+    return {
+      top: clampedTop,
+      left: startCoords.left + paddingLeft,
+      width: Math.max(0, width),
+      height: lineHeight
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
 export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   value,
   onChange,
@@ -72,6 +189,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   onRef,
   isCreationMode = false,
   onBlur,
+  onKeyDown: externalOnKeyDown,
 }) => {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -84,17 +202,9 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const [widgets, setWidgets] = useState<Map<string, WidgetInstance>>(new Map());
   const [activeWidgetModal, setActiveWidgetModal] = useState<{type: string, position: number} | null>(null);
   const [currentPosition, setCurrentPosition] = useState(0);
-  // --- Caret restoration helpers -------------------------------------------------
-  // When the user types, React re-renders the controlled textarea with the new
-  // value. In some cases (especially on fast re-renders when no smart-options or
-  // dot-phrase logic is active) the browser may briefly reset the caret to the
-  // beginning of the textarea, which makes the text look like it is being typed
-  // "backwards". We record the caret position before the parent updates and then
-  // restore it immediately after the new value is rendered.
-
-  // Stores the caret position that should be restored after the next render
+  const [phraseHighlight, setPhraseHighlight] = useState<{top: number; left: number; width: number; height: number; text: string} | null>(null);
+  
   const pendingCursorPosRef = useRef<number | null>(null);
-  // Flag so we only attempt to restore once per change cycle
   const shouldRestoreCaretRef = useRef<boolean>(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [dropdownPos, setDropdownPos] = useState<{top: number, left: number}>({top: 0, left: 0});
@@ -107,17 +217,14 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
   const [calendarIsOpen, setCalendarIsOpen] = useState(false);
   const auth = useAuth();
   const { language } = useLanguage();
-  // Track previous prop value so we know when the *external* value changes
   const previousValueRef = useRef<string>(value);
 
-  // Expose textarea ref to parent
   useEffect(() => {
     if (onRef) {
       onRef(textareaRef);
     }
   }, [onRef]);
 
-  // Create combined dot phrases object
   const getCombinedDotPhrases = (): Record<string, string> => {
     const combined: Record<string, string> = { ...(dotPhrases as Record<string, string>) };
     customPhrases.forEach(phrase => {
@@ -126,12 +233,16 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     return combined;
   };
 
-  // Update smart options and widgets when value changes
   useEffect(() => {
+    if (isCreationMode) {
+      setSmartOptions([]);
+      setActiveSmartIdx(null);
+      return;
+    }
+    
     const options = parseSmartOptions(value);
     setSmartOptions(options);
     
-    // Parse widgets with error handling
     try {
       const widgetMatches = parseWidgetSyntax(value);
       const newWidgets = new Map<string, WidgetInstance>();
@@ -142,7 +253,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
           if (existingWidget) {
             newWidgets.set(match.id, existingWidget);
           } else {
-            // Create new widget instance
             const widget = widgetRegistry.createWidget(match.type);
             if (widget) {
               widget.id = match.id;
@@ -155,7 +265,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         }
       });
       
-      // Only update widgets if the map has actually changed
       if (newWidgets.size !== widgets.size || 
           Array.from(newWidgets.keys()).some(id => !widgets.has(id))) {
         setWidgets(newWidgets);
@@ -164,26 +273,21 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       console.warn('Error parsing widget syntax:', error);
     }
     
-    // Auto-activate first smart option if we have smart functions (but not in creation mode)
     if (options.length > 0 && activeSmartIdx === null && !isCreationMode) {
-      // Check if this looks like a template or dot phrase expansion
       const hasOnlySmartFunctions = value.trim().match(/^\[\[.*\]\]$/) || 
                                    justExpandedToSmartOption.current;
-      if (hasOnlySmartFunctions) {
+      if (hasOnlySmartFunctions && !isCreationMode) {
         setActiveSmartIdx(0);
       }
     }
     
   }, [value, activeSmartIdx, isCreationMode]);
 
-  // Handle typing in textarea
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     const cursor = e.target.selectionStart;
-    // Record the intended cursor position for the new value
     pendingCursorPosRef.current = cursor;
     shouldRestoreCaretRef.current = true;
-    // Immediate restoration in next frame (covers rare focus/caret jumps)
     requestAnimationFrame(() => {
       if (textareaRef.current) {
         const clampedPos = Math.max(0, Math.min(newValue.length, cursor));
@@ -194,51 +298,54 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     setCurrentPosition(cursor);
     onChange(newValue);
 
-    // Slash phrase detection
-    const slash = getSlashPhraseAtCursor(newValue, cursor);
-    if (slash) {
-      const combinedPhrases = getCombinedDotPhrases();
-      const matches = Object.keys(combinedPhrases).filter(k => 
-        k.toLowerCase().startsWith(slash.phrase.toLowerCase())
-      );
-      setSuggestions(matches);
-      setShowSuggestions(matches.length > 0);
-      setCurrentDot(slash);
-      setSelectedSuggestion(0);
+    if (!isCreationMode) {
+      const slash = getSlashPhraseAtCursor(newValue, cursor);
+      if (slash) {
+        const combinedPhrases = getCombinedDotPhrases();
+        const matches = Object.keys(combinedPhrases).filter(k => 
+          k.toLowerCase().startsWith(slash.phrase.toLowerCase())
+        );
+        setSuggestions(matches);
+        setShowSuggestions(matches.length > 0);
+        setCurrentDot(slash);
+        setSelectedSuggestion(0);
+      } else {
+        setShowSuggestions(false);
+        setCurrentDot(null);
+      }
     } else {
       setShowSuggestions(false);
       setCurrentDot(null);
     }
   }, [onChange, value]);
 
-  // Handle keydown for autocomplete and smart options
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (externalOnKeyDown) {
+      externalOnKeyDown(e);
+    }
+    
     const cursor = e.currentTarget.selectionStart;
     setCurrentPosition(cursor);
 
-    // Check for /calc command + Enter or Tab
     const lastFiveChars = value.substring(Math.max(0, cursor - 5), cursor);
     if (lastFiveChars === '/calc' && (e.key === 'Enter' || e.key === 'Tab')) {
       e.preventDefault();
       e.stopPropagation();
       
-      // Clear any existing state
       setShowSuggestions(false);
       setCurrentDot(null);
       setSuggestions([]);
       
-      // Remove the /calc text
       const beforeCalc = value.substring(0, cursor - 5);
       const afterCalc = value.substring(cursor);
       const cleanValue = beforeCalc + afterCalc;
       onChange(cleanValue);
       
-      // Open the modal
       setIsCalculationModalOpen(true);
       return;
     }
 
-    if (showSuggestions && suggestions.length > 0) {
+    if (showSuggestions && suggestions.length > 0 && !isCreationMode) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSelectedSuggestion(s => (s + 1) % suggestions.length);
@@ -251,18 +358,15 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         e.preventDefault();
         const selectedPhrase = suggestions[selectedSuggestion];
         if (selectedPhrase === '/calc') {
-          // Handle calculation modal
           setShowSuggestions(false);
           setCurrentDot(null);
           setSuggestions([]);
           
-          // Remove the /calc text
           const beforeCalc = value.substring(0, cursor - 5);
           const afterCalc = value.substring(cursor);
           const cleanValue = beforeCalc + afterCalc;
           onChange(cleanValue);
           
-          // Open the modal
           setIsCalculationModalOpen(true);
         } else {
           expandDotPhrase(selectedPhrase);
@@ -271,8 +375,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       return;
     }
 
-    // Handle smart options navigation
-    if (smartOptions.length > 0 && activeSmartIdx !== null) {
+    if (smartOptions.length > 0 && activeSmartIdx !== null && !isCreationMode) {
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
         const opt = smartOptions[activeSmartIdx];
@@ -292,18 +395,16 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setActiveSmartIdx(null);
+        setPhraseHighlight(null);
         return;
       }
     }
     
-    // Allow normal Enter behavior when no suggestions or smart options are active
     if (e.key === 'Enter' && !showSuggestions && (smartOptions.length === 0 || activeSmartIdx === null)) {
-      // Let the default Enter behavior happen (create new line)
       return;
     }
-  }, [value, onChange, showSuggestions, suggestions, selectedSuggestion, smartOptions, activeSmartIdx, isCreationMode]);
+  }, [value, onChange, showSuggestions, suggestions, selectedSuggestion, smartOptions, activeSmartIdx, isCreationMode, externalOnKeyDown]);
 
-  // Expand dot phrase in textarea
   const expandDotPhrase = (dotKey: string) => {
     if (!currentDot) return;
     const combinedPhrases = getCombinedDotPhrases();
@@ -314,13 +415,14 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     const after = value.slice(currentDot.end);
     const expanded = before + phrase + after;
     
-    // Check if the expanded value contains a smart option (but don't activate in creation mode)  
-    const smartOpts = parseSmartOptions(expanded);
-    if (smartOpts.length > 0 && !isCreationMode) {
-      justExpandedToSmartOption.current = true;
+    let smartOpts: any[] = [];
+    if (!isCreationMode) {
+      smartOpts = parseSmartOptions(expanded);
+      if (smartOpts.length > 0) {
+        justExpandedToSmartOption.current = true;
+      }
     }
     
-    // Preserve scroll position and cursor information
     const currentScrollTop = textareaRef.current?.scrollTop || 0;
     const currentScrollLeft = textareaRef.current?.scrollLeft || 0;
     
@@ -330,42 +432,43 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     setSuggestions([]);
     setSelectedSuggestion(0);
     
-    // Move cursor after inserted phrase and restore scroll position immediately
     if (textareaRef.current) {
       let pos = (before + phrase).length;
-      // If the result is only a single smart option, put cursor at start
-      if (expanded.trim() === phrase.trim() && smartOpts.length === 1 && smartOpts[0].start === 0) {
+      if (!isCreationMode && expanded.trim() === phrase.trim() && smartOpts.length === 1 && smartOpts[0].start === 0) {
         pos = 0;
       }
       textareaRef.current.focus();
       textareaRef.current.selectionStart = pos;
       textareaRef.current.selectionEnd = pos;
-      textareaRef.current.scrollTop = currentScrollTop;
-      textareaRef.current.scrollLeft = currentScrollLeft;
       
-      // Force scroll position to stick
+      let scrollPosition = { scrollTop: currentScrollTop, scrollLeft: currentScrollLeft };
+      if (!isCreationMode && smartOpts.length > 0) {
+        scrollPosition = calculateOptimalScrollPosition(textareaRef.current, smartOpts, 0);
+      }
+      
+      textareaRef.current.scrollTop = scrollPosition.scrollTop;
+      textareaRef.current.scrollLeft = scrollPosition.scrollLeft;
+      
       requestAnimationFrame(() => {
         if (textareaRef.current) {
-          textareaRef.current.scrollTop = currentScrollTop;
-          textareaRef.current.scrollLeft = currentScrollLeft;
+          textareaRef.current.scrollTop = scrollPosition.scrollTop;
+          textareaRef.current.scrollLeft = scrollPosition.scrollLeft;
         }
       });
     }
   };
 
-  // Handle smart option selection
   const handleSmartOptionSelect = (idx: number, optIdx: number) => {
     if (smartOptions.length === 0) return;
     const opt = smartOptions[idx];
     
-    // Check if this is a widget option
     if (opt.isWidget && opt.widgetType) {
-      // Open widget modal instead of replacing text
       setActiveWidgetModal({
         type: opt.widgetType,
         position: opt.start
       });
       setActiveSmartIdx(null);
+      setPhraseHighlight(null);
       return;
     }
     
@@ -373,32 +476,32 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     const after = value.slice(opt.end);
     const selected = opt.options[optIdx];
     
-    // Preserve scroll position and cursor information
     const currentScrollTop = textareaRef.current?.scrollTop || 0;
     const currentScrollLeft = textareaRef.current?.scrollLeft || 0;
     
-    // Replace the [[...]] with the selected option
     const newValue = before + selected + after;
     onChange(newValue);
+    setPhraseHighlight(null);
     
-    // Immediately restore scroll position and handle cursor positioning
+    setShowSuggestions(false);
+    setCurrentDot(null);
+    setSuggestions([]);
+    setSelectedSuggestion(0);
+    
     if (textareaRef.current) {
-      textareaRef.current.scrollTop = currentScrollTop;
-      textareaRef.current.scrollLeft = currentScrollLeft;
       textareaRef.current.focus();
       
-      // Force scroll position to stick
       requestAnimationFrame(() => {
         if (textareaRef.current) {
-          textareaRef.current.scrollTop = currentScrollTop;
-          textareaRef.current.scrollLeft = currentScrollLeft;
-          
           const newOptions = parseSmartOptions(newValue);
+          let scrollPosition = { scrollTop: currentScrollTop, scrollLeft: currentScrollLeft };
+          
           if (newOptions.length > 0) {
-            // More options available, activate the next one
             setActiveSmartIdx(0);
+            scrollPosition = calculateOptimalScrollPosition(textareaRef.current, newOptions, 0);
+            textareaRef.current.scrollTop = scrollPosition.scrollTop;
+            textareaRef.current.scrollLeft = scrollPosition.scrollLeft;
           } else {
-            // No more options, place cursor at the end of all inserted text
             setActiveSmartIdx(null);
             const endPos = newValue.length;
             textareaRef.current.selectionStart = endPos;
@@ -409,7 +512,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     }
   };
 
-  // Handle widget data changes
   const handleWidgetDataChange = (widgetId: string, newData: Record<string, any>) => {
     setWidgets(prev => {
       const newWidgets = new Map(prev);
@@ -423,12 +525,10 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     });
   };
 
-  // Generate text output including widgets
   const generateTextOutput = () => {
     let output = value;
     const widgetMatches = parseWidgetSyntax(value);
     
-    // Replace widget syntax with text from widgets
     widgetMatches.forEach(match => {
       const widget = widgets.get(match.id);
       if (widget) {
@@ -440,22 +540,19 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     return output;
   };
 
-  // Handle custom option input
   const handleCustomOptionSelect = (idx: number, customText: string) => {
     if (smartOptions.length === 0) return;
     const opt = smartOptions[idx];
     const before = value.slice(0, opt.start);
     const after = value.slice(opt.end);
     
-    // Preserve scroll position
     const currentScrollTop = textareaRef.current?.scrollTop || 0;
     const currentScrollLeft = textareaRef.current?.scrollLeft || 0;
     
-    // Replace the [[...]] with the custom text
     const newValue = before + customText + after;
     onChange(newValue);
+    setPhraseHighlight(null);
     
-    // Restore scroll position and handle next options
     if (textareaRef.current) {
       textareaRef.current.scrollTop = currentScrollTop;
       textareaRef.current.scrollLeft = currentScrollLeft;
@@ -480,20 +577,18 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     }
   };
 
-  // Handle cancel option (delete entire expanded phrase)
   const handleCancelOption = (idx: number) => {
     if (smartOptions.length === 0) return;
     const opt = smartOptions[idx];
     const before = value.slice(0, opt.start);
     const after = value.slice(opt.end);
-    // Remove only this smart option
     const newValue = before + after;
     onChange(newValue);
-    // After update, activate the next smart option if any
+    setPhraseHighlight(null);
+    
     setTimeout(() => {
       const updatedOptions = parseSmartOptions(newValue);
       if (updatedOptions.length > 0) {
-        // Try to activate the next one, or previous if last was deleted
         const nextIdx = idx < updatedOptions.length ? idx : updatedOptions.length - 1;
         setActiveSmartIdx(nextIdx);
       } else {
@@ -507,7 +602,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     }, 0);
   };
 
-  // Handle click on dropdown
   const handleDropdownClick = (idx: number) => {
     setActiveSmartIdx(idx);
     if (textareaRef.current) {
@@ -515,34 +609,29 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     }
   };
 
-  // Handle suggestion click
   const handleSuggestionClick = (idx: number) => {
     const selectedPhrase = suggestions[idx];
     if (selectedPhrase === '/calc') {
-      // Handle calculation modal
       setShowSuggestions(false);
       setCurrentDot(null);
       setSuggestions([]);
       
-      // Remove the /calc text
       const beforeCalc = value.substring(0, currentPosition - 5);
       const afterCalc = value.substring(currentPosition);
       const cleanValue = beforeCalc + afterCalc;
       onChange(cleanValue);
       
-      // Open the modal
       setIsCalculationModalOpen(true);
     } else {
       expandDotPhrase(selectedPhrase);
     }
   };
 
-  // Handle calculation result
   const handleCalculationResult = useCallback((result: CalculationResult) => {
     if (!textareaRef.current) return;
     
     const textarea = textareaRef.current;
-    const beforeText = value.substring(0, currentPosition - 5); // Remove "/calc"
+    const beforeText = value.substring(0, currentPosition - 5);
     const afterText = value.substring(currentPosition);
     const resultValue = typeof result.value === 'number' ? result.value.toString() : result.value;
     const newValue = `${beforeText}${result.name}: ${resultValue} ${result.unit}${afterText}`;
@@ -550,43 +639,36 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     onChange(newValue);
     textarea.focus();
     
-    // Set cursor position after the inserted result
-    const newPosition = beforeText.length + result.name.length + resultValue.length + result.unit.length + 3; // +3 for ": " and space
+    const newPosition = beforeText.length + result.name.length + resultValue.length + result.unit.length + 3;
     setTimeout(() => {
       textarea.selectionStart = newPosition;
       textarea.selectionEnd = newPosition;
     }, 0);
   }, [value, currentPosition, onChange]);
 
-  // Handle widget result
   const handleWidgetResult = useCallback((widgetData: Record<string, any>) => {
     if (!activeWidgetModal || !textareaRef.current) return;
     
     const textarea = textareaRef.current;
     const widgetText = widgetRegistry.generateText(activeWidgetModal.type, widgetData, { language });
     
-    // Find the widget placeholder in the text
     const beforeWidget = value.substring(0, activeWidgetModal.position);
     const afterWidget = value.substring(activeWidgetModal.position);
     
-    // Remove the [[WIDGET:type]] placeholder and insert the generated text
     const widgetPlaceholderEnd = afterWidget.indexOf(']]') + 2;
     const afterWidgetClean = afterWidget.substring(widgetPlaceholderEnd);
     
     const newValue = beforeWidget + widgetText + afterWidgetClean;
     onChange(newValue);
     
-    // Close modal and focus textarea
     setActiveWidgetModal(null);
     textarea.focus();
     
-    // Set cursor position after the inserted text
     const newPosition = beforeWidget.length + widgetText.length;
     setTimeout(() => {
       textarea.selectionStart = newPosition;
       textarea.selectionEnd = newPosition;
       
-      // Check for remaining smart options and auto-show popup
       const remainingSmartOptions = parseSmartOptions(newValue);
       if (remainingSmartOptions.length > 0) {
         setSmartOptions(remainingSmartOptions);
@@ -595,51 +677,109 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     }, 0);
   }, [activeWidgetModal, value, onChange, language]);
 
-  // Handle cursor position changes
   const handleSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
     const cursor = e.currentTarget.selectionStart;
     setCurrentPosition(cursor);
   };
 
-  // Ensure state is reset after calculation modal closes
   useEffect(() => {
     if (!isCalculationModalOpen) {
       setShowSuggestions(false);
       setCurrentDot(null);
       setSuggestions([]);
-      // Refocus textarea
       if (textareaRef.current) {
         textareaRef.current.focus();
       }
     }
   }, [isCalculationModalOpen]);
 
-  // Handle blur to prevent closing dropdown during interaction
   const handleBlur = () => {
     setTimeout(() => {
+      const shouldPreserveSuggestions = isCreationMode && (showSuggestions || currentDot);
+      
       if (!dropdownMouseDownRef.current && !(activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options?.includes('DATE') && calendarIsOpen)) {
         setActiveSmartIdx(null);
-        setShowSuggestions(false);
-        setCurrentDot(null);
+        setPhraseHighlight(null);
+        
+        if (!shouldPreserveSuggestions) {
+          setShowSuggestions(false);
+          setCurrentDot(null);
+        }
       }
       dropdownMouseDownRef.current = false;
     }, 50);
   };
 
-  // Update dropdown position when smart option is active
+  // Helper function to calculate safe dropdown position
+  const calculateDropdownPosition = (textarea: HTMLTextAreaElement, option: any) => {
+    try {
+      const caret = getCaretCoordinates(textarea, option.start);
+      const rect = textarea.getBoundingClientRect();
+      
+      const computedStyle = window.getComputedStyle(textarea);
+      let lineHeight = parseInt(computedStyle.lineHeight);
+      if (isNaN(lineHeight) || lineHeight < 1 || computedStyle.lineHeight === 'normal') {
+        const fontSize = parseInt(computedStyle.fontSize) || 16;
+        lineHeight = Math.ceil(fontSize * 1.2);
+      }
+      lineHeight = Math.max(lineHeight, 16);
+      
+      const paddingTop = parseInt(computedStyle.paddingTop) || 0;
+      const paddingLeft = parseInt(computedStyle.paddingLeft) || 0;
+      
+      // Position popup below the line of text
+      const baseTop = rect.top + caret.top - textarea.scrollTop + lineHeight + paddingTop + 4;
+      const baseLeft = rect.left + caret.left - textarea.scrollLeft + paddingLeft;
+      
+      // Ensure popup stays within viewport bounds
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const popupWidth = 300; // Estimated popup width
+      const popupHeight = 150; // Estimated popup height
+      
+      let safeTop = baseTop;
+      let safeLeft = baseLeft;
+      
+      // Check if popup would go off the right edge
+      if (baseLeft + popupWidth > viewportWidth - 20) {
+        safeLeft = viewportWidth - popupWidth - 20;
+      }
+      
+      // Check if popup would go off the left edge
+      if (safeLeft < 20) {
+        safeLeft = 20;
+      }
+      
+      // Check if popup would go off the bottom edge
+      if (baseTop + popupHeight > viewportHeight - 20) {
+        // Position above the text line instead
+        safeTop = rect.top + caret.top - textarea.scrollTop + paddingTop - popupHeight - 4;
+      }
+      
+      // Check if popup would go off the top edge
+      if (safeTop < 20) {
+        safeTop = 20;
+      }
+      
+      return { top: safeTop, left: safeLeft };
+    } catch (error) {
+      // Fallback to basic positioning
+      const rect = textarea.getBoundingClientRect();
+      return {
+        top: rect.top + 30,
+        left: rect.left + 10
+      };
+    }
+  };
+
   useEffect(() => {
     if (activeSmartIdx !== null && textareaRef.current && smartOptions[activeSmartIdx]) {
       const opt = smartOptions[activeSmartIdx];
-      const caret = getCaretCoordinates(textareaRef.current, opt.start);
-      const rect = textareaRef.current.getBoundingClientRect();
-      setDropdownPos({
-        top: rect.top + caret.top - textareaRef.current.scrollTop + 28,
-        left: rect.left + caret.left - textareaRef.current.scrollLeft + 8
-      });
+      const newPos = calculateDropdownPosition(textareaRef.current, opt);
+      setDropdownPos(newPos);
     }
   }, [activeSmartIdx, smartOptions, value]);
 
-  // Reset date object for DATE options
   useEffect(() => {
     if (
       activeSmartIdx !== null &&
@@ -650,80 +790,41 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     }
   }, [activeSmartIdx, smartOptions]);
 
-  // Auto-activate smart options when expanded
-  useEffect(() => {
-    if (justExpandedToSmartOption.current && smartOptions.length > 0) {
-      setActiveSmartIdx(0);
-      justExpandedToSmartOption.current = false;
-    }
-  }, [smartOptions]);
-
-  // Auto-open dropdown/calendar for single smart option covering whole textarea
-  useEffect(() => {
-    if (
-      smartOptions.length === 1 &&
-      smartOptions[0].start === 0 &&
-      smartOptions[0].end === value.length &&
-      value.trim().startsWith('[[') &&
-      value.trim().endsWith(']]')
-    ) {
-      if (activeSmartIdx !== 0) setActiveSmartIdx(0);
-      if (smartOptions[0].options[0] === 'DATE') {
-        setCalendarIsOpen(true);
-      }
-    }
-  }, [value, smartOptions]);
-
-  // Enhanced keyboard navigation for dropdown
-  useEffect(() => {
-    if (activeSmartIdx === null || !smartOptions[activeSmartIdx]) return;
-    const handleDropdownKeyDown = (e: KeyboardEvent) => {
-      if (activeSmartIdx === null) return;
-      const opts = smartOptions[activeSmartIdx].options;
-      const numOptions = opts.length;
-      const isDate = opts[0] === 'DATE';
-      let selIdx = smartOptions[activeSmartIdx].selectedIdx ?? 0;
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        // Move to previous smart option with looping
-        setActiveSmartIdx((activeSmartIdx - 1 + smartOptions.length) % smartOptions.length);
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        // Move to next smart option with looping
-        setActiveSmartIdx((activeSmartIdx + 1) % smartOptions.length);
-      } else if (e.key === 'ArrowDown' && !isDate) {
-        e.preventDefault();
-        // Cycle to next option within the current smart option (skip for dates)
-        updateSmartOptionsIdx(activeSmartIdx, (selIdx + 1) % numOptions);
-      } else if (e.key === 'ArrowUp' && !isDate) {
-        e.preventDefault();
-        // Cycle to previous option within the current smart option (skip for dates)
-        updateSmartOptionsIdx(activeSmartIdx, (selIdx - 1 + numOptions) % numOptions);
-      } else if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault();
-        handleSmartOptionSelect(activeSmartIdx, selIdx);
-      } else if (e.key === 'Escape') {
-        setActiveSmartIdx(null);
-        setCustomInputFocused(false);
-      }
-    };
-    window.addEventListener('keydown', handleDropdownKeyDown);
-    return () => window.removeEventListener('keydown', handleDropdownKeyDown);
-  }, [activeSmartIdx, smartOptions, customInputFocused, customInput, isCreationMode]);
-
-  function updateSmartOptionsIdx(idx: number, sel: number) {
-    setSmartOptions(prev => prev.map((o, i) => i === idx ? { ...o, selectedIdx: sel } : o));
-  }
-
-  // After smartOptions update, if justExpandedToSmartOption is true, set activeSmartIdx (but not in creation mode)
   useEffect(() => {
     if (justExpandedToSmartOption.current && smartOptions.length > 0 && !isCreationMode) {
       setActiveSmartIdx(0);
       justExpandedToSmartOption.current = false;
+      
+      if (textareaRef.current) {
+        const scrollPosition = calculateOptimalScrollPosition(textareaRef.current, smartOptions, 0);
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.scrollTop = scrollPosition.scrollTop;
+            textareaRef.current.scrollLeft = scrollPosition.scrollLeft;
+          }
+        });
+      }
     }
   }, [smartOptions, isCreationMode]);
 
-  // Always open dropdown/calendar for a single smart option covering the whole textarea (but not in creation mode)
+  // Auto-scroll when smart option becomes active
+  useEffect(() => {
+    if (activeSmartIdx !== null && textareaRef.current && smartOptions[activeSmartIdx] && !isCreationMode) {
+      const scrollPosition = calculateOptimalScrollPosition(textareaRef.current, smartOptions, activeSmartIdx);
+      
+      // Only scroll if position actually needs to change
+      if (Math.abs(textareaRef.current.scrollTop - scrollPosition.scrollTop) > 5 || 
+          Math.abs(textareaRef.current.scrollLeft - scrollPosition.scrollLeft) > 5) {
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.scrollTop = scrollPosition.scrollTop;
+            textareaRef.current.scrollLeft = scrollPosition.scrollLeft;
+          }
+        });
+      }
+    }
+  }, [activeSmartIdx, smartOptions, isCreationMode]);
+
   useEffect(() => {
     if (
       !isCreationMode &&
@@ -740,21 +841,169 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     }
   }, [value, smartOptions, isCreationMode]);
 
-  // Handle click to activate smart functions (but not in creation mode)
+  useEffect(() => {
+    if (activeSmartIdx === null || !smartOptions[activeSmartIdx]) return;
+    const handleDropdownKeyDown = (e: KeyboardEvent) => {
+      if (activeSmartIdx === null) return;
+      const opts = smartOptions[activeSmartIdx].options;
+      const numOptions = opts.length;
+      const isDate = opts[0] === 'DATE';
+      let selIdx = smartOptions[activeSmartIdx].selectedIdx ?? 0;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const newIdx = (activeSmartIdx - 1 + smartOptions.length) % smartOptions.length;
+        setActiveSmartIdx(newIdx);
+        
+        // Scroll to ensure new option is visible
+        if (textareaRef.current) {
+          const scrollPosition = calculateOptimalScrollPosition(textareaRef.current, smartOptions, newIdx);
+          textareaRef.current.scrollTop = scrollPosition.scrollTop;
+          textareaRef.current.scrollLeft = scrollPosition.scrollLeft;
+        }
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const newIdx = (activeSmartIdx + 1) % smartOptions.length;
+        setActiveSmartIdx(newIdx);
+        
+        // Scroll to ensure new option is visible
+        if (textareaRef.current) {
+          const scrollPosition = calculateOptimalScrollPosition(textareaRef.current, smartOptions, newIdx);
+          textareaRef.current.scrollTop = scrollPosition.scrollTop;
+          textareaRef.current.scrollLeft = scrollPosition.scrollLeft;
+        }
+      } else if (e.key === 'ArrowDown' && !isDate) {
+        e.preventDefault();
+        updateSmartOptionsIdx(activeSmartIdx, (selIdx + 1) % numOptions);
+      } else if (e.key === 'ArrowUp' && !isDate) {
+        e.preventDefault();
+        updateSmartOptionsIdx(activeSmartIdx, (selIdx - 1 + numOptions) % numOptions);
+      } else if ((e.key === 'Enter' || e.key === 'Tab') && !isCreationMode) {
+        e.preventDefault();
+        handleSmartOptionSelect(activeSmartIdx, selIdx);
+      } else if (e.key === 'Escape') {
+        setActiveSmartIdx(null);
+        setCustomInputFocused(false);
+        setPhraseHighlight(null);
+      }
+    };
+    window.addEventListener('keydown', handleDropdownKeyDown);
+    return () => window.removeEventListener('keydown', handleDropdownKeyDown);
+  }, [activeSmartIdx, smartOptions, customInputFocused, customInput, isCreationMode]);
+
+  function updateSmartOptionsIdx(idx: number, sel: number) {
+    setSmartOptions(prev => prev.map((o, i) => i === idx ? { ...o, selectedIdx: sel } : o));
+  }
+
+  useEffect(() => {
+    if (justExpandedToSmartOption.current && smartOptions.length > 0 && !isCreationMode) {
+      setActiveSmartIdx(0);
+      justExpandedToSmartOption.current = false;
+    }
+  }, [smartOptions, isCreationMode]);
+
+  useEffect(() => {
+    if (
+      !isCreationMode &&
+      smartOptions.length === 1 &&
+      smartOptions[0].start === 0 &&
+      smartOptions[0].end === value.length &&
+      value.trim().startsWith('[[') &&
+      value.trim().endsWith(']]')
+    ) {
+      if (activeSmartIdx !== 0) setActiveSmartIdx(0);
+      if (smartOptions[0].options[0] === 'DATE') {
+        setCalendarIsOpen(true);
+      }
+    }
+  }, [value, smartOptions, isCreationMode]);
+
+  useEffect(() => {
+    if (!textareaRef.current || isCreationMode || activeSmartIdx === null || !smartOptions[activeSmartIdx]) {
+      setPhraseHighlight(null);
+      return;
+    }
+
+    const smartOption = smartOptions[activeSmartIdx];
+    if (!smartOption || typeof smartOption.start !== 'number' || typeof smartOption.end !== 'number') {
+      setPhraseHighlight(null);
+      return;
+    }
+
+    const geometry = calculateSmartPhraseGeometry(textareaRef.current, smartOption);
+    if (geometry) {
+      const text = value.slice(smartOption.start, smartOption.end);
+      setPhraseHighlight({ ...geometry, text });
+    } else {
+      setPhraseHighlight(null);
+    }
+  }, [activeSmartIdx, smartOptions, isCreationMode, value]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || isCreationMode) return;
+
+    let scrollTimeout: NodeJS.Timeout;
+    
+    const handleScroll = () => {
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+      
+      scrollTimeout = setTimeout(() => {
+        if (activeSmartIdx !== null && smartOptions[activeSmartIdx]) {
+          const geometry = calculateSmartPhraseGeometry(textarea, smartOptions[activeSmartIdx]);
+          if (geometry) {
+            const text = value.slice(smartOptions[activeSmartIdx].start, smartOptions[activeSmartIdx].end);
+            setPhraseHighlight({ ...geometry, text });
+          } else {
+            setPhraseHighlight(null);
+          }
+        }
+      }, 10);
+    };
+
+    const handleResize = () => {
+      if (activeSmartIdx !== null && smartOptions[activeSmartIdx]) {
+        const geometry = calculateSmartPhraseGeometry(textarea, smartOptions[activeSmartIdx]);
+        if (geometry) {
+          const text = value.slice(smartOptions[activeSmartIdx].start, smartOptions[activeSmartIdx].end);
+          setPhraseHighlight({ ...geometry, text });
+        } else {
+          setPhraseHighlight(null);
+        }
+      }
+    };
+
+    textarea.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+      if (textarea) {
+        textarea.removeEventListener('scroll', handleScroll);
+      }
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [activeSmartIdx, smartOptions, isCreationMode, value]);
+
+  useEffect(() => {
+    return () => {
+      setPhraseHighlight(null);
+    };
+  }, []);
+
   const handleTextareaClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {
-    if (isCreationMode) return; // Don't activate smart functions in creation mode
+    if (isCreationMode) return;
     
     const textarea = e.currentTarget;
     const cursor = textarea.selectionStart;
     
-    // Check if click is inside a smart function
-    smartOptions.forEach((option, index) => {
-      if (cursor >= option.start && cursor <= option.end) {
-        setActiveSmartIdx(index);
-      }
-    });
+    if (!isCreationMode) {
+      smartOptions.forEach((option, index) => {
+        if (cursor >= option.start && cursor <= option.end) {
+          setActiveSmartIdx(index);
+        }
+      });
+    }
 
-    // Check if click is inside a widget placeholder
     const widgetRegex = /\[\[WIDGET:([a-zA-Z0-9_-]+):([a-zA-Z0-9_-]+)\]\]/g;
     let match;
     while ((match = widgetRegex.exec(value))) {
@@ -766,42 +1015,71 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
           position: start
         });
         setActiveSmartIdx(null);
+        setPhraseHighlight(null);
         break;
       }
     }
   };
 
-  // Always render the textarea, but overlay smart options when needed
   const renderTextarea = () => (
-    <textarea
-      ref={textareaRef}
-      value={value}
-      onChange={handleChange}
-      onKeyDown={handleKeyDown}
-      onSelect={handleSelect}
-      onBlur={handleBlur}
-      onClick={handleTextareaClick}
-      placeholder={placeholder}
-      className={`px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${className}`}
-      rows={rows}
-      style={{
-        resize: 'vertical',
-      }}
-    />
+    <div className="relative">
+      <textarea
+        ref={textareaRef}
+        value={value}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onSelect={handleSelect}
+        onBlur={handleBlur}
+        onClick={handleTextareaClick}
+        placeholder={placeholder}
+        className={`px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 relative z-10 bg-transparent ${className}`}
+        rows={rows}
+        style={{
+          resize: 'vertical',
+        }}
+      />
+      {phraseHighlight && (
+        <>
+          {/* Main highlight background */}
+          <div
+            className="absolute pointer-events-none rounded-sm"
+            style={{
+              top: `${phraseHighlight.top}px`,
+              left: `${phraseHighlight.left - 2}px`,
+              width: `${phraseHighlight.width + 4}px`,
+              height: `${phraseHighlight.height}px`,
+              background: 'linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, rgba(139, 92, 246, 0.15) 50%, rgba(236, 72, 153, 0.15) 100%)',
+              zIndex: 5
+            }}
+            role="presentation"
+            aria-hidden="true"
+          />
+          {/* Animated border */}
+          <div
+            className="absolute pointer-events-none rounded-sm animate-pulse"
+            style={{
+              top: `${phraseHighlight.top - 1}px`,
+              left: `${phraseHighlight.left - 3}px`,
+              width: `${phraseHighlight.width + 6}px`,
+              height: `${phraseHighlight.height + 2}px`,
+              border: '2px solid rgba(59, 130, 246, 0.4)',
+              borderRadius: '4px',
+              zIndex: 4
+            }}
+            role="presentation"
+            aria-hidden="true"
+          />
+        </>
+      )}
+    </div>
   );
 
-  // ---------------------------------------------------------------------------
-  // Restore the caret position after the parent value update, *only* for plain
-  // typing scenarios (no smart-option, widget, or suggestion interactions).
-  // ---------------------------------------------------------------------------
   useLayoutEffect(() => {
-    // Only run when the external `value` actually changed
     if (previousValueRef.current === value) return;
     previousValueRef.current = value;
 
     if (!shouldRestoreCaretRef.current) return;
 
-    // Skip when other flows own the caret
     if (showSuggestions || activeSmartIdx !== null || calendarIsOpen) {
       shouldRestoreCaretRef.current = false;
       return;
@@ -821,7 +1099,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
     <div className="relative">
       {renderTextarea()}
       
-      {/* Suggestions dropdown */}
       {showSuggestions && suggestions.length > 0 && (
         <div
           className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto min-w-48"
@@ -855,8 +1132,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         </div>
       )}
       
-      {/* Smart Options Dropdown - Only for complex cases like date pickers */}
-      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options.includes('DATE') && (
+      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && smartOptions[activeSmartIdx].options.includes('DATE') && !isCreationMode && (
         <div
           className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-lg min-w-48"
           style={{
@@ -868,13 +1144,11 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
           onMouseDown={() => { dropdownMouseDownRef.current = true; }}
           onMouseUp={() => { dropdownMouseDownRef.current = false; }}
         >
-          {/* Smart Options Counter */}
           <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 rounded-t-lg">
             <div className="text-xs text-gray-600 text-center font-medium">
               Smart Option {activeSmartIdx + 1}/{smartOptions.length}
             </div>
           </div>
-          {/* Date Picker for DATE options */}
           {(activeSmartIdx !== null && smartOptions[activeSmartIdx]?.options?.includes('DATE')) && (
             <div className="p-3">
               <div className="text-sm font-medium text-gray-700 mb-2">Select Date:</div>
@@ -884,13 +1158,12 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
                   setDateObj(date);
                   if (date && activeSmartIdx !== null) {
                     const formattedDate = date.toLocaleDateString();
-                    // Replace the DATE placeholder with the actual date
                     const before = value.slice(0, smartOptions[activeSmartIdx].start);
                     const after = value.slice(smartOptions[activeSmartIdx].end);
                     const newValue = before + formattedDate + after;
                     onChange(newValue);
+                    setPhraseHighlight(null);
                     
-                    // Close the smart options dropdown
                     setTimeout(() => {
                       const newOptions = parseSmartOptions(newValue);
                       if (newOptions.length > 0) {
@@ -962,7 +1235,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
           
           {smartOptions[activeSmartIdx].options[0] !== 'DATE' && !smartOptions[activeSmartIdx].isWidget && (
             <>
-              {/* Arrow buttons for cycling options */}
               <div className="flex items-center justify-center gap-2 mb-2">
                 <button
                   className="px-2 py-1 text-lg rounded bg-gray-100 hover:bg-gray-200"
@@ -1007,7 +1279,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
                   {opt}
                 </div>
               ))}
-              {/* Custom input option */}
               <div className="flex items-center gap-1 mt-2">
                 <input
                   ref={customInputRef}
@@ -1058,39 +1329,30 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         </div>
       )}
 
-      {/* Inline Smart Option Popup - Primary UI for smart options (except DATE) */}
-      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && !smartOptions[activeSmartIdx].options.includes('DATE') && (() => {
+      {activeSmartIdx !== null && smartOptions[activeSmartIdx] && !smartOptions[activeSmartIdx].options.includes('DATE') && !isCreationMode && (() => {
         const opt = smartOptions[activeSmartIdx];
         
-        // Calculate safe positioning to avoid window clipping
         const calculateSafePosition = () => {
-          const baseTop = dropdownPos.top - 50; // Position above caret
-          const baseLeft = dropdownPos.left;
-          
-          // Get viewport dimensions
           const viewportWidth = window.innerWidth;
           const viewportHeight = window.innerHeight;
           
-          // Estimated popup dimensions
-          const popupWidth = 300;
-          const popupHeight = 60;
+          const popupWidth = 350;
+          const popupHeight = 80;
           
-          // Adjust horizontal position if it would overflow
-          let safeLeft = baseLeft;
-          if (baseLeft + popupWidth > viewportWidth - 20) {
+          let safeLeft = dropdownPos.left;
+          if (dropdownPos.left + popupWidth > viewportWidth - 20) {
             safeLeft = viewportWidth - popupWidth - 20;
           }
           if (safeLeft < 20) {
             safeLeft = 20;
           }
           
-          // Adjust vertical position if it would overflow
-          let safeTop = baseTop;
-          if (baseTop < 20) {
-            safeTop = dropdownPos.top + 30; // Position below caret instead
-          }
-          if (safeTop + popupHeight > viewportHeight - 20) {
+          let safeTop = dropdownPos.top;
+          if (dropdownPos.top + popupHeight > viewportHeight - 20) {
             safeTop = viewportHeight - popupHeight - 20;
+          }
+          if (safeTop < 20) {
+            safeTop = 20;
           }
           
           return { top: safeTop, left: safeLeft };
@@ -1112,7 +1374,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
             onMouseDown={() => { dropdownMouseDownRef.current = true; }}
             onMouseUp={() => { dropdownMouseDownRef.current = false; }}
           >
-            {/* Header with navigation */}
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-500 font-medium">
                 Smart Option {activeSmartIdx + 1}/{smartOptions.length}
@@ -1124,7 +1385,10 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
                       className="px-1 py-0.5 text-xs rounded bg-gray-100 hover:bg-gray-200"
                       onMouseDown={e => {
                         e.preventDefault();
-                        setActiveSmartIdx((activeSmartIdx - 1 + smartOptions.length) % smartOptions.length);
+                        const newIdx = (activeSmartIdx - 1 + smartOptions.length) % smartOptions.length;
+                        setActiveSmartIdx(newIdx);
+                        
+                        // Auto-scroll will be handled by the useEffect
                       }}
                       title="Previous option"
                     >
@@ -1134,7 +1398,10 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
                       className="px-1 py-0.5 text-xs rounded bg-gray-100 hover:bg-gray-200"
                       onMouseDown={e => {
                         e.preventDefault();
-                        setActiveSmartIdx((activeSmartIdx + 1) % smartOptions.length);
+                        const newIdx = (activeSmartIdx + 1) % smartOptions.length;
+                        setActiveSmartIdx(newIdx);
+                        
+                        // Auto-scroll will be handled by the useEffect
                       }}
                       title="Next option"
                     >
@@ -1155,7 +1422,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
               </div>
             </div>
             
-            {/* Content based on option type */}
             {opt.isWidget ? (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-600">
@@ -1167,6 +1433,7 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
                     e.preventDefault();
                     setActiveWidgetModal({ type: opt.widgetType!, position: opt.start });
                     setActiveSmartIdx(null);
+                    setPhraseHighlight(null);
                   }}
                 >
                   Open
@@ -1174,7 +1441,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
               </div>
             ) : (
               <div className="space-y-2">
-                {/* Option buttons */}
                 <div className="flex flex-wrap gap-1">
                   {opt.options.map((option: string, idx: number) => (
                     <button
@@ -1194,7 +1460,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
                   ))}
                 </div>
                 
-                {/* Custom input */}
                 <div className="flex items-center gap-2">
                   <input
                     ref={customInputRef}
@@ -1242,7 +1507,6 @@ export const DotPhraseTextarea: React.FC<DotPhraseTextareaProps> = ({
         widgetType={activeWidgetModal?.type || ''}
         onClose={() => {
           setActiveWidgetModal(null);
-          // Check for remaining smart options when widget is closed without selection
           setTimeout(() => {
             const remainingSmartOptions = parseSmartOptions(value);
             if (remainingSmartOptions.length > 0) {

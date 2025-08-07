@@ -463,6 +463,12 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
                           className="w-full min-w-[600px]"
                           onRef={(ref) => setTextareaRef(ref)}
                           isCreationMode={true}
+                          onKeyDown={(e) => {
+                            // Prevent form submission when Enter is pressed in textarea
+                            if (e.key === 'Enter') {
+                              e.stopPropagation();
+                            }
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
@@ -490,23 +496,14 @@ export function DotPhraseManager({ onDotPhrasesChange }: DotPhraseManagerProps) 
                         {enhancedPreview(form.watch('content'))}
                       </div>
                       
-                      {/* Interactive Testing Area */}
+                      {/* Info about smart functions */}
                       {parseSmartOptions(form.watch('content')).length > 0 && (
                         <div className="p-3 bg-blue-50">
-                          <div className="text-xs text-blue-700 mb-2 font-medium">
-                            Test Interactive Functions ({parseSmartOptions(form.watch('content')).length} detected):
+                          <div className="text-xs text-blue-700 font-medium">
+                            ✓ {parseSmartOptions(form.watch('content')).length} smart function{parseSmartOptions(form.watch('content')).length > 1 ? 's' : ''} detected
                           </div>
-                          <DotPhraseTextarea
-                            value={form.watch('content')}
-                            onChange={() => {}} // Read-only for testing
-                            placeholder="This preview shows how your dot phrase will work when used"
-                            rows={2}
-                            className="w-full bg-white text-sm"
-                            disabled={true}
-                            isCreationMode={true}
-                          />
                           <p className="text-xs text-blue-600 mt-1">
-                            This shows how users will see your smart functions in action. Click dropdown arrows to test options.
+                            Smart functions will become interactive when this dot phrase is used in a note.
                           </p>
                         </div>
                       )}

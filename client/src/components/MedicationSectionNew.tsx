@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { MedicationAutoComplete } from '@/components/MedicationAutoComplete';
 import { MedicationImageUpload } from '@/components/MedicationImageUpload';
+import { MedicationTextPaste } from '@/components/MedicationTextPaste';
 import { Home, Hospital, Pill, X, ChevronUp, ChevronDown, RotateCcw, Hash, CheckCircle } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { createMedication, sortMedicationsByImportance, formatMedicationsForNote, getCommonDosages, frequencies, translateFrequency, categorizeMedication, getCategoryPriority, type SelectedMedication, type MedicationData } from '@/lib/medicationUtils';
@@ -216,6 +217,42 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
       hospitalMedications: updatedHospitalMeds
     });
   };
+
+  const handleMedicationTextExtracted = useCallback((extractedMeds: SelectedMedication[], isInpatient: boolean) => {
+    if (isInpatient) {
+      // Add to hospital medications, filtering out duplicates based on name + dosage + frequency
+      const newMeds = extractedMeds.filter(extracted => {
+        const extractedKey = `${extracted.name}-${extracted.dosage}-${extracted.frequency}`;
+        return !medications.hospitalMedications.some(hospital => {
+          const existingKey = `${hospital.name}-${hospital.dosage}-${hospital.frequency}`;
+          return existingKey === extractedKey;
+        });
+      });
+      
+      if (newMeds.length > 0) {
+        onMedicationsChange({
+          ...medications,
+          hospitalMedications: [...medications.hospitalMedications, ...newMeds]
+        });
+      }
+    } else {
+      // Add to home medications, filtering out duplicates based on name + dosage + frequency
+      const newMeds = extractedMeds.filter(extracted => {
+        const extractedKey = `${extracted.name}-${extracted.dosage}-${extracted.frequency}`;
+        return !medications.homeMedications.some(home => {
+          const existingKey = `${home.name}-${home.dosage}-${home.frequency}`;
+          return existingKey === extractedKey;
+        });
+      });
+      
+      if (newMeds.length > 0) {
+        onMedicationsChange({
+          ...medications,
+          homeMedications: [...medications.homeMedications, ...newMeds]
+        });
+      }
+    }
+  }, [medications, onMedicationsChange]);
 
   const handleHomeMedicationRemove = (medicationName: string) => {
     const updatedHomeMeds = medications.homeMedications.filter(med => med.name !== medicationName);
@@ -501,6 +538,10 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
       </div>
       {/* Main Content (no extra card/box, just spacing) */}
       <div className="flex-1 overflow-y-auto min-h-0 space-y-8 p-6">
+        {/* Medication Text Paste Component - moved inside scrollable area */}
+        <div className="mb-6">
+          <MedicationTextPaste onMedicationsExtracted={handleMedicationTextExtracted} />
+        </div>
         {/* Home Medications */}
         <div className="space-y-3">
           <div className="flex items-center gap-2 mb-1">
