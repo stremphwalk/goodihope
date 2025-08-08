@@ -30,8 +30,8 @@ export function SimpleLivePreview({
   const wordCount = note.trim() ? note.trim().split(/\s+/).length : 0;
 
   return (
-    <div className={`w-full h-full flex flex-col ${className}`}>
-      <Card className="flex-1 flex flex-col border-0 shadow-lg bg-white">
+    <div className={`w-full max-w-none h-full flex flex-col ${className}`}>
+      <Card className="w-full flex-1 flex flex-col border-0 shadow-none bg-white">
         <CardHeader className="bg-white border-b border-gray-100 flex-shrink-0 pb-4">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-3">
@@ -45,9 +45,9 @@ export function SimpleLivePreview({
           </div>
         </CardHeader>
         
-        <CardContent className="flex-1 flex flex-col p-0">
+        <CardContent className="flex-1 flex flex-col p-0 w-full">
           {/* Action Bar */}
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between w-full">
             <div className="flex gap-2">
               <Button
                 onClick={onCopyNote}
@@ -74,19 +74,19 @@ export function SimpleLivePreview({
           </div>
           
           {/* Content Area */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative w-full">
             
             <DotPhraseTextarea
               value={note}
               onChange={onNoteChange}
               placeholder="Generated medical note will appear here..."
-              className="w-full h-full min-h-[400px] font-mono text-sm resize-none border-0 focus:ring-0 p-4 leading-5 bg-white text-gray-800"
+              className="w-full h-full min-h-[500px] font-mono text-[15px] resize-none border-0 focus:ring-0 p-6 leading-6 bg-white text-gray-800"
               onBlur={onBlur}
             />
           </div>
           
           {/* Status Bar */}
-          <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+          <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 w-full">
             <div className="flex items-center gap-4">
               <span>Medical Note Document</span>
               <Separator orientation="vertical" className="h-3" />

@@ -1969,7 +1969,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
         
         {/* Expanded Live Preview - optimized for custom note editing */}
         <div className="flex-1 flex">
-          <div className="w-full max-w-none px-4">
+          <div className="w-full max-w-none px-0">
             <div className="h-full">
               {renderLivePreview()}
             </div>
@@ -2834,7 +2834,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       <div className="flex flex-1 h-full min-h-[600px] bg-gray-50">
         <div className="flex-1 min-w-0 flex flex-col p-0">
           <div className="w-full h-full min-h-[600px] flex flex-col rounded-none shadow-none bg-white border-0">
-            <div className="flex-1 overflow-y-auto px-6 py-4 text-base text-gray-800" ref={contentRef}>
+            <div className="flex-1 overflow-y-auto px-2 md:px-4 lg:px-6 py-4 text-base text-gray-800" ref={contentRef}>
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}

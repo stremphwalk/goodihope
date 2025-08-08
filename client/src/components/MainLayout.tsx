@@ -95,6 +95,12 @@ export function MainLayout({
       icon: <Calculator className="w-5 h-5" />,
       subOptions: [],
     },
+    {
+      key: 'live-translation',
+      label: language === 'fr' ? 'Traduction en direct' : 'Live Translation',
+      icon: <Globe />,
+      subOptions: [],
+    },
   ];
 
   const MAIN_MENUS = getMainMenus();
@@ -112,6 +118,8 @@ export function MainLayout({
       newMenu = 'smart-options';
     } else if (location === '/calculations' && selectedMenu !== 'calculations') {
       newMenu = 'calculations';
+    } else if (location === '/live-translation' && selectedMenu !== 'live-translation') {
+      newMenu = 'live-translation';
     } else if (location === '/' && selectedMenu !== 'medical-notes') {
       newMenu = 'medical-notes';
     }
@@ -143,6 +151,8 @@ export function MainLayout({
     }
   }, [selectedMenu, selectedSubOption, MAIN_MENUS, setSelectedSubOption, medicalNotesOpen, smartOptionsOpen]);
 
+  const isShowingPreview = Boolean(hasLivePreview && livePreview);
+
   return (
     <SidebarProvider>
       <div className="flex h-screen">
@@ -162,21 +172,24 @@ export function MainLayout({
                   className={`medical-nav-button ${selectedMenu === menu.key ? 'medical-nav-active' : ''}`}
                   onClick={() => {
                     // Navigate to the appropriate route when switching from profile page
-                    if (location === '/profile') {
-                      if (menu.key === "medical-notes") {
-                        setLocation('/');
-                        return;
-                      } else if (menu.key === "smart-options") {
-                        setLocation('/dot-phrases');
-                        return;
-                      } else if (menu.key === "team-groups") {
-                        setLocation('/groups');
-                        return;
-                      } else if (menu.key === "calculations") {
-                        setLocation('/calculations');
-                        return;
+                                          if (location === '/profile') {
+                        if (menu.key === "medical-notes") {
+                          setLocation('/');
+                          return;
+                        } else if (menu.key === "smart-options") {
+                          setLocation('/dot-phrases');
+                          return;
+                        } else if (menu.key === "team-groups") {
+                          setLocation('/groups');
+                          return;
+                        } else if (menu.key === "calculations") {
+                          setLocation('/calculations');
+                          return;
+                        } else if (menu.key === 'live-translation') {
+                          setLocation('/live-translation');
+                          return;
+                        }
                       }
-                    }
                     
                     setSelectedMenu(menu.key);
                     
@@ -201,6 +214,10 @@ export function MainLayout({
                     } else if (menu.key === "calculations") {
                       if (location !== '/calculations') {
                         setLocation('/calculations');
+                      }
+                    } else if (menu.key === 'live-translation') {
+                      if (location !== '/live-translation') {
+                        setLocation('/live-translation');
                       }
                     } else {
                       if (menu.subOptions.length > 0) {
@@ -303,7 +320,7 @@ export function MainLayout({
           </div>
         </Sidebar>
         {/* Main content area */}
-        <main className={`medical-main-content ${!hasLivePreview ? 'no-right-margin' : ''}`}>
+        <main className={`medical-main-content ${!isShowingPreview ? 'no-right-margin' : ''}`}>
           {children}
         </main>
         {/* Fixed preview panel on far right - only render when hasLivePreview is true */}

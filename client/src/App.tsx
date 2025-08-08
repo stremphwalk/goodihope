@@ -11,7 +11,7 @@ import { MedicalTranscriptionProvider } from "@/contexts/MedicalTranscriptionCon
 import { GlobalDictationManager } from "@/components/GlobalDictationManager";
 import { GlobalDictationHint } from "@/components/GlobalDictationHint";
 import { Stethoscope } from "lucide-react";
-
+import LiveTranslationPage from './pages/live-translation';
 // Lazy load pages for better code splitting
 const AuthPage = lazy(() => import("@/components/auth/AuthPage").then(module => ({ default: module.AuthPage })));
 const Navigation = lazy(() => import("@/components/Navigation").then(module => ({ default: module.Navigation })));
@@ -45,6 +45,14 @@ function Router({ selectedMenu, setSelectedMenu, selectedSubOption, setSelectedS
   return (
     <Suspense fallback={<PageLoader />}>
       <Switch>
+        <Route path="/live-translation" component={() => (
+          <LiveTranslationPage
+            selectedMenu={selectedMenu}
+            setSelectedMenu={setSelectedMenu}
+            selectedSubOption={selectedSubOption}
+            setSelectedSubOption={setSelectedSubOption}
+          />
+        )} />
         <Route path="/" component={() => <ReviewOfSystems selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
         <Route path="/dot-phrases" component={() => <DotPhraseManagerPage selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
         <Route path="/calculations" component={() => <Calculations selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />} />
