@@ -136,16 +136,38 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const logout = useCallback(async () => {
     try {
-      const { error } = await supabase.auth.signOut();
+      // Clear local state first to ensure immediate UI update
+      setUser(null);
+      setSession(null);
+      setError(null);
+      
+      const { error } = await supabase.auth.signOut({
+        scope: 'local' // Only clear local session, not global
+      });
       
       if (error) {
-        console.error('Logout error:', error);
-        throw error;
+        console.warn('Logout warning (non-critical):', error.message);
+        // Don't throw error for logout issues - user is already logged out locally
       }
-      // onAuthStateChange will handle clearing the user
+      
+      // Additional cleanup for cross-domain issues
+      if (typeof window !== 'undefined') {
+        // Clear any remaining auth data
+        localStorage.removeItem('arinote-auth');
+        localStorage.removeItem('sb-tfoseletmpbybebtnilq-auth-token');
+        // Force redirect to landing page
+        window.location.href = '/landing';
+      }
     } catch (error) {
       console.error('Logout failed:', error);
-      throw error;
+      // Still clear local state even if remote logout fails
+      setUser(null);
+      setSession(null);
+      setError(null);
+      if (typeof window !== 'undefined') {
+        localStorage.clear();
+        window.location.href = '/landing';
+      }
     }
   }, []);
 

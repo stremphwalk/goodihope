@@ -155,12 +155,12 @@ export function LabTextPaste({ onLabValuesExtracted }: LabTextPasteProps) {
   }, []);
 
   return (
-    <Card className="mb-4">
+    <Card className="mb-4 border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200">
       <CardContent className="p-4">
         <div className="space-y-4">
           <div className="flex items-center gap-2 mb-3">
-            <FileText className="h-4 w-4 text-green-600" />
-            <h4 className="font-medium text-gray-900 dark:text-gray-100">
+            <FileText className="h-4 w-4 text-emerald-600" />
+            <h4 className="font-medium text-slate-800 dark:text-slate-100">
               {language === 'fr' ? 'Coller le texte des laboratoires' : 'Paste Lab Text'}
             </h4>
           </div>
@@ -177,7 +177,7 @@ export function LabTextPaste({ onLabValuesExtracted }: LabTextPasteProps) {
                 value={labText}
                 onChange={(e) => setLabText(e.target.value)}
                 onPaste={handleTextareaPaste}
-                className="min-h-32 font-mono text-sm resize-y"
+                className="min-h-32 font-mono text-sm resize-y border-slate-200 focus:border-emerald-400 focus:ring-emerald-400/20"
                 disabled={isProcessing}
               />
               {labText && (
@@ -217,7 +217,7 @@ export function LabTextPaste({ onLabValuesExtracted }: LabTextPasteProps) {
                 onClick={handleProcessText}
                 disabled={isProcessing || !labText.trim()}
                 size="sm"
-                className="bg-green-600 hover:bg-green-700 text-white"
+                className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-sm"
               >
                 {isProcessing ? (
                   <>
@@ -235,10 +235,10 @@ export function LabTextPaste({ onLabValuesExtracted }: LabTextPasteProps) {
 
             {/* Success indicator */}
             {extractedCount !== null && extractedCount > 0 && !isProcessing && (
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+              <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200/50 dark:border-emerald-800/50 rounded-xl p-3">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span className="text-sm font-medium text-green-800 dark:text-green-200">
+                  <CheckCircle className="h-4 w-4 text-emerald-600" />
+                  <span className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
                     {language === 'fr' 
                       ? `${extractedCount} valeurs de laboratoire extraites avec succès`
                       : `${extractedCount} lab values successfully extracted`
@@ -249,7 +249,7 @@ export function LabTextPaste({ onLabValuesExtracted }: LabTextPasteProps) {
             )}
 
             {/* Instructions */}
-            <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+            <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1">
               <p className="font-medium">
                 {language === 'fr' ? 'Format attendu:' : 'Expected format:'}
               </p>

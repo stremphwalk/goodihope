@@ -37,7 +37,7 @@ export default function GroupsPage({ selectedMenu, setSelectedMenu, selectedSubO
 
   // Fetch user's current active group
   const fetchCurrentGroup = async () => {
-    if (!auth.user?.id_token || !auth.isAuthenticated) {
+    if (!auth.session?.access_token || !auth.isAuthenticated) {
       setLoading(false);
       return;
     }
@@ -45,7 +45,7 @@ export default function GroupsPage({ selectedMenu, setSelectedMenu, selectedSubO
     try {
       const response = await fetch('/api/groups/my-active-group', {
         headers: {
-          'Authorization': `Bearer ${auth.user.id_token}`
+          'Authorization': `Bearer ${auth.session.access_token}`
         }
       });
 
@@ -65,7 +65,7 @@ export default function GroupsPage({ selectedMenu, setSelectedMenu, selectedSubO
 
   useEffect(() => {
     fetchCurrentGroup();
-  }, [auth.isAuthenticated, auth.user?.id_token]);
+  }, [auth.isAuthenticated, auth.session?.access_token]);
 
   // Handle successful group creation/joining
   const handleGroupUpdate = () => {

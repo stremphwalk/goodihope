@@ -24,12 +24,24 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables')
 }
 
+// Get the current domain for redirect URLs
+const getRedirectUrl = () => {
+  if (!isServer && typeof window !== 'undefined') {
+    const { protocol, host } = window.location;
+    return `${protocol}//${host}`;
+  }
+  return 'https://arinote.vercel.app'; // Default fallback
+};
+
 // Client-side Supabase client (for frontend)
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true
+    detectSessionInUrl: true,
+    flowType: 'pkce',
+    storage: !isServer ? window.localStorage : undefined,
+    storageKey: 'arinote-auth'
   }
 })
 

@@ -181,13 +181,13 @@ export function MedicationTextPaste({ onMedicationsExtracted }: MedicationTextPa
   }, []);
 
   return (
-    <Card className="mb-4">
+    <Card className="mb-4 border-slate-200 shadow-sm hover:shadow-md transition-shadow duration-200">
       <CardContent className="p-4">
         <div className="space-y-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Pill className="h-4 w-4 text-blue-600" />
-              <h4 className="font-medium text-gray-900 dark:text-gray-100">
+              <Pill className="h-4 w-4 text-sky-600" />
+              <h4 className="font-medium text-slate-800 dark:text-slate-100">
                 {language === 'fr' ? 'Coller le texte des médicaments' : 'Paste Medication Text'}
               </h4>
             </div>
@@ -195,7 +195,7 @@ export function MedicationTextPaste({ onMedicationsExtracted }: MedicationTextPa
             {/* Toggle Switch for Inpatient vs Outpatient */}
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <Home className={`h-4 w-4 ${!isInpatient ? 'text-blue-600' : 'text-gray-400'}`} />
+                <Home className={`h-4 w-4 ${!isInpatient ? 'text-sky-600' : 'text-slate-400'}`} />
                 <Label htmlFor="medication-type-toggle" className="text-sm font-medium">
                   {language === 'fr' ? 'Domicile' : 'Home'}
                 </Label>
@@ -204,13 +204,13 @@ export function MedicationTextPaste({ onMedicationsExtracted }: MedicationTextPa
                 id="medication-type-toggle"
                 checked={isInpatient}
                 onCheckedChange={setIsInpatient}
-                className="data-[state=checked]:bg-green-600"
+                className="data-[state=checked]:bg-emerald-600"
               />
               <div className="flex items-center gap-2">
                 <Label htmlFor="medication-type-toggle" className="text-sm font-medium">
                   {language === 'fr' ? 'Hôpital' : 'Hospital'}
                 </Label>
-                <Hospital className={`h-4 w-4 ${isInpatient ? 'text-green-600' : 'text-gray-400'}`} />
+                <Hospital className={`h-4 w-4 ${isInpatient ? 'text-emerald-600' : 'text-slate-400'}`} />
               </div>
             </div>
           </div>
@@ -234,7 +234,7 @@ export function MedicationTextPaste({ onMedicationsExtracted }: MedicationTextPa
                   }
                 }}
                 onPaste={handleTextareaPaste}
-                className="min-h-32 font-mono text-sm resize-y"
+                className="min-h-32 font-mono text-sm resize-y border-slate-200 focus:border-sky-400 focus:ring-sky-400/20"
                 disabled={isProcessing}
               />
               {medicationText && (
@@ -274,7 +274,7 @@ export function MedicationTextPaste({ onMedicationsExtracted }: MedicationTextPa
                 onClick={handleProcessText}
                 disabled={isProcessing || !medicationText.trim()}
                 size="sm"
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white shadow-sm"
               >
                 {isProcessing ? (
                   <>
@@ -292,10 +292,10 @@ export function MedicationTextPaste({ onMedicationsExtracted }: MedicationTextPa
 
             {/* Success indicator */}
             {extractedCount !== null && extractedCount > 0 && !isProcessing && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+              <div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200/50 dark:border-sky-800/50 rounded-xl p-3">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                  <CheckCircle className="h-4 w-4 text-sky-600" />
+                  <span className="text-sm font-medium text-sky-800 dark:text-sky-200">
                     {language === 'fr' 
                       ? `${extractedCount} médicaments extraits avec succès et ajoutés aux ${isInpatient ? 'médicaments hospitaliers' : 'médicaments à domicile'}`
                       : `${extractedCount} medications successfully extracted and added to ${isInpatient ? 'hospital medications' : 'home medications'}`
@@ -306,7 +306,7 @@ export function MedicationTextPaste({ onMedicationsExtracted }: MedicationTextPa
             )}
 
             {/* Instructions */}
-            <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+            <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1">
               <p className="font-medium">
                 {language === 'fr' ? 'Format attendu:' : 'Expected format:'}
               </p>
@@ -322,11 +322,11 @@ export function MedicationTextPaste({ onMedicationsExtracted }: MedicationTextPa
               </p>
               <div className="flex items-center gap-2 text-xs">
                 <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-blue-100 border border-blue-300 rounded-full"></div>
+                  <div className="w-2 h-2 bg-sky-100 border border-sky-300 rounded-full"></div>
                   <span>{language === 'fr' ? 'Domicile' : 'Home'}</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-green-100 border border-green-300 rounded-full"></div>
+                  <div className="w-2 h-2 bg-emerald-100 border border-emerald-300 rounded-full"></div>
                   <span>{language === 'fr' ? 'Hôpital' : 'Hospital'}</span>
                 </div>
               </div>
