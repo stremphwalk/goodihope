@@ -52,7 +52,7 @@ export function AddEventForm({ groupId, onClose, onSuccess }: AddEventFormProps)
       return;
     }
 
-    if (!auth.user?.id_token) {
+    if (!auth.session?.access_token) {
       toast({
         title: "Error",
         description: "Authentication required",
@@ -75,7 +75,7 @@ export function AddEventForm({ groupId, onClose, onSuccess }: AddEventFormProps)
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.user.id_token}`
+          'Authorization': `Bearer ${auth.session.access_token}`
         },
         body: JSON.stringify({
           title: formData.title.trim(),

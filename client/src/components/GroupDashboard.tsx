@@ -111,12 +111,12 @@ export function GroupDashboard({ group, onLeaveGroup, onDataChange }: GroupDashb
 
   // Fetch dashboard data
   const fetchDashboardData = async () => {
-    if (!auth.user?.id_token || !auth.isAuthenticated) return;
+    if (!auth.session?.access_token || !auth.isAuthenticated) return;
 
     try {
       const response = await fetch(`/api/groups/${group.id}/dashboard`, {
         headers: {
-          'Authorization': `Bearer ${auth.user.id_token}`
+          'Authorization': `Bearer ${auth.session.access_token}`
         }
       });
 
@@ -137,7 +137,7 @@ export function GroupDashboard({ group, onLeaveGroup, onDataChange }: GroupDashb
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 3000);
     return () => clearInterval(interval);
-  }, [group.id, auth.user?.id_token]);
+  }, [group.id, auth.session?.access_token]);
 
   // Copy invite code to clipboard
   const copyInviteCode = async () => {
@@ -158,13 +158,13 @@ export function GroupDashboard({ group, onLeaveGroup, onDataChange }: GroupDashb
 
   // Leave group
   const handleLeaveGroup = async () => {
-    if (!auth.user?.id_token) return;
+    if (!auth.session?.access_token) return;
 
     try {
       const response = await fetch('/api/groups/leave', {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${auth.user.id_token}`
+          'Authorization': `Bearer ${auth.session.access_token}`
         }
       });
 
@@ -186,14 +186,14 @@ export function GroupDashboard({ group, onLeaveGroup, onDataChange }: GroupDashb
 
   // Update todo status
   const updateTodoStatus = async (todoId: number, status: TaskStatus) => {
-    if (!auth.user?.id_token) return;
+    if (!auth.session?.access_token) return;
 
     try {
       const response = await fetch(`/api/groups/${group.id}/todos/${todoId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.user.id_token}`
+          'Authorization': `Bearer ${auth.session.access_token}`
         },
         body: JSON.stringify({ status })
       });
@@ -223,14 +223,14 @@ export function GroupDashboard({ group, onLeaveGroup, onDataChange }: GroupDashb
 
   // Assign todo to user
   const assignTodo = async (todoId: number, assignedToUserId: number | null) => {
-    if (!auth.user?.id_token) return;
+    if (!auth.session?.access_token) return;
 
     try {
       const response = await fetch(`/api/groups/${group.id}/todos/${todoId}/assign`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.user.id_token}`
+          'Authorization': `Bearer ${auth.session.access_token}`
         },
         body: JSON.stringify({ assignedToUserId })
       });
@@ -262,13 +262,13 @@ export function GroupDashboard({ group, onLeaveGroup, onDataChange }: GroupDashb
 
   // Delete todo
   const deleteTodo = async (todoId: number) => {
-    if (!auth.user?.id_token) return;
+    if (!auth.session?.access_token) return;
 
     try {
       const response = await fetch(`/api/groups/${group.id}/todos/${todoId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${auth.user.id_token}`
+          'Authorization': `Bearer ${auth.session.access_token}`
         }
       });
 
@@ -296,14 +296,14 @@ export function GroupDashboard({ group, onLeaveGroup, onDataChange }: GroupDashb
 
   // Reorder todo tasks
   const reorderTodo = async (taskId: number, newStatus: TaskStatus, newPosition: number) => {
-    if (!auth.user?.id_token) return;
+    if (!auth.session?.access_token) return;
 
     try {
       const response = await fetch(`/api/groups/${group.id}/todos/reorder`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.user.id_token}`
+          'Authorization': `Bearer ${auth.session.access_token}`
         },
         body: JSON.stringify({ 
           taskId, 

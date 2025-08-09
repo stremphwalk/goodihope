@@ -35,7 +35,7 @@ export function AddTodoForm({ groupId, onClose, onSuccess }: AddTodoFormProps) {
       return;
     }
 
-    if (!auth.user?.id_token) {
+    if (!auth.session?.access_token) {
       toast({
         title: "Error",
         description: "Authentication required",
@@ -50,7 +50,7 @@ export function AddTodoForm({ groupId, onClose, onSuccess }: AddTodoFormProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.user.id_token}`
+          'Authorization': `Bearer ${auth.session.access_token}`
         },
         body: JSON.stringify({
           title: formData.title.trim(),

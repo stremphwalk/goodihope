@@ -14,6 +14,7 @@ import { Stethoscope } from "lucide-react";
 import LiveTranslationPage from './pages/live-translation';
 // Lazy load pages for better code splitting
 const AuthPage = lazy(() => import("@/components/auth/AuthPage").then(module => ({ default: module.AuthPage })));
+const LandingPage = lazy(() => import("@/pages/landing"));
 const Navigation = lazy(() => import("@/components/Navigation").then(module => ({ default: module.Navigation })));
 const MarketingPage = lazy(() => import("@/components/marketing/MarketingPage"));
 const ReviewOfSystems = lazy(() => import("@/pages/review-of-systems"));
@@ -66,6 +67,7 @@ function Router({ selectedMenu, setSelectedMenu, selectedSubOption, setSelectedS
 
 function ProtectedApp() {
   const auth = useAuth();
+  const [location, setLocation] = useLocation();
   const [selectedMenu, setSelectedMenu] = useState('medical-notes');
   const [selectedSubOption, setSelectedSubOption] = useState('note-type');
 
@@ -82,6 +84,20 @@ function ProtectedApp() {
       setSelectedSubOption(persistedSubOption);
     }
   }, []); // Empty dependency array - only run once on mount
+
+  // Redirect to home page if authenticated and on an invalid route
+  useEffect(() => {
+    if (auth.isAuthenticated && !auth.isLoading) {
+      // Check if current location is a valid route
+      const validRoutes = ['/', '/dot-phrases', '/calculations', '/groups', '/profile', '/live-translation'];
+      const isValidRoute = validRoutes.some(route => location === route);
+      
+      // If not on a valid route and not on auth/landing pages, redirect to home
+      if (!isValidRoute && !location.startsWith('/auth') && location !== '/landing') {
+        setLocation('/');
+      }
+    }
+  }, [auth.isAuthenticated, auth.isLoading, location, setLocation]);
 
   // Persist state changes to sessionStorage - with guards to prevent loops
   useEffect(() => {
@@ -104,13 +120,36 @@ function ProtectedApp() {
     return <div className="flex items-center justify-center h-screen">Error: {auth.error}</div>;
   }
 
-  if (auth.isAuthenticated) {
+  // Check if user is on auth page or landing page
+  const isAuthPage = location === '/auth' || location.startsWith('/auth?');
+  const isLandingPage = location === '/landing';
+
+  if (auth.isAuthenticated && !isLandingPage && !isAuthPage) {
     return <Router selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />;
   }
 
+  // Show landing page for unauthenticated users (except on auth page)
+  if (!auth.isAuthenticated && !isAuthPage) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <LandingPage />
+      </Suspense>
+    );
+  }
+
+  // Show auth page when on /auth route
+  if (isAuthPage) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <AuthPage />
+      </Suspense>
+    );
+  }
+
+  // Show landing page
   return (
     <Suspense fallback={<PageLoader />}>
-      <AuthPage />
+      <LandingPage />
     </Suspense>
   );
 }
