@@ -8,7 +8,7 @@ import {
   RotateCcw, 
   FileText
 } from 'lucide-react';
-import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
+import { SmartTextEditor } from '@/components/SmartTextEditor';
 
 interface SimpleLivePreviewProps {
   note: string;
@@ -76,7 +76,7 @@ export function SimpleLivePreview({
           {/* Content Area */}
           <div className="flex-1 relative w-full">
             
-            <DotPhraseTextarea
+            <SmartTextEditor
               value={note}
               onChange={onNoteChange}
               placeholder="Generated medical note will appear here..."

@@ -90,7 +90,7 @@ import { processLabValues, formatLabValuesForNote, type LabValue, type Processed
 import { loadLabSettings, getPanelDefaultSelections } from "@/lib/labSettings";
 import { categorizeLabTest } from "@/lib/labCategorizer";
 import * as DiffMatchPatch from 'diff-match-patch';
-import { DotPhraseTextarea } from '@/components/DotPhraseTextarea';
+import { SmartTextEditor } from '@/components/SmartTextEditor';
 import { useGlobalScrollPreservation } from '@/hooks/useGlobalScrollPreservation';
 import HpiSection from '@/components/HpiSection';
 import { TemplateAwareLivePreview } from '@/components/TemplateAwareLivePreview';

@@ -57,6 +57,8 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     try {
       await register(email, password, name);
       toast.success('Account created successfully!');
+      // Redirect to main app after successful registration
+      setLocation('/');
     } catch (error) {
       // Error is already set in the auth context
       console.error('Registration error:', error);

@@ -85,15 +85,23 @@ function ProtectedApp() {
     }
   }, []); // Empty dependency array - only run once on mount
 
-  // Redirect to home page if authenticated and on an invalid route
+  // Handle post-authentication routing
   useEffect(() => {
     if (auth.isAuthenticated && !auth.isLoading) {
-      // Check if current location is a valid route
+      // Check if current location is a valid app route
       const validRoutes = ['/', '/dot-phrases', '/calculations', '/groups', '/profile', '/live-translation'];
       const isValidRoute = validRoutes.some(route => location === route);
+      const isAuthPage = location === '/auth' || location.startsWith('/auth?');
+      const isLandingPage = location === '/landing';
       
-      // If not on a valid route and not on auth/landing pages, redirect to home
-      if (!isValidRoute && !location.startsWith('/auth') && location !== '/landing') {
+      // If user just logged in and is on auth/landing page, redirect to home
+      if (isAuthPage || isLandingPage) {
+        console.log('User authenticated, redirecting from', location, 'to /');
+        setLocation('/');
+      }
+      // If not on a valid route, redirect to home
+      else if (!isValidRoute) {
+        console.log('Invalid route detected, redirecting from', location, 'to /');
         setLocation('/');
       }
     }
@@ -124,7 +132,8 @@ function ProtectedApp() {
   const isAuthPage = location === '/auth' || location.startsWith('/auth?');
   const isLandingPage = location === '/landing';
 
-  if (auth.isAuthenticated && !isLandingPage && !isAuthPage) {
+  // Show the main app if authenticated (routing logic above will handle redirects)
+  if (auth.isAuthenticated) {
     return <Router selectedMenu={selectedMenu} setSelectedMenu={setSelectedMenu} selectedSubOption={selectedSubOption} setSelectedSubOption={setSelectedSubOption} />;
   }
 

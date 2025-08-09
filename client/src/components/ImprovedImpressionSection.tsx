@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { FileText, Plus, X, ChevronDown, ChevronUp, Expand, Minimize, Trash2, GripVertical } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { DotPhraseTextarea } from './DotPhraseTextarea';
+import { SmartTextEditor } from './SmartTextEditor';
 import { useScrollPreservation } from '@/hooks/useScrollPreservation';
 import { wrapText } from '@/lib/textFormatting';
 import {
@@ -326,7 +326,7 @@ export function ImprovedImpressionSection({ data, onChange }: ImprovedImpression
                       }`}>
                         {entryIndex + 1}
                       </div>
-                      <DotPhraseTextarea
+                      <SmartTextEditor
                         value={entry.mainImpression}
                         onChange={(value) => updateMainImpression(entry.id, value)}
                         placeholder={language === 'fr' ? "Entrer l'impression clinique principale..." : 'Enter main clinical impression...'}
@@ -368,7 +368,7 @@ export function ImprovedImpressionSection({ data, onChange }: ImprovedImpression
                               <DraggableSubEntry key={`${entry.id}-sub-${subIndex}`} id={`${entry.id}-sub-${subIndex}`}>
                                 <div className="flex items-center space-x-2">
                                   <div className="w-2 h-2 bg-orange-400 rounded-full flex-shrink-0 mt-2"></div>
-                                  <DotPhraseTextarea
+                                  <SmartTextEditor
                                     value={subEntry}
                                     onChange={(value) => updateSubEntry(entry.id, subIndex, value)}
                                     placeholder={language === 'fr' ? 'Ajouter des détails...' : 'Add details...'}

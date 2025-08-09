@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { FileText, Plus, X, ChevronDown, ChevronUp, Expand, Minimize, Trash2, GripVertical } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { DotPhraseTextarea } from './DotPhraseTextarea';
+import { SmartTextEditor } from './SmartTextEditor';
 import { useScrollPreservation } from '@/hooks/useScrollPreservation';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -359,7 +359,7 @@ export function ImprovedPMHSection({ data, onChange }: ImprovedPMHSectionProps) 
                       }`}>
                         {entryIndex + 1}
                       </div>
-                      <DotPhraseTextarea
+                      <SmartTextEditor
                         value={entry.mainCondition}
                         onChange={(value) => updateMainCondition(entry.id, value)}
                         placeholder={language === 'fr' ? "Entrer l'antécédent médical principal..." : 'Enter main medical condition...'}
@@ -397,7 +397,7 @@ export function ImprovedPMHSection({ data, onChange }: ImprovedPMHSectionProps) 
                         {entry.subEntries.map((subEntry, subIndex) => (
                           <div key={`${entry.id}-${subIndex}`} className="flex items-center space-x-2">
                             <div className="w-2 h-2 bg-indigo-400 rounded-full flex-shrink-0 mt-2"></div>
-                            <DotPhraseTextarea
+                            <SmartTextEditor
                               value={subEntry}
                               onChange={(value) => updateSubEntry(entry.id, subIndex, value)}
                               placeholder={language === 'fr' ? 'Ajouter des détails...' : 'Add details...'}
