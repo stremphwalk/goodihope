@@ -1,3 +1,4 @@
+import { setupTranslationWs } from './translation-ws'; // <-- Added import
 import dotenv from 'dotenv';
 dotenv.config();
 import express, { type Request, Response, NextFunction } from "express";
@@ -12,16 +13,12 @@ const app = express();
 
 // Apply compression middleware for better performance
 app.use(compression({
-  // Only compress files larger than 1kb
   threshold: 1024,
-  // Compression level (1-9, 6 is default)
   level: 6,
-  // Don't compress these file types
   filter: (req, res) => {
     if (req.headers['x-no-compression']) {
       return false;
     }
-    // Compress everything else
     return compression.filter(req, res);
   }
 }));
@@ -70,9 +67,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Add a basic health check endpoint that doesn't depend on any external services
+// Health check endpoint
 app.get('/health', (req, res) => {
-  // Simple health check that just returns OK - no database or external dependencies
   res.status(200).json({ 
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -86,7 +82,7 @@ app.get('/health', (req, res) => {
     log(`Environment: ${process.env.NODE_ENV}`);
     log(`Port: ${process.env.PORT || 'not set, using 5001'}`);
     
-    // Register transcription routes with specific rate limiting
+    // Register transcription routes
     app.use('/api/transcription', createRateLimiter(30), transcriptionRoutes);
     
     // Register routes with error handling
@@ -97,15 +93,12 @@ app.get('/health', (req, res) => {
       log('Routes registered successfully');
     } catch (error) {
       log(`❌ Failed to register routes: ${error}`);
-      // Continue anyway - maybe some routes failed but we can still serve health check
       server = require("http").createServer(app);
     }
 
     app.use(errorHandler);
 
-    // importantly only setup vite in development and after
-    // setting up all the other routes so the catch-all route
-    // doesn't interfere with the other routes
+    // Setup Vite or static serving
     if (process.env.NODE_ENV === "development") {
       log('Setting up Vite for development...');
       await setupVite(app, server);
@@ -116,11 +109,10 @@ app.get('/health', (req, res) => {
         log('Static file serving setup complete');
       } catch (error) {
         log(`Warning: Error setting up static files: ${error}`);
-        // Don't throw - server can still run without static files for health check
       }
     }
 
-    // Use process.env.PORT for Railway/production, fallback to 5001 for development
+    // Start server
     const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 5001;
     log(`Attempting to start server on port ${port}...`);
     
@@ -128,6 +120,9 @@ app.get('/health', (req, res) => {
       log(`✅ Server successfully started on port ${port}`);
       log(`Health check available at http://0.0.0.0:${port}/health`);
     });
+
+    // 🔹 Attach translation WebSocket AFTER server starts
+    setupTranslationWs(server);
 
     server.on('error', (error: any) => {
       log(`❌ Server error: ${error.message}`);
@@ -145,20 +140,16 @@ app.get('/health', (req, res) => {
       
       server.close(async () => {
         log('🔒 HTTP server closed');
-        
-        // Close database connections
         try {
           const { closeDatabase } = await import('./database');
           await closeDatabase();
         } catch (error) {
           log(`Warning: Error closing database: ${error}`);
         }
-        
         log('✅ Graceful shutdown complete');
         process.exit(0);
       });
       
-      // Force close after 5 seconds
       setTimeout(() => {
         log('⚠️  Forced shutdown after timeout');
         process.exit(1);

@@ -95,6 +95,12 @@ export function MainLayout({
       icon: <Calculator className="w-5 h-5" />,
       subOptions: [],
     },
+    {
+      key: 'live-translation',
+      label: language === 'fr' ? 'Traduction en direct' : 'Live Translation',
+      icon: <Globe />,
+      subOptions: [],
+    },
   ];
 
   const MAIN_MENUS = getMainMenus();
@@ -112,6 +118,8 @@ export function MainLayout({
       newMenu = 'smart-options';
     } else if (location === '/calculations' && selectedMenu !== 'calculations') {
       newMenu = 'calculations';
+    } else if (location === '/live-translation' && selectedMenu !== 'live-translation') {
+      newMenu = 'live-translation';
     } else if (location === '/' && selectedMenu !== 'medical-notes') {
       newMenu = 'medical-notes';
     }
@@ -123,25 +131,25 @@ export function MainLayout({
 
   // Synchronize open/close state and suboption selection with selectedMenu
   useEffect(() => {
-    const newMedicalNotesOpen = selectedMenu === 'medical-notes';
-    const newSmartOptionsOpen = selectedMenu === 'smart-options';
-    
-    if (newMedicalNotesOpen !== medicalNotesOpen) {
-      setMedicalNotesOpen(newMedicalNotesOpen);
+    // Only auto-close sections when switching away to a different main menu.
+    if (selectedMenu !== 'medical-notes' && medicalNotesOpen) {
+      setMedicalNotesOpen(false)
     }
-    if (newSmartOptionsOpen !== smartOptionsOpen) {
-      setSmartOptionsOpen(newSmartOptionsOpen);
+    if (selectedMenu !== 'smart-options' && smartOptionsOpen) {
+      setSmartOptionsOpen(false)
     }
-    
+
     // Only update sub-option if current one is invalid for the selected menu
-    const menu = MAIN_MENUS.find((m) => m.key === selectedMenu);
+    const menu = MAIN_MENUS.find((m) => m.key === selectedMenu)
     if (menu && menu.subOptions.length > 0) {
-      const validSubOption = menu.subOptions.some(sub => sub?.key === selectedSubOption);
+      const validSubOption = menu.subOptions.some(sub => sub?.key === selectedSubOption)
       if (!validSubOption) {
-        setSelectedSubOption(menu.subOptions[0]?.key || '');
+        setSelectedSubOption(menu.subOptions[0]?.key || '')
       }
     }
-  }, [selectedMenu, selectedSubOption, MAIN_MENUS, setSelectedSubOption, medicalNotesOpen, smartOptionsOpen]);
+  }, [selectedMenu, selectedSubOption, MAIN_MENUS, setSelectedSubOption, medicalNotesOpen, smartOptionsOpen])
+
+  const isShowingPreview = Boolean(hasLivePreview && livePreview);
 
   return (
     <SidebarProvider>
@@ -175,19 +183,27 @@ export function MainLayout({
                       } else if (menu.key === "calculations") {
                         setLocation('/calculations');
                         return;
+                      } else if (menu.key === 'live-translation') {
+                        setLocation('/live-translation');
+                        return;
                       }
                     }
-                    
+
                     setSelectedMenu(menu.key);
-                    
-                    // Handle navigation to different pages
+
+                    // Handle navigation and toggle behavior
                     if (menu.key === "medical-notes") {
-                      setMedicalNotesOpen(true); // Always keep medical notes open when selected
-                      if (menu.subOptions.length > 0) {
-                        setSelectedSubOption(menu.subOptions[0]?.key || '');
-                      }
-                      if (location !== '/') {
-                        setLocation('/');
+                      // If already selected, toggle collapse/expand instead of forcing open
+                      if (selectedMenu === 'medical-notes') {
+                        setMedicalNotesOpen((open) => !open)
+                      } else {
+                        setMedicalNotesOpen(true)
+                        if (menu.subOptions.length > 0) {
+                          setSelectedSubOption(menu.subOptions[0]?.key || '')
+                        }
+                        if (location !== '/') {
+                          setLocation('/')
+                        }
                       }
                     } else if (menu.key === "smart-options") {
                       setSmartOptionsOpen((open) => !open);
@@ -201,6 +217,10 @@ export function MainLayout({
                     } else if (menu.key === "calculations") {
                       if (location !== '/calculations') {
                         setLocation('/calculations');
+                      }
+                    } else if (menu.key === 'live-translation') {
+                      if (location !== '/live-translation') {
+                        setLocation('/live-translation');
                       }
                     } else {
                       if (menu.subOptions.length > 0) {
@@ -303,7 +323,7 @@ export function MainLayout({
           </div>
         </Sidebar>
         {/* Main content area */}
-        <main className={`medical-main-content ${!hasLivePreview ? 'no-right-margin' : ''}`}>
+        <main className={`medical-main-content ${!isShowingPreview ? 'no-right-margin' : ''}`}>
           {children}
         </main>
         {/* Fixed preview panel on far right - only render when hasLivePreview is true */}
