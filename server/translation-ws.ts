@@ -12,10 +12,17 @@ if (!SONIOX_API_KEY) {
 export function setupTranslationWs(server: Server) {
   const wss = new WebSocketServer({ server, path: '/translate-ws' });
 
-  wss.on('connection', async (clientWs) => {
-    console.log('🌐 New Live Translation client connected');
+  wss.on('connection', async (clientWs, req) => {
+    console.log('🌐 New Live Translation client connected from:', req.headers.origin || 'unknown');
 
     // Connect to Soniox's translate-realtime API
+    if (!SONIOX_API_KEY) {
+      console.error('❌ SONIOX_API_KEY not configured');
+      clientWs.send(JSON.stringify({ error: 'Translation service not configured' }));
+      clientWs.close();
+      return;
+    }
+
     const sonioxWs = new WebSocket('wss://api.soniox.com/translate-realtime', {
       headers: {
         Authorization: `Bearer ${SONIOX_API_KEY}`,
@@ -48,20 +55,43 @@ export function setupTranslationWs(server: Server) {
 
     sonioxWs.on('error', (err) => {
       console.error('❌ Soniox WebSocket error:', err);
-      clientWs.send(JSON.stringify({ error: 'Translation service error' }));
+      try { 
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify({ error: 'Translation service error' }));
+        }
+      } catch {}
     });
 
-    clientWs.on('message', (msg) => {
+    sonioxWs.on('close', () => {
+      console.log('🔌 Soniox WebSocket closed');
       try {
-        // Forward config messages or audio data directly to Soniox
-        sonioxWs.send(msg);
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.close();
+        }
+      } catch {}
+    });
+
+    // Forward messages (binary audio or JSON config)
+    clientWs.on('message', (msg, isBinary) => {
+      try {
+        // console.log('Client message', isBinary ? '(binary audio)' : msg.toString());
+        sonioxWs.send(msg, { binary: isBinary });
       } catch (err) {
         console.error('⚠️ Error sending message to Soniox:', err);
       }
     });
 
+    // Keep-alive pings
+    const pingInterval = setInterval(() => {
+      try {
+        if (clientWs.readyState === WebSocket.OPEN) clientWs.ping();
+        if (sonioxWs.readyState === WebSocket.OPEN) sonioxWs.ping?.();
+      } catch {}
+    }, 25000);
+
     clientWs.on('close', () => {
       console.log('❎ Client disconnected from Live Translation');
+      clearInterval(pingInterval);
       sonioxWs.close();
     });
   });

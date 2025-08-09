@@ -131,25 +131,23 @@ export function MainLayout({
 
   // Synchronize open/close state and suboption selection with selectedMenu
   useEffect(() => {
-    const newMedicalNotesOpen = selectedMenu === 'medical-notes';
-    const newSmartOptionsOpen = selectedMenu === 'smart-options';
-    
-    if (newMedicalNotesOpen !== medicalNotesOpen) {
-      setMedicalNotesOpen(newMedicalNotesOpen);
+    // Only auto-close sections when switching away to a different main menu.
+    if (selectedMenu !== 'medical-notes' && medicalNotesOpen) {
+      setMedicalNotesOpen(false)
     }
-    if (newSmartOptionsOpen !== smartOptionsOpen) {
-      setSmartOptionsOpen(newSmartOptionsOpen);
+    if (selectedMenu !== 'smart-options' && smartOptionsOpen) {
+      setSmartOptionsOpen(false)
     }
-    
+
     // Only update sub-option if current one is invalid for the selected menu
-    const menu = MAIN_MENUS.find((m) => m.key === selectedMenu);
+    const menu = MAIN_MENUS.find((m) => m.key === selectedMenu)
     if (menu && menu.subOptions.length > 0) {
-      const validSubOption = menu.subOptions.some(sub => sub?.key === selectedSubOption);
+      const validSubOption = menu.subOptions.some(sub => sub?.key === selectedSubOption)
       if (!validSubOption) {
-        setSelectedSubOption(menu.subOptions[0]?.key || '');
+        setSelectedSubOption(menu.subOptions[0]?.key || '')
       }
     }
-  }, [selectedMenu, selectedSubOption, MAIN_MENUS, setSelectedSubOption, medicalNotesOpen, smartOptionsOpen]);
+  }, [selectedMenu, selectedSubOption, MAIN_MENUS, setSelectedSubOption, medicalNotesOpen, smartOptionsOpen])
 
   const isShowingPreview = Boolean(hasLivePreview && livePreview);
 
@@ -172,35 +170,40 @@ export function MainLayout({
                   className={`medical-nav-button ${selectedMenu === menu.key ? 'medical-nav-active' : ''}`}
                   onClick={() => {
                     // Navigate to the appropriate route when switching from profile page
-                                          if (location === '/profile') {
-                        if (menu.key === "medical-notes") {
-                          setLocation('/');
-                          return;
-                        } else if (menu.key === "smart-options") {
-                          setLocation('/dot-phrases');
-                          return;
-                        } else if (menu.key === "team-groups") {
-                          setLocation('/groups');
-                          return;
-                        } else if (menu.key === "calculations") {
-                          setLocation('/calculations');
-                          return;
-                        } else if (menu.key === 'live-translation') {
-                          setLocation('/live-translation');
-                          return;
-                        }
-                      }
-                    
-                    setSelectedMenu(menu.key);
-                    
-                    // Handle navigation to different pages
-                    if (menu.key === "medical-notes") {
-                      setMedicalNotesOpen(true); // Always keep medical notes open when selected
-                      if (menu.subOptions.length > 0) {
-                        setSelectedSubOption(menu.subOptions[0]?.key || '');
-                      }
-                      if (location !== '/') {
+                    if (location === '/profile') {
+                      if (menu.key === "medical-notes") {
                         setLocation('/');
+                        return;
+                      } else if (menu.key === "smart-options") {
+                        setLocation('/dot-phrases');
+                        return;
+                      } else if (menu.key === "team-groups") {
+                        setLocation('/groups');
+                        return;
+                      } else if (menu.key === "calculations") {
+                        setLocation('/calculations');
+                        return;
+                      } else if (menu.key === 'live-translation') {
+                        setLocation('/live-translation');
+                        return;
+                      }
+                    }
+
+                    setSelectedMenu(menu.key);
+
+                    // Handle navigation and toggle behavior
+                    if (menu.key === "medical-notes") {
+                      // If already selected, toggle collapse/expand instead of forcing open
+                      if (selectedMenu === 'medical-notes') {
+                        setMedicalNotesOpen((open) => !open)
+                      } else {
+                        setMedicalNotesOpen(true)
+                        if (menu.subOptions.length > 0) {
+                          setSelectedSubOption(menu.subOptions[0]?.key || '')
+                        }
+                        if (location !== '/') {
+                          setLocation('/')
+                        }
                       }
                     } else if (menu.key === "smart-options") {
                       setSmartOptionsOpen((open) => !open);

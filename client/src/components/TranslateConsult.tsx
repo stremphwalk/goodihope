@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, Square, Globe } from 'lucide-react';
 
@@ -31,8 +31,45 @@ export default function TranslateConsult() {
   const speakerMapRef = useRef<Record<string, Role>>({});
 
   useEffect(() => {
-    const wsUrl =
-      `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/translate-ws`;
+    const computeWsUrl = (): string => {
+      const getParam = (key: string): string | null => {
+        const searchParams = new URLSearchParams(window.location.search);
+        const fromSearch = searchParams.get(key);
+        if (fromSearch) return fromSearch;
+        const hash = window.location.hash || '';
+        const qIndex = hash.indexOf('?');
+        if (qIndex !== -1) {
+          const hashQuery = hash.slice(qIndex + 1);
+          const hashParams = new URLSearchParams(hashQuery);
+          const fromHash = hashParams.get(key);
+          if (fromHash) return fromHash;
+        }
+        return null;
+      };
+
+      const wsOverride = getParam('ws');
+      if (wsOverride && /^(ws|wss):\/\//i.test(wsOverride)) return wsOverride;
+
+      const baseOverride = getParam('base');
+      if (baseOverride) {
+        try {
+          const base = new URL(baseOverride, window.location.href);
+          const wsProtocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+          return `${wsProtocol}//${base.host}/translate-ws`;
+        } catch {}
+      }
+
+      // Domain-aware permanent mapping for production
+      const host = window.location.host.toLowerCase();
+      if (host === 'www.arinote.co') {
+        return `wss://arinote.co/translate-ws`;
+      }
+
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      return `${proto}://${window.location.host}/translate-ws`;
+    };
+
+    const wsUrl = computeWsUrl();
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 

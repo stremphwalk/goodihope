@@ -1,5 +1,6 @@
-import { userQueries, teamGroupQueries, groupMemberQueries } from "./database-supabase.js";
-import { teamGroups, groupMembers, users } from "../shared/schema.js";
+import { userQueries, teamGroupQueries, groupMemberQueries } from "./database-supabase";
+import { teamGroups, groupMembers, users } from "../shared/schema";
+import { db } from "./database";
 import { eq, and, lt, gt } from "drizzle-orm";
 
 // Letters and numbers for invite codes (excluding similar looking characters)
@@ -91,7 +92,7 @@ export async function cleanupExpiredGroups(): Promise<void> {
 /**
  * Gets a user's current active group
  */
-export async function getUserActiveGroup(userId: number) {
+export async function getUserActiveGroup(userId: string) {
   try {
     const result = await db
       .select({
@@ -133,7 +134,7 @@ export async function getUserActiveGroup(userId: number) {
 /**
  * Removes a user from their current group (if any)
  */
-export async function removeUserFromCurrentGroup(userId: number): Promise<void> {
+export async function removeUserFromCurrentGroup(userId: string): Promise<void> {
   try {
     await db
       .delete(groupMembers)
