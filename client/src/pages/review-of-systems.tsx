@@ -27,7 +27,6 @@ import {
   Bone,
   Shield,
   Activity,
-  ChevronLeft,
   ChevronRight,
   ClipboardList,
   Search,
@@ -96,6 +95,7 @@ import HpiSection from '@/components/HpiSection';
 import { TemplateAwareLivePreview } from '@/components/TemplateAwareLivePreview';
 import { usePersistedState } from '@/hooks/usePersistedState';
 import { useDebounceCallback } from '@/hooks/useDebounce';
+import { CustomNoteEditor } from '@/components/CustomNoteEditor';
 
 import { type TemplateContent, getSectionById } from '@/lib/sectionLibrary';
 
@@ -1947,35 +1947,11 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       case "note-type":
   if ((noteType as string) === "custom") {
     return (
-      <div className="flex flex-col h-full">
-        {/* Header with back button */}
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Edit3 className="w-6 h-6 text-orange-600" />
-            <h2 className="text-xl font-semibold text-gray-900">
-              {language === 'fr' ? 'Note Personnalisée' : 'Custom Note'}
-            </h2>
-          </div>
-          <Button
-            onClick={() => setNoteTypeState('')}
-            variant="outline"
-            size="sm"
-            className="flex items-center gap-1"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            {language === 'fr' ? 'Retour' : 'Back to Note Types'}
-          </Button>
-        </div>
-        
-        {/* Expanded Live Preview - optimized for custom note editing */}
-        <div className="flex-1 flex">
-          <div className="w-full max-w-none px-0">
-            <div className="h-full">
-              {renderLivePreview()}
-            </div>
-          </div>
-        </div>
-      </div>
+      <CustomNoteEditor
+        note={note || ''}
+        onChange={handleNoteChange}
+        onBack={() => setNoteTypeState('')}
+      />
     );
   }
         return (
