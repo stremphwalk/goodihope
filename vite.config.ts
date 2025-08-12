@@ -2,7 +2,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { fileURLToPath, URL } from "node:url";
-import { visualizer } from "rollup-plugin-visualizer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,15 +17,7 @@ export default defineConfig(({ mode }) => ({
     }),
     // Conditionally load cartographer plugin (removed async/await)
     ...(process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined ? [] : []),
-    // Bundle analyzer for production builds
-    ...(mode === "production" && process.env.ANALYZE ? [
-      visualizer({
-        filename: "bundle-analysis.html",
-        open: false,
-        gzipSize: true,
-        brotliSize: true,
-      })
-    ] : [])
+    // Bundle analyzer disabled (plugin not available)
   ],
   resolve: {
     alias: {
