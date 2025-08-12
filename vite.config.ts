@@ -7,14 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(({ mode }) => ({
   plugins: [
-    react({
-      // Optimize React for production
-      babel: mode === "production" ? {
-        plugins: [
-          ["babel-plugin-react-remove-properties", { properties: ["data-testid"] }]
-        ]
-      } : undefined
-    }),
+    react(),
     // Conditionally load cartographer plugin (removed async/await)
     ...(process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined ? [] : []),
     // Bundle analyzer disabled (plugin not available)
