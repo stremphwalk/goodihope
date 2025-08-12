@@ -1866,11 +1866,11 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   // On blur, commit the live typing text to the main state to trigger a note update.
   const handlePMHBlur = useCallback((updatedText?: string) => {
     const newText = updatedText !== undefined ? updatedText : typingPmhText;
-    // Only update if the text actually changed to prevent feedback loops
-    if (newText !== pmhText) {
-      setPmhText(newText);
-    }
-  }, [typingPmhText, setPmhText, pmhText]);
+    // Always update on blur to ensure live preview refreshes, even if text hasn't changed
+    setPmhText(newText);
+    // Also force note regeneration to ensure live preview updates
+    handleOptionChange();
+  }, [typingPmhText, setPmhText, handleOptionChange]);
   
   const timeoutRef = useRef<NodeJS.Timeout[]>([]);
   

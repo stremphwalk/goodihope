@@ -1,8 +1,8 @@
-import React, { useRef, useState, useCallback, useMemo, useImperativeHandle, forwardRef } from "react";
+import React, { useRef, useState, useCallback, useImperativeHandle, forwardRef } from "react";
 import { ChipBar } from "./ChipBar";
 import { parsePMH } from "@/lib/pmh/parse";
 import { renderPMH } from "@/lib/pmh/render";
-import { getCurrentLineInfo, getTokenRange, replaceRange, clamp, getLineType, isDiagnosisLine, isContextLine, hasContentAfterCursor, getIndentLevel } from "@/lib/pmh/caret";
+import { getCurrentLineInfo, getTokenRange, replaceRange, clamp, getLineType, hasContentAfterCursor, getIndentLevel } from "@/lib/pmh/caret";
 import { SYNONYMS } from "@/lib/pmh/dictionary";
 import type { PMHItem, PMHPreferences } from "@/types/pmh";
 
@@ -28,12 +28,14 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
 }, ref) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState(initialValue);
-  const [showPreview, setShowPreview] = useState(false);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [autocompleteItems, setAutocompleteItems] = useState<string[]>([]);
   const [autocompleteIndex, setAutocompleteIndex] = useState(0);
   const [autocompleteRange, setAutocompleteRange] = useState<{ start: number; end: number } | null>(null);
   const [autocompletePosition, setAutocompletePosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  
+  // Store parsed items separately to avoid recalculation on every render
+  const [parsedItems, setParsedItems] = useState<PMHItem[]>(() => parsePMH(initialValue));
 
   const prefs: PMHPreferences = {
     indentSpaces: 4,
@@ -42,19 +44,13 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
     ...preferences
   };
 
-  const items = useMemo(() => parsePMH(value), [value]);
-  const rendered = useMemo(() => renderPMH(items, prefs.indentSpaces), [items, prefs.indentSpaces]);
-
-  const debounceRef = useRef<NodeJS.Timeout>();
-  const handleChange = useCallback((newValue: string) => {
-    setValue(newValue);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const newItems = parsePMH(newValue);
-      const newRendered = renderPMH(newItems, prefs.indentSpaces);
-      onChange?.(newValue, newItems, newRendered);
-    }, 300);
-  }, [onChange, prefs.indentSpaces]);
+  // Parse and render only on blur or explicit updates
+  const updateParsedContent = useCallback(() => {
+    const newItems = parsePMH(value);
+    const newRendered = renderPMH(newItems, prefs.indentSpaces);
+    setParsedItems(newItems);
+    onChange?.(value, newItems, newRendered);
+  }, [value, onChange, prefs.indentSpaces]);
 
   const hideAutocomplete = useCallback(() => {
     setShowAutocomplete(false);
@@ -124,14 +120,12 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
     const newValue = replaceRange(value, autocompleteRange.start, autocompleteRange.end, expansion);
     const newCursor = autocompleteRange.start + expansion.length;
     
-    handleChange(newValue);
+    setValue(newValue);
     hideAutocomplete();
     
-    setTimeout(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(newCursor, newCursor);
-    }, 0);
-  }, [value, autocompleteRange, handleChange, hideAutocomplete]);
+    // Keep focus without setTimeout
+    textareaRef.current?.setSelectionRange(newCursor, newCursor);
+  }, [value, autocompleteRange, hideAutocomplete]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget;
@@ -181,11 +175,9 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
       const newValue = replaceRange(value, cursor, cursor, insertion);
       const newCursor = cursor + insertion.length;
       
-      handleChange(newValue);
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(newCursor, newCursor);
-      }, 0);
+      setValue(newValue);
+      // Directly set selection without setTimeout to avoid focus loss
+      textarea.setSelectionRange(newCursor, newCursor);
       return;
     }
 
@@ -200,21 +192,17 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
         const insertion = "    - ";
         const newValue = replaceRange(value, cursor, cursor, insertion);
         const newCursor = cursor + insertion.length;
-        handleChange(newValue);
-        setTimeout(() => {
-          textarea.focus();
-          textarea.setSelectionRange(newCursor, newCursor);
-        }, 0);
+        setValue(newValue);
+        // Directly set selection without setTimeout
+        textarea.setSelectionRange(newCursor, newCursor);
       } else if (lineType === 'diagnosis' && atEndOfLine) {
         // Tab at end of diagnosis line: create indented context point underneath
         const insertion = "\n    - ";
         const newValue = replaceRange(value, cursor, cursor, insertion);
         const newCursor = cursor + insertion.length;
-        handleChange(newValue);
-        setTimeout(() => {
-          textarea.focus();
-          textarea.setSelectionRange(newCursor, newCursor);
-        }, 0);
+        setValue(newValue);
+        // Directly set selection without setTimeout
+        textarea.setSelectionRange(newCursor, newCursor);
       } else if (lineType === 'context' && atEndOfLine) {
         // Tab at end of context line: create another context point at same level
         const currentIndent = getIndentLevel(line);
@@ -222,11 +210,9 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
         const insertion = `\n${spaces}- `;
         const newValue = replaceRange(value, cursor, cursor, insertion);
         const newCursor = cursor + insertion.length;
-        handleChange(newValue);
-        setTimeout(() => {
-          textarea.focus();
-          textarea.setSelectionRange(newCursor, newCursor);
-        }, 0);
+        setValue(newValue);
+        // Directly set selection without setTimeout
+        textarea.setSelectionRange(newCursor, newCursor);
       } else {
         // Tab on word: show autocomplete
         const tokenRange = getTokenRange(line, column);
@@ -250,25 +236,23 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
           const expansion = SYNONYMS[word.toLowerCase()];
           const globalStart = lineStart + tokenStart;
           const globalEnd = lineStart + tokenEnd;
-          const newValue = replaceRange(value, globalStart, globalEnd, expansion);
+          const newValue = replaceRange(value, globalStart, globalEnd, expansion + " ");
           const newCursor = globalStart + expansion.length + 1;
           
-          handleChange(newValue + " ");
-          setTimeout(() => {
-            textarea.focus();
-            textarea.setSelectionRange(newCursor, newCursor);
-          }, 0);
+          setValue(newValue);
+          // Directly set selection without setTimeout
+          textarea.setSelectionRange(newCursor, newCursor);
           return;
         }
       }
     }
-  }, [value, showAutocomplete, autocompleteItems, autocompleteIndex, applyAutocomplete, hideAutocomplete, handleChange, showAutocompleteForWord]);
+  }, [value, showAutocomplete, autocompleteItems, autocompleteIndex, applyAutocomplete, hideAutocomplete, showAutocompleteForWord]);
 
   const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
-    handleChange(newValue);
+    setValue(newValue);
     hideAutocomplete();
-  }, [handleChange, hideAutocomplete]);
+  }, [hideAutocomplete]);
 
   const insertChip = useCallback((label: string) => {
     const textarea = textareaRef.current;
@@ -290,21 +274,12 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
     }
 
     const newValue = replaceRange(value, cursor, cursor, insertion);
-    handleChange(newValue);
+    setValue(newValue);
 
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(newCursor, newCursor);
-    }, 0);
-  }, [value, handleChange]);
+    // Keep focus without setTimeout
+    textarea.setSelectionRange(newCursor, newCursor);
+  }, [value]);
 
-  const copyToClipboard = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(rendered);
-    } catch (err) {
-      console.error("Failed to copy:", err);
-    }
-  }, [rendered]);
 
   useImperativeHandle(ref, () => ({
     insertExternalText: (text: string) => {
@@ -315,16 +290,14 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
       const newValue = replaceRange(value, cursor, cursor, text);
       const newCursor = cursor + text.length;
       
-      handleChange(newValue);
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(newCursor, newCursor);
-      }, 0);
+      setValue(newValue);
+      // Keep focus without setTimeout
+      textarea.setSelectionRange(newCursor, newCursor);
     },
     focus: () => {
       textareaRef.current?.focus();
     }
-  }), [value, handleChange]);
+  }), [value]);
 
   return (
     <div className={`space-y-4 ${className}`}>
@@ -341,7 +314,11 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
           value={value}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          onBlur={onBlur}
+          onBlur={() => {
+            // Always update parsed content on blur to ensure live preview updates
+            updateParsedContent();
+            onBlur?.();
+          }}
           placeholder="Enter past medical history items...
 Tab at start: add context point (- )
 Tab at end of diagnosis: create context underneath
@@ -376,31 +353,6 @@ Enter in context: new diagnosis line"
         )}
       </div>
 
-      {/* Controls */}
-      <div className="flex gap-2">
-        <button
-          onClick={() => setShowPreview(!showPreview)}
-          className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
-        >
-          {showPreview ? "Hide" : "Show"} Preview
-        </button>
-        <button
-          onClick={copyToClipboard}
-          className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
-        >
-          Copy EHR Format
-        </button>
-      </div>
-
-      {/* Preview */}
-      {showPreview && (
-        <div className="space-y-2">
-          <div className="text-sm font-medium text-gray-700">EHR Preview:</div>
-          <pre className="p-3 bg-gray-50 border rounded text-sm whitespace-pre-wrap">
-            {rendered || "No items entered"}
-          </pre>
-        </div>
-      )}
     </div>
   );
 });

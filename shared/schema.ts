@@ -1,5 +1,5 @@
 import { pgTable, text, serial, integer, boolean, jsonb, timestamp, uuid } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
+// import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 export const users = pgTable("users", {
@@ -145,9 +145,9 @@ export const userLabSettings = pgTable("user_lab_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  email: true,
-  name: true,
+export const insertUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().optional(),
 });
 
 export const loginUserSchema = z.object({
@@ -161,86 +161,86 @@ export const registerUserSchema = z.object({
   name: z.string().min(1, "Name is required"),
 });
 
-export const insertUserSessionSchema = createInsertSchema(userSessions).pick({
-  userId: true,
-  sessionToken: true,
-  expiresAt: true,
+export const insertUserSessionSchema = z.object({
+  userId: z.string(),
+  sessionToken: z.string(),
+  expiresAt: z.date(),
 });
 
-export const insertDotPhraseSchema = createInsertSchema(dotPhrases).pick({
-  userId: true,
-  trigger: true,
-  content: true,
-  description: true,
-  category: true,
+export const insertDotPhraseSchema = z.object({
+  userId: z.string(),
+  trigger: z.string(),
+  content: z.string(),
+  description: z.string(),
+  category: z.string(),
 });
 
 // New insert schema for presets
-export const insertUserPresetSchema = createInsertSchema(userPresets).pick({
-  userId: true,
-  title: true,
-  isFavorite: true,
-  symptoms: true,
+export const insertUserPresetSchema = z.object({
+  userId: z.string(),
+  title: z.string(),
+  isFavorite: z.boolean().optional(),
+  symptoms: z.any(),
 });
 
 // Templates insert schema
-export const insertTemplateSchema = createInsertSchema(templates).pick({
-  userId: true,
-  name: true,
-  description: true,
-  category: true,
-  specialty: true,
-  content: true,
-  isPublic: true,
-  compatibleNoteTypes: true,
-  compatibleSubtypes: true,
-  sectionDefaults: true,
-  isFavorite: true,
+export const insertTemplateSchema = z.object({
+  userId: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  category: z.string().optional(),
+  specialty: z.string().optional(),
+  content: z.any(),
+  isPublic: z.boolean().optional(),
+  compatibleNoteTypes: z.array(z.string()).optional(),
+  compatibleSubtypes: z.array(z.string()).optional(),
+  sectionDefaults: z.any().optional(),
+  isFavorite: z.boolean().optional(),
 });
 
 // Team Groups insert schemas
-export const insertTeamGroupSchema = createInsertSchema(teamGroups).pick({
-  name: true,
-  description: true,
-  createdByUserId: true,
-  inviteCode: true,
-  expiresAt: true,
+export const insertTeamGroupSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  createdByUserId: z.string(),
+  inviteCode: z.string().optional(),
+  expiresAt: z.date().optional(),
 });
 
-export const insertGroupMemberSchema = createInsertSchema(groupMembers).pick({
-  groupId: true,
-  userId: true,
-  role: true,
+export const insertGroupMemberSchema = z.object({
+  groupId: z.number(),
+  userId: z.string(),
+  role: z.enum(['owner', 'admin', 'member']),
 });
 
-export const insertGroupTodoSchema = createInsertSchema(groupTodos).pick({
-  groupId: true,
-  title: true,
-  description: true,
-  createdByUserId: true,
+export const insertGroupTodoSchema = z.object({
+  groupId: z.number(),
+  title: z.string(),
+  description: z.string().optional(),
+  createdByUserId: z.string(),
 });
 
-export const insertGroupEventSchema = createInsertSchema(groupEvents).pick({
-  groupId: true,
-  title: true,
-  description: true,
-  eventDate: true,
-  createdByUserId: true,
+export const insertGroupEventSchema = z.object({
+  groupId: z.number(),
+  title: z.string(),
+  description: z.string().optional(),
+  eventDate: z.date(),
+  createdByUserId: z.string(),
 });
 
-export const insertUserLabSettingsSchema = createInsertSchema(userLabSettings).pick({
-  userId: true,
-  settings: true,
+export const insertUserLabSettingsSchema = z.object({
+  userId: z.string(),
+  settings: z.any(),
 });
 
-export const insertRosNoteSchema = createInsertSchema(rosNotes).pick({
-  userId: true,
-  patientName: true,
-  patientDob: true,
-  patientMrn: true,
-  selections: true,
-  medications: true,
-  generatedNote: true,
+export const insertRosNoteSchema = z.object({
+  userId: z.string(),
+  patientName: z.string().optional(),
+  patientDob: z.string().optional(),
+  patientMrn: z.string().optional(),
+  selections: z.any(),
+  medications: z.any().optional(),
+  generatedNote: z.string().optional(),
 });
 
 // Medication types for ordering by importance
