@@ -2,13 +2,14 @@ import React, { useRef, useState, useCallback, useMemo, useImperativeHandle, for
 import { ChipBar } from "./ChipBar";
 import { parsePMH } from "@/lib/pmh/parse";
 import { renderPMH } from "@/lib/pmh/render";
-import { getCurrentLineInfo, getTokenRange, replaceRange, clamp } from "@/lib/pmh/caret";
+import { getCurrentLineInfo, getTokenRange, replaceRange, clamp, getLineType, isDiagnosisLine, isContextLine, hasContentAfterCursor, getIndentLevel } from "@/lib/pmh/caret";
 import { SYNONYMS } from "@/lib/pmh/dictionary";
 import type { PMHItem, PMHPreferences } from "@/types/pmh";
 
 interface PMHEditorProps {
   initialValue?: string;
   onChange?: (raw: string, items: PMHItem[], rendered: string) => void;
+  onBlur?: () => void;
   preferences?: Partial<PMHPreferences>;
   className?: string;
 }
@@ -21,6 +22,7 @@ export interface PMHEditorRef {
 const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
   initialValue = "",
   onChange,
+  onBlur,
   preferences = {},
   className = ""
 }, ref) => {
@@ -31,6 +33,7 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
   const [autocompleteItems, setAutocompleteItems] = useState<string[]>([]);
   const [autocompleteIndex, setAutocompleteIndex] = useState(0);
   const [autocompleteRange, setAutocompleteRange] = useState<{ start: number; end: number } | null>(null);
+  const [autocompletePosition, setAutocompletePosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const prefs: PMHPreferences = {
     indentSpaces: 4,
@@ -60,6 +63,44 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
     setAutocompleteRange(null);
   }, []);
 
+  const calculateCursorPosition = useCallback((start: number) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return { top: 0, left: 0 };
+
+    // Create temporary span to measure text width
+    const textBeforeCursor = value.substring(0, start);
+    const lines = textBeforeCursor.split('\n');
+    const currentLine = lines[lines.length - 1];
+    
+    // Use computed styles to get accurate measurements
+    const computedStyle = window.getComputedStyle(textarea);
+    const fontSize = computedStyle.fontSize;
+    const fontFamily = computedStyle.fontFamily;
+    const lineHeight = parseFloat(computedStyle.lineHeight) || parseFloat(fontSize) * 1.2;
+    
+    // Create temporary element to measure text width
+    const measurer = document.createElement('span');
+    measurer.style.position = 'absolute';
+    measurer.style.left = '-9999px';
+    measurer.style.fontSize = fontSize;
+    measurer.style.fontFamily = fontFamily;
+    measurer.style.whiteSpace = 'pre';
+    measurer.textContent = currentLine;
+    document.body.appendChild(measurer);
+    
+    const textWidth = measurer.getBoundingClientRect().width;
+    document.body.removeChild(measurer);
+    
+    // Calculate position relative to textarea
+    const rect = textarea.getBoundingClientRect();
+    const padding = 12; // p-3 = 12px
+    
+    const top = (lines.length - 1) * lineHeight + lineHeight + padding;
+    const left = textWidth + padding;
+    
+    return { top, left };
+  }, [value]);
+
   const showAutocompleteForWord = useCallback((word: string, start: number, end: number) => {
     const matches = Object.keys(SYNONYMS).filter(k => 
       k.toLowerCase().startsWith(word.toLowerCase())
@@ -69,11 +110,12 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
       setAutocompleteItems(matches);
       setAutocompleteIndex(0);
       setAutocompleteRange({ start, end });
+      setAutocompletePosition(calculateCursorPosition(start));
       setShowAutocomplete(true);
     } else {
       hideAutocomplete();
     }
-  }, [hideAutocomplete]);
+  }, [hideAutocomplete, calculateCursorPosition]);
 
   const applyAutocomplete = useCallback((item: string) => {
     if (!autocompleteRange || !textareaRef.current) return;
@@ -121,10 +163,23 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
 
     if (e.key === "Enter") {
       e.preventDefault();
-      const isIndentedLine = /^\s+/.test(line);
-      const indent = isIndentedLine ? "    " : "";
-      const newValue = replaceRange(value, cursor, cursor, `\n${indent}`);
-      const newCursor = cursor + 1 + indent.length;
+      const lineType = getLineType(line);
+      
+      let insertion = "\n";
+      
+      if (lineType === 'context') {
+        // In context line: create new diagnosis line (no indent)
+        insertion = "\n";
+      } else if (lineType === 'diagnosis' && line.trim().length > 0) {
+        // In diagnosis line: maintain same level (no indent for next diagnosis)
+        insertion = "\n";
+      } else {
+        // Empty line or other cases: no special handling
+        insertion = "\n";
+      }
+      
+      const newValue = replaceRange(value, cursor, cursor, insertion);
+      const newCursor = cursor + insertion.length;
       
       handleChange(newValue);
       setTimeout(() => {
@@ -137,16 +192,43 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
     if (e.key === "Tab") {
       e.preventDefault();
       const isLineStart = column === 0 || /^\s*$/.test(line.slice(0, column));
+      const lineType = getLineType(line);
+      const atEndOfLine = !hasContentAfterCursor(line, column);
       
       if (isLineStart) {
-        const newValue = replaceRange(value, cursor, cursor, "    ");
-        const newCursor = cursor + 4;
+        // Tab at start: create context point with hyphen
+        const insertion = "    - ";
+        const newValue = replaceRange(value, cursor, cursor, insertion);
+        const newCursor = cursor + insertion.length;
+        handleChange(newValue);
+        setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(newCursor, newCursor);
+        }, 0);
+      } else if (lineType === 'diagnosis' && atEndOfLine) {
+        // Tab at end of diagnosis line: create indented context point underneath
+        const insertion = "\n    - ";
+        const newValue = replaceRange(value, cursor, cursor, insertion);
+        const newCursor = cursor + insertion.length;
+        handleChange(newValue);
+        setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(newCursor, newCursor);
+        }, 0);
+      } else if (lineType === 'context' && atEndOfLine) {
+        // Tab at end of context line: create another context point at same level
+        const currentIndent = getIndentLevel(line);
+        const spaces = " ".repeat(currentIndent);
+        const insertion = `\n${spaces}- `;
+        const newValue = replaceRange(value, cursor, cursor, insertion);
+        const newCursor = cursor + insertion.length;
         handleChange(newValue);
         setTimeout(() => {
           textarea.focus();
           textarea.setSelectionRange(newCursor, newCursor);
         }, 0);
       } else {
+        // Tab on word: show autocomplete
         const tokenRange = getTokenRange(line, column);
         if (tokenRange) {
           const [tokenStart, tokenEnd] = tokenRange;
@@ -259,16 +341,25 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
           value={value}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
+          onBlur={onBlur}
           placeholder="Enter past medical history items...
-Tab at line start to indent
-Tab on word for autocomplete
-Enter for new line with smart indent"
+Tab at start: add context point (- )
+Tab at end of diagnosis: create context underneath
+Tab at end of context: add another context
+Tab on word: autocomplete
+Enter in context: new diagnosis line"
           className="w-full h-48 p-3 border rounded-lg font-mono text-sm resize-vertical focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         
         {/* Autocomplete */}
         {showAutocomplete && autocompleteItems.length > 0 && (
-          <div className="absolute z-10 mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          <div 
+            className="absolute z-10 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto min-w-64"
+            style={{
+              top: `${autocompletePosition.top}px`,
+              left: `${autocompletePosition.left}px`
+            }}
+          >
             {autocompleteItems.map((item, idx) => (
               <div
                 key={item}

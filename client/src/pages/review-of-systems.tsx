@@ -2268,7 +2268,11 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       case "pmh":
         return (
           <SectionWrapper title={sectionTitle["pmh"]} sectionKey="pmh" controls={pmhControls}>
-            <CleanPMHSection />
+            <CleanPMHSection
+              value={typingPmhText}
+              onChange={setTypingPmhText}
+              onBlur={() => handlePMHBlur()}
+            />
           </SectionWrapper>
         );
       case "meds":
