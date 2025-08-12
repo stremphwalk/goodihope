@@ -39,7 +39,7 @@ function getSlashPhraseAtCursor(text: string, cursor: number) {
   };
 }
 
-// Helper to parse smart options
+// Helper to parse smart options and generate pill HTML
 function parseSmartOptions(text: string) {
   const regex = /\[\[([^\]]+?)\]\]/g;
   const matches = [];
@@ -55,6 +55,55 @@ function parseSmartOptions(text: string) {
     });
   }
   return matches;
+}
+
+// Helper to convert smart options to inline pills
+function renderSmartOptionsAsPills(line: string, lineIdx: number) {
+  const escape = (s: string) =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\u00A0/g, "&nbsp;");
+
+  const smartMatches = parseSmartOptions(line);
+  console.log('🔍 Processing line', lineIdx, 'with', smartMatches.length, 'smart matches:', smartMatches);
+  
+  if (smartMatches.length === 0) {
+    return escape(line);
+  }
+  
+  // Process matches from end to beginning to avoid offset issues
+  let result = line;
+  for (let i = smartMatches.length - 1; i >= 0; i--) {
+    const match = smartMatches[i];
+    const matchIdx = i;
+    
+    // Generate pill HTML for each option
+    const pillsHtml = match.options.map((option, optIdx) => 
+      `<span class="smart-pill" 
+             data-line="${lineIdx}" 
+             data-match="${matchIdx}"
+             data-option="${optIdx}"
+             data-option-text="${option.replace(/"/g, '&quot;')}"
+             title="Click to select: ${option.replace(/"/g, '&quot;')}">${escape(option)}</span>`
+    ).join(' ');
+    
+    console.log('💊 Generated pills HTML for match', i, ':', pillsHtml);
+    
+    // Replace [[option1|option2]] with individual pills
+    const before = result.slice(0, match.start);
+    const after = result.slice(match.end);
+    result = before + pillsHtml + after;
+  }
+  
+  // Escape the non-pill parts
+  result = result.replace(/([^<>]+)(?=<|$)/g, (match) => {
+    return match.includes('class="smart-pill"') ? match : escape(match);
+  });
+  
+  console.log('📝 Final line result:', result);
+  return result;
 }
 
 export function SmartTextEditor({
@@ -107,23 +156,17 @@ export function SmartTextEditor({
   // Split text into lines and mark which lines contain smart options
   const lines = useMemo(() => {
     return value.split(/\n/).map((line, idx) => {
-      const tokens: { start: number; end: number; value: string; options: string[] }[] = [];
-      let m: RegExpExecArray | null;
-      const re = new RegExp(SMART_OPTION_RE);
-      while ((m = re.exec(line))) {
-        const options = m[1].split('|').map(opt => opt.trim());
-        tokens.push({ 
-          start: m.index, 
-          end: m.index + m[0].length, 
-          value: m[0],
-          options
-        });
-      }
-      return { idx, text: line, tokens, hasSmart: tokens.length > 0 };
+      const smartMatches = parseSmartOptions(line);
+      return { 
+        idx, 
+        text: line, 
+        smartMatches,
+        hasSmart: smartMatches.length > 0 
+      };
     });
   }, [value]);
 
-  // Build HTML for mirror with per-line highlighting and clickable smart tokens
+  // Build HTML for mirror with per-line highlighting and clickable smart pills
   const mirrorHtml = useMemo(() => {
     const escape = (s: string) =>
       s
@@ -135,23 +178,14 @@ export function SmartTextEditor({
     return lines
       .map((line) => {
         if (!line.hasSmart) {
-          return `<div class="line">${escape(line.text) || "&nbsp;"}</div>`;
+          return `<div class="line"><span class="x">${escape(line.text) || "&nbsp;"}</span></div>`;
         }
-        // Insert spans for tokens
-        let out = "";
-        let pos = 0;
-        line.tokens.forEach((t, i) => {
-          const before = line.text.slice(pos, t.start);
-          out += escape(before);
-          out += `<span class="smart-token" data-line="${line.idx}" data-token-idx="${i}">${escape(
-            line.text.slice(t.start, t.end)
-          )}</span>`;
-          pos = t.end;
-        });
-        out += escape(line.text.slice(pos));
-        return `<div class="line highlight">${out || "&nbsp;"}</div>`;
+        
+        // Use the pill rendering system (apply escape AFTER pill generation)
+        const pillHtml = renderSmartOptionsAsPills(line.text, line.idx);
+         return `<div class="line highlight"><span class="x">${pillHtml || "&nbsp;"}</span></div>`;
       })
-      .join("\n");
+      .join("");
   }, [lines]);
 
   // Position popup near the clicked smart token
@@ -167,42 +201,83 @@ export function SmartTextEditor({
     setActiveToken((prev) => (prev ? { ...prev, rect: new DOMRect(rect.x, rect.y - 8, rect.width, rect.height) } : prev));
   }, [activeToken?.start, mirrorHtml]);
 
-  // Click handling in the mirror for smart tokens
+  // Click handling in the mirror for smart pills
   const onMirrorClick: React.MouseEventHandler = (e) => {
     const target = e.target as HTMLElement;
-    if (!target.classList.contains("smart-token")) return;
+    console.log('🖱️ Mirror clicked:', target, 'classes:', Array.from(target.classList));
+    
+    if (!target.classList.contains("smart-pill")) {
+      textareaRef.current?.focus();
+      return;
+    }
 
-    // Remove previous active classes
-    mirrorRef.current?.querySelectorAll(".smart-token.active").forEach((el) =>
-      el.classList.remove("active")
-    );
-
-    target.classList.add("active");
-
-    // Compute token absolute start/end within full text
-    const lineIdx = Number(target.getAttribute("data-line"));
-    const tokenIdx = Number(target.getAttribute("data-token-idx"));
-    const line = lines[lineIdx];
-    const token = line.tokens[tokenIdx];
-
-    const absoluteStart =
-      lines.slice(0, lineIdx).reduce((acc, l) => acc + l.text.length + 1, 0) +
-      token.start;
-    const absoluteEnd = absoluteStart + token.value.length;
-
-    setActiveToken({ 
-      start: absoluteStart, 
-      end: absoluteEnd, 
-      options: token.options 
-    });
+    handlePillElementSelection(target);
   };
+
+  function handlePillElementSelection(target: HTMLElement) {
+    console.log('💊 Smart pill clicked!');
+
+    const lineIdx = Number(target.getAttribute("data-line"));
+    const matchIdx = Number(target.getAttribute("data-match"));
+    const optionText = target.getAttribute("data-option-text");
+    
+    console.log('📍 Pill details:', {
+      lineIdx,
+      matchIdx,
+      optionText,
+      line: lines[lineIdx]?.text
+    });
+
+    if (!optionText || lineIdx === undefined || matchIdx === undefined) {
+      console.log('❌ Missing pill data');
+      return;
+    }
+
+    const line = lines[lineIdx];
+    if (!line || !line.smartMatches[matchIdx]) {
+      console.log('❌ Missing line or match data');
+      return;
+    }
+
+    const match = line.smartMatches[matchIdx];
+    
+    // Calculate absolute position in full text
+    const absoluteStart = lines.slice(0, lineIdx).reduce((acc, l) => acc + l.text.length + 1, 0) + match.start;
+    const absoluteEnd = absoluteStart + match.fullMatch.length;
+    
+    // Replace the smart option with selected text
+    const before = value.slice(0, absoluteStart);
+    const after = value.slice(absoluteEnd);
+    const newValue = before + optionText + after;
+    
+    console.log('🔄 Replacing smart option:', {
+      before: before.length,
+      after: after.length,
+      option: optionText,
+      oldMatch: match.fullMatch,
+      newLength: newValue.length
+    });
+    
+    onChange(newValue);
+    console.log('✅ Smart pill replaced successfully');
+  }
 
   // Replace the active token with selected option
   const chooseOption = (opt: string) => {
+    console.log('🎯 Option chosen:', opt, 'activeToken:', activeToken);
     if (!activeToken) return;
+    
     const before = value.slice(0, activeToken.start);
     const after = value.slice(activeToken.end);
     const next = before + opt + after;
+    
+    console.log('🔄 Replacing smart option:', {
+      before: before.length,
+      after: after.length,
+      option: opt,
+      newLength: next.length
+    });
+    
     onChange(next);
     setActiveToken(null);
     
@@ -210,6 +285,8 @@ export function SmartTextEditor({
     mirrorRef.current?.querySelectorAll(".smart-token.active").forEach((el) =>
       el.classList.remove("active")
     );
+    
+    console.log('✅ Smart option replaced successfully');
   };
 
   // Handle dot phrase expansion with slash syntax
@@ -223,7 +300,16 @@ export function SmartTextEditor({
     
     if (e.key === ' ' || e.key === 'Tab') {
       const slashPhrase = getSlashPhraseAtCursor(value, cursor);
+      console.log('Dot phrase debug:', {
+        key: e.key,
+        cursor,
+        slashPhrase,
+        valueAtCursor: value.slice(Math.max(0, cursor - 20), cursor + 5),
+        allDotPhrases: Object.keys(allDotPhrases),
+        hasPhrase: slashPhrase ? (allDotPhrases as any)[slashPhrase.phrase] : null
+      });
       if (slashPhrase && (allDotPhrases as any)[slashPhrase.phrase]) {
+        console.log('✅ EXPANDING phrase:', slashPhrase.phrase, 'to:', (allDotPhrases as any)[slashPhrase.phrase]);
         e.preventDefault();
         const beforeSlash = value.slice(0, slashPhrase.start);
         const afterCursor = value.slice(cursor);
@@ -262,11 +348,18 @@ export function SmartTextEditor({
     
     // Handle slash phrase suggestions
     if (e.key === '/' && cursor >= 0) {
+      console.log('Slash key pressed, showing suggestions');
       setTimeout(() => {
         const coords = getCaretCoordinates(textarea, cursor + 1);
-        setCaretCoordinates({ top: coords.top, left: coords.left });
+        console.log('Caret coordinates:', coords);
+        // Adjust coordinates for the container padding and scrolling
+        setCaretCoordinates({ 
+          top: coords.top + 12, // Account for padding
+          left: coords.left + 12 // Account for padding
+        });
         setCurrentSlashPhrase({ phrase: '/', start: cursor, end: cursor + 1 });
         setShowSuggestions(true);
+        console.log('Suggestions should be showing now');
       }, 0);
     } else if (showSuggestions) {
       setTimeout(() => {
@@ -276,7 +369,11 @@ export function SmartTextEditor({
           if (slashPhrase) {
             setCurrentSlashPhrase(slashPhrase);
             const coords = getCaretCoordinates(textareaRef.current, newCursor);
-            setCaretCoordinates({ top: coords.top, left: coords.left });
+            // Adjust coordinates for the container padding and scrolling
+            setCaretCoordinates({ 
+              top: coords.top + 12, // Account for padding
+              left: coords.left + 12 // Account for padding
+            });
           } else {
             setShowSuggestions(false);
             setCurrentSlashPhrase(null);
@@ -289,18 +386,43 @@ export function SmartTextEditor({
   // Get filtered suggestions based on current slash phrase
   const suggestions = useMemo(() => {
     if (!currentSlashPhrase || !showSuggestions) return [];
-    return Object.keys(allDotPhrases).filter(key =>
+    const filtered = Object.keys(allDotPhrases).filter(key =>
       key.toLowerCase().includes(currentSlashPhrase.phrase.toLowerCase())
     ).slice(0, 8);
+    console.log('Suggestions computed:', {
+      currentSlashPhrase,
+      showSuggestions,
+      allKeys: Object.keys(allDotPhrases),
+      filtered
+    });
+    return filtered;
   }, [currentSlashPhrase, showSuggestions, allDotPhrases]);
 
   // Handle suggestion click
   const handleSuggestionClick = (suggestion: string) => {
-    if (!currentSlashPhrase) return;
+    console.log('🎯 Suggestion clicked:', suggestion);
+    console.log('Current state:', {
+      currentSlashPhrase,
+      value: value.length,
+      suggestion,
+      expansion: (allDotPhrases as any)[suggestion]
+    });
+    
+    if (!currentSlashPhrase) {
+      console.log('❌ No current slash phrase, returning');
+      return;
+    }
     
     const before = value.slice(0, currentSlashPhrase.start);
     const after = value.slice(currentSlashPhrase.end);
     let expansion = (allDotPhrases as any)[suggestion];
+    
+    console.log('🔧 Building new value:', {
+      before: before.length,
+      after: after.length,
+      expansion: expansion?.length,
+      currentSlashPhrase
+    });
     
     // Handle special cases
     if (suggestion === '/calc') {
@@ -322,12 +444,15 @@ export function SmartTextEditor({
     }
     
     const newValue = before + expansion + after;
+    console.log('📝 Calling onChange with new value length:', newValue.length);
     onChange(newValue);
     setShowSuggestions(false);
+    setCurrentSlashPhrase(null);
     
     setTimeout(() => {
       if (textareaRef.current) {
         const newCursor = before.length + expansion.length;
+        console.log('🎯 Setting cursor to position:', newCursor);
         textareaRef.current.selectionStart = newCursor;
         textareaRef.current.selectionEnd = newCursor;
         textareaRef.current.focus();
@@ -350,13 +475,32 @@ export function SmartTextEditor({
     }
   };
 
-  // Autosize textarea to content height
+  // Fixed height - no autosize to allow proper scrolling
   useEffect(() => {
     const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = Math.max(ta.scrollHeight, rows * 24) + "px";
-  }, [value, rows]);
+    const mirror = mirrorRef.current;
+    if (!ta || !mirror) return;
+    
+    // Check if we should use CSS-driven height instead of JS-driven height
+    const hasExplicitHeight = className?.includes('min-h-') || className?.includes('h-full') || className?.includes('h-screen');
+    
+    if (hasExplicitHeight) {
+      // Let CSS control the height completely
+      ta.style.height = '';
+      mirror.style.height = '';
+      ta.style.minHeight = '';
+      mirror.style.minHeight = '';
+    } else {
+      // Use JS-controlled height for compatibility with existing usage
+      const lineHeight = 1.35; // matches the CSS line-height
+      const fontSize = 14; // matches the CSS font-size
+      const padding = 20; // 10px top + 10px bottom
+      const fixedHeight = Math.max(rows * fontSize * lineHeight + padding, 200);
+      
+      ta.style.height = `${fixedHeight}px`;
+      mirror.style.height = `${fixedHeight}px`;
+    }
+  }, [rows, className]);
 
   // Forward ref if provided
   useEffect(() => {
@@ -369,10 +513,10 @@ export function SmartTextEditor({
     <>
       <div
         ref={wrapperRef}
-        className={`relative rounded-xl shadow-sm overflow-hidden border border-slate-200 bg-white ${className}`}
+        className={`relative rounded-xl shadow-sm border border-slate-200 bg-white flex flex-col ${className}`}
       >
         {/* Top bar for context info */}
-        <div className="sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-white/60 bg-white/90 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between text-xs">
+        <div className="flex-shrink-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-white/60 bg-white/90 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_1px_rgba(16,185,129,0.6)]" />
             <span className="text-slate-600">
@@ -390,79 +534,105 @@ export function SmartTextEditor({
           </Button>
         </div>
 
-        {/* Mirror layer (shows styled text) */}
-        <pre
-          ref={mirrorRef}
-          className="mirror pointer-events-auto relative p-3 text-slate-900 text-sm leading-5 whitespace-pre-wrap break-words select-none"
-          onClick={onMirrorClick}
-          dangerouslySetInnerHTML={{ __html: mirrorHtml }}
-        />
+        {/* Content wrapper for scrolling */}
+                 <div 
+           className="relative flex-1 overflow-hidden"
+           onMouseDown={(e) => {
+             // Temporarily disable textarea pointer events to detect pills beneath
+             const ta = textareaRef.current;
+             if (!ta) return;
+             const prev = ta.style.pointerEvents;
+             ta.style.pointerEvents = 'none';
+             const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+             // Restore immediately
+             ta.style.pointerEvents = prev;
 
-        {/* Textarea layer (actual editable text) */}
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onCopy={onCopy}
-          onKeyDown={handleKeyDown}
-          onBlur={() => {
-            setShowSuggestions(false);
-            if (onBlur) onBlur();
-          }}
-          placeholder={placeholder}
-          disabled={disabled}
-          rows={rows}
-          spellCheck={false}
-          className="editor absolute inset-0 w-full h-full resize-none outline-none p-3 pt-10 bg-transparent text-transparent caret-slate-900 leading-5 text-sm font-normal"
-        />
+             if (el && el.classList && el.classList.contains('smart-pill')) {
+               e.preventDefault();
+               e.stopPropagation();
+               handlePillElementSelection(el);
+             }
+           }}
+         >
+          {/* Mirror layer (shows styled text) */}
+                    <pre
+             ref={mirrorRef}
+             className="mirror relative whitespace-pre-wrap break-words select-none h-full overflow-auto"
+             style={{
+               fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+               fontSize: '14px',
+               lineHeight: '1.35',
+               padding: '10px',
+               color: '#334155',
+               margin: 0,
+               zIndex: 10,
+               pointerEvents: 'auto'
+             }}
+             onClick={onMirrorClick}
+             onMouseDown={(e) => {
+               const target = e.target as HTMLElement;
+               if (target.classList.contains('smart-pill')) {
+                 e.preventDefault();
+               }
+             }}
+             dangerouslySetInnerHTML={{ __html: mirrorHtml }}
+           />
 
-        {/* Popup for smart option selection */}
-        {activeToken?.rect && (
-          <div
-            className="absolute z-30"
-            style={{
-              left: Math.max(8, (activeToken.rect.x - (wrapperRef.current?.getBoundingClientRect().x || 0))) + "px",
-              top: Math.max(8, (activeToken.rect.y - (wrapperRef.current?.getBoundingClientRect().y || 0)) - 40) + "px",
+          {/* Textarea layer (actual editable text) */}
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onCopy={onCopy}
+            onKeyDown={handleKeyDown}
+            onBlur={() => {
+              setShowSuggestions(false);
+              if (onBlur) onBlur();
             }}
-          >
-            <div className="rounded-xl shadow-xl border border-slate-200 bg-white overflow-hidden">
-              <div className="px-3 py-2 text-xs text-slate-600 border-b border-slate-100">Choose an option</div>
-              <div className="p-2 flex flex-wrap gap-2 max-w-md">
-                {activeToken.options.map((opt) => (
-                  <button
-                    key={opt}
-                    className="text-sm px-2.5 py-1.5 rounded-lg border border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50 transition-colors"
-                    onClick={() => chooseOption(opt)}
-                  >
-                    {opt}
-                  </button>
-                ))}
-                <button
-                  className="ml-auto text-xs px-2 py-1 rounded-md text-slate-600 hover:text-slate-800"
-                  onClick={() => setActiveToken(null)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+            placeholder={placeholder}
+            disabled={disabled}
+            rows={rows}
+            spellCheck={false}
+                         className="editor absolute inset-0 w-full h-full resize-none outline-none bg-transparent text-transparent overflow-auto"
+             style={{
+               fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+               fontSize: '14px',
+               lineHeight: '1.35',
+               padding: '10px',
+               caretColor: '#334155',
+               margin: 0,
+               zIndex: 20
+             }}
+          />
+        </div>
+
 
         {/* Dot phrase suggestions */}
         {showSuggestions && suggestions.length > 0 && (
           <div
-            className="absolute z-30 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto"
+            className="fixed z-[9999] bg-white/95 backdrop-blur-sm border border-slate-200 rounded-lg shadow-2xl max-h-48 overflow-y-auto"
             style={{
-              left: Math.max(8, caretCoordinates.left) + "px",
-              top: Math.max(8, caretCoordinates.top + 20) + "px",
+              left: Math.max(8, caretCoordinates.left + (wrapperRef.current?.getBoundingClientRect().left || 0)) + "px",
+              top: Math.max(8, caretCoordinates.top + (wrapperRef.current?.getBoundingClientRect().top || 0) + 20) + "px",
               minWidth: "200px",
             }}
           >
             {suggestions.map((suggestion, index) => (
               <button
                 key={suggestion}
-                className="w-full text-left px-3 py-2 hover:bg-slate-50 text-sm border-b border-slate-100 last:border-b-0"
-                onClick={() => handleSuggestionClick(suggestion)}
+                type="button"
+                className="w-full text-left px-3 py-2 hover:bg-slate-50 text-sm border-b border-slate-100 last:border-b-0 cursor-pointer"
+                onMouseDown={(e) => {
+                  e.preventDefault(); // Prevent blur
+                  console.log('🖱️ Mouse down on suggestion:', suggestion);
+                  handleSuggestionClick(suggestion);
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log('🖱️ Click on suggestion:', suggestion);
+                  handleSuggestionClick(suggestion);
+                }}
               >
                 <span className="font-mono text-blue-600">{suggestion}</span>
                 <div className="text-xs text-slate-500 mt-1 truncate">
@@ -526,61 +696,62 @@ export function SmartTextEditor({
       )}
 
       {/* Styles */}
-      <style>{`
-        .mirror { position: relative; z-index: 10; }
-        .editor { z-index: 20; }
-        .line { position: relative; padding-inline: 0.125rem; border-radius: 0.5rem; }
-        .line.highlight {
-          background: linear-gradient(90deg, rgba(16,185,129,0.08), rgba(59,130,246,0.06));
-          box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.04) inset, 0 4px 12px rgba(16,185,129,0.06);
-          border-left: 4px solid rgba(16,185,129,0.4);
-          padding-left: 0.375rem;
-          margin: 0.125rem 0;
-        }
-        .line.highlight::after {
-          content: "";
-          position: absolute; 
-          inset: 0; 
-          pointer-events: none;
-          background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.4) 20%, transparent 40%);
-          opacity: 0.12; 
-          transform: translateX(-150%);
-          animation: shimmer 3s ease-in-out infinite;
-          border-radius: inherit;
-        }
-        @keyframes shimmer { 
-          0% { transform: translateX(-150%); } 
-          60% { transform: translateX(150%);} 
-          100% { transform: translateX(150%);} 
-        }
-
-        .smart-token { 
-          position: relative; 
-          display: inline-block; 
-          padding: 0.125rem 0.25rem; 
-          border-radius: 0.375rem; 
-          margin: 0 0.125rem;
-        }
-        .smart-token::before {
-          content: ""; 
-          position: absolute; 
-          inset: -1px; 
-          border-radius: 0.5rem; 
-          z-index: -1;
-          background: linear-gradient(90deg, rgba(59,130,246,0.2), rgba(99,102,241,0.2));
-          box-shadow: 0 3px 8px rgba(37, 99, 235, 0.15);
-        }
-        .smart-token:hover { 
-          cursor: pointer; 
-        }
-        .smart-token:hover::before {
-          background: linear-gradient(90deg, rgba(59,130,246,0.3), rgba(99,102,241,0.3));
-        }
-        .smart-token.active::before { 
-          background: linear-gradient(90deg, rgba(59,130,246,0.4), rgba(99,102,241,0.4));
-          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
-        }
-      `}</style>
+             <style>{`
+                   .mirror { position: relative; z-index: 10; pointer-events: auto; }
+          .editor { z-index: 20; }
+          .line { position: relative; padding: 0; margin: 0; border-radius: 0.5rem; }
+          .line .x { display: inline; padding: 0 0.125rem; }
+          .line.highlight {
+            background: linear-gradient(90deg, rgba(16,185,129,0.08), rgba(59,130,246,0.06));
+            box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.04) inset, 0 4px 12px rgba(16,185,129,0.06);
+            border-left: 4px solid rgba(16,185,129,0.4);
+            padding-left: 0.25rem;
+            margin: 0.05rem 0;
+          }
+         .line.highlight::after {
+           content: "";
+           position: absolute; 
+           inset: 0; 
+           pointer-events: none;
+           background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.4) 20%, transparent 40%);
+           opacity: 0.12; 
+           transform: translateX(-150%);
+           animation: shimmer 3s ease-in-out infinite;
+           border-radius: inherit;
+         }
+         @keyframes shimmer { 
+           0% { transform: translateX(-150%); } 
+           60% { transform: translateX(150%);} 
+           100% { transform: translateX(150%);} 
+         }
+ 
+         .smart-pill { 
+           display: inline-block;
+           padding: 0.25rem 0.5rem;
+           margin: 0.125rem;
+           border-radius: 0.5rem;
+           font-size: 0.875rem;
+           font-weight: 500;
+           cursor: pointer;
+           transition: all 0.2s ease;
+           border: 2px solid rgba(59,130,246,0.3);
+           background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(99,102,241,0.1));
+           color: #1e40af;
+           position: relative;
+           pointer-events: auto;
+           z-index: 1;
+         }
+         .smart-pill:hover {
+           border-color: rgba(59,130,246,0.5);
+           background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(99,102,241,0.2));
+           transform: translateY(-1px);
+           box-shadow: 0 4px 8px rgba(59,130,246,0.15);
+         }
+         .smart-pill:active {
+           transform: translateY(0);
+           box-shadow: 0 2px 4px rgba(59,130,246,0.2);
+         }
+       `}</style>
     </>
   );
 }

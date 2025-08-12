@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔬 Live Server Mirror Test - PMH Deletion Debug</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f3f4f6;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 20px 0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .pmh-entry {
+            margin: 16px 0;
+            padding: 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            background: #f8fafc;
+        }
+        
+        .pmh-entry.has-content {
+            border-color: #6366f1;
+            background: #eef2ff;
+        }
+        
+        .entry-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .entry-number {
+            width: 32px;
+            height: 32px;
+            background: #6366f1;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        
+        .entry-number.empty {
+            background: #9ca3af;
+        }
+        
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 40px;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+        
+        .debug-panel {
+            background: #111827;
+            color: #f3f4f6;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 16px;
+        }
+        
+        .state-display {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+        
+        .state-card {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 4px solid #6366f1;
+        }
+        
+        .state-title {
+            font-weight: bold;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+        
+        .state-value {
+            font-family: monospace;
+            background: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .instructions {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        
+        .test-step {
+            margin: 8px 0;
+            padding: 8px;
+            background: #ffffff;
+            border-left: 4px solid #10b981;
+            border-radius: 0 4px 4px 0;
+        }
+        
+        .error { color: #dc2626; font-weight: bold; }
+        .success { color: #059669; font-weight: bold; }
+        .warning { color: #d97706; font-weight: bold; }
+        .info { color: #2563eb; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🔬 Live Server Mirror Test</h1>
+    <p><strong>Purpose:</strong> Exactly mirror the live server's PMH section to identify why deletion fails in production but works in isolation.</p>
+    
+    <div class="instructions">
+        <h3>🎯 Critical Test Protocol</h3>
+        <div class="test-step"><strong>Step 1:</strong> Type "Hypertension" in Entry #1</div>
+        <div class="test-step"><strong>Step 2:</strong> Click elsewhere to blur/save</div>
+        <div class="test-step"><strong>Step 3:</strong> Click back into the field</div>
+        <div class="test-step"><strong>Step 4:</strong> Select all (Ctrl/Cmd+A) and delete</div>
+        <div class="test-step"><strong>Step 5:</strong> Check if text regenerates (❌ BUG) or stays deleted (✅ FIXED)</div>
+    </div>
+
+    <div class="container">
+        <h2>🏥 PMH Section Mirror</h2>
+        <div id="pmhEntries"></div>
+    </div>
+
+    <div class="container">
+        <h3>🔍 Real-Time State Monitoring</h3>
+        <div class="state-display" id="stateDisplay"></div>
+        <div class="debug-panel" id="debugLog">
+            <div>📡 Live Server Mirror Debug Log:</div>
+        </div>
+    </div>
+
+    <script>
+        // Mirror the exact data structure used in ImprovedPMHSection
+        class PMHSectionMirror {
+            constructor() {
+                this.data = {
+                    entries: [
+                        { id: 'entry-1', mainCondition: '', subEntries: ['', '', ''] },
+                        { id: 'entry-2', mainCondition: '', subEntries: ['', '', ''] },
+                        { id: 'entry-3', mainCondition: '', subEntries: ['', '', ''] }
+                    ]
+                };
+                
+                this.componentStates = new Map();
+                this.renderCount = 0;
+                this.updateCount = 0;
+                
+                this.render();
+                this.setupGlobalListeners();
+            }
+            
+            log(message, type = 'info') {
+                const debugLog = document.getElementById('debugLog');
+                const timestamp = new Date().toLocaleTimeString();
+                const typeClass = type;
+                const emoji = {
+                    info: '📝', error: '❌', success: '✅', 
+                    warning: '⚠️', render: '🔄', update: '💾'
+                }[type] || '📝';
+                
+                debugLog.innerHTML += `<div class="${typeClass}">[${timestamp}] ${emoji} ${message}</div>`;
+                debugLog.scrollTop = debugLog.scrollHeight;
+            }
+            
+            // Mirror the exact updateMainCondition callback from ImprovedPMHSection
+            updateMainCondition(entryId, value) {
+                this.updateCount++;
+                this.log(`🔄 updateMainCondition("${entryId}", "${value}")`, 'update');
+                
+                // Exact replica of the server logic
+                const updatedEntries = this.data.entries.map(entry =>
+                    entry.id === entryId ? { ...entry, mainCondition: value } : entry
+                );
+                
+                this.log(`📦 New entries array created`, 'info');
+                
+                // This triggers a "re-render" which is the critical moment
+                this.onChange({ entries: updatedEntries });
+            }
+            
+            // Mirror the parent onChange that causes re-renders
+            onChange(newData) {
+                this.log(`🎯 Parent onChange called - triggering re-render`, 'render');
+                this.data = newData;
+                
+                // This is where the problem happens - parent re-renders
+                // which may cause SimplePMHTextarea to receive new props
+                setTimeout(() => {
+                    this.render();
+                }, 0);
+            }
+            
+            // Create a SimplePMHTextarea mirror
+            createTextareaMirror(entry, entryIndex) {
+                const textareaId = `textarea-${entry.id}`;
+                const existingState = this.componentStates.get(entry.id) || {
+                    localValue: entry.mainCondition,
+                    prevEntryId: entry.id,
+                    hasInitialized: false
+                };
+                
+                // Mirror the exact SimplePMHTextarea logic
+                if (entry.id !== existingState.prevEntryId) {
+                    this.log(`🔄 EntryId changed for ${entry.id} - syncing from parent`, 'info');
+                    existingState.localValue = entry.mainCondition;
+                    existingState.prevEntryId = entry.id;
+                    existingState.hasInitialized = true;
+                } else if (!existingState.hasInitialized) {
+                    this.log(`🆕 First initialization for ${entry.id}`, 'info');
+                    existingState.hasInitialized = true;
+                }
+                
+                this.componentStates.set(entry.id, existingState);
+                
+                const div = document.createElement('div');
+                div.className = `pmh-entry ${entry.mainCondition ? 'has-content' : ''}`;
+                div.innerHTML = `
+                    <div class="entry-header">
+                        <div class="entry-number ${entry.mainCondition ? '' : 'empty'}">${entryIndex + 1}</div>
+                        <label><strong>PMH Entry #${entryIndex + 1}</strong></label>
+                    </div>
+                    <textarea 
+                        id="${textareaId}" 
+                        placeholder="Enter main medical condition..."
+                        value="${existingState.localValue}"
+                    >${existingState.localValue}</textarea>
+                `;
+                
+                const textarea = div.querySelector('textarea');
+                
+                // Mirror the exact event handlers
+                textarea.addEventListener('input', (e) => {
+                    existingState.localValue = e.target.value;
+                    this.log(`✏️ Input: ${entry.id} localValue = "${existingState.localValue}"`, 'info');
+                    this.updateStateDisplay();
+                });
+                
+                textarea.addEventListener('blur', () => {
+                    this.log(`👆 Blur: ${entry.id} - saving "${existingState.localValue}"`, 'update');
+                    
+                    // This is the critical moment - calling parent update
+                    this.updateMainCondition(entry.id, existingState.localValue);
+                });
+                
+                textarea.addEventListener('focus', () => {
+                    this.log(`🎯 Focus: ${entry.id} - current localValue: "${existingState.localValue}"`, 'info');
+                });
+                
+                return div;
+            }
+            
+            render() {
+                this.renderCount++;
+                this.log(`🎨 RENDER #${this.renderCount} - Parent component re-rendering`, 'render');
+                
+                const container = document.getElementById('pmhEntries');
+                container.innerHTML = '';
+                
+                this.data.entries.forEach((entry, index) => {
+                    const entryElement = this.createTextareaMirror(entry, index);
+                    container.appendChild(entryElement);
+                });
+                
+                this.updateStateDisplay();
+                this.checkForRegenerationBug();
+            }
+            
+            updateStateDisplay() {
+                const stateDisplay = document.getElementById('stateDisplay');
+                stateDisplay.innerHTML = '';
+                
+                this.data.entries.forEach((entry, index) => {
+                    const componentState = this.componentStates.get(entry.id) || {};
+                    
+                    const card = document.createElement('div');
+                    card.className = 'state-card';
+                    card.innerHTML = `
+                        <div class="state-title">Entry #${index + 1} (${entry.id})</div>
+                        <div><strong>Parent Value:</strong></div>
+                        <div class="state-value">"${entry.mainCondition}"</div>
+                        <div><strong>Local Value:</strong></div>
+                        <div class="state-value">"${componentState.localValue || ''}"</div>
+                        <div><strong>Match:</strong> ${entry.mainCondition === componentState.localValue ? '✅' : '❌'}</div>
+                    `;
+                    stateDisplay.appendChild(card);
+                });
+                
+                // Add render stats
+                const statsCard = document.createElement('div');
+                statsCard.className = 'state-card';
+                statsCard.innerHTML = `
+                    <div class="state-title">System Stats</div>
+                    <div><strong>Renders:</strong> ${this.renderCount}</div>
+                    <div><strong>Updates:</strong> ${this.updateCount}</div>
+                `;
+                stateDisplay.appendChild(statsCard);
+            }
+            
+            checkForRegenerationBug() {
+                // Check if any field has the regeneration bug
+                this.data.entries.forEach(entry => {
+                    const state = this.componentStates.get(entry.id);
+                    if (state) {
+                        const textarea = document.getElementById(`textarea-${entry.id}`);
+                        if (textarea && textarea.value !== state.localValue) {
+                            this.log(`🚨 REGENERATION BUG DETECTED in ${entry.id}! Textarea="${textarea.value}" !== Local="${state.localValue}"`, 'error');
+                        }
+                    }
+                });
+            }
+            
+            setupGlobalListeners() {
+                // Listen for any potential issues
+                window.addEventListener('error', (e) => {
+                    this.log(`💥 JavaScript Error: ${e.message}`, 'error');
+                });
+                
+                // Add keyboard shortcut to clear log
+                document.addEventListener('keydown', (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+                        e.preventDefault();
+                        document.getElementById('debugLog').innerHTML = '<div>📡 Live Server Mirror Debug Log (cleared):</div>';
+                        this.log('🧹 Debug log cleared', 'info');
+                    }
+                });
+            }
+        }
+        
+        // Initialize the mirror
+        const pmhMirror = new PMHSectionMirror();
+        pmhMirror.log('🚀 Live Server Mirror initialized', 'success');
+        pmhMirror.log('🎯 Ready for testing - follow the instructions above', 'info');
+        pmhMirror.log('💡 Tip: Press Ctrl/Cmd+L to clear this log', 'info');
+    </script>
+</body>
+</html>

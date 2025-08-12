@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SmartTextEditor } from './SmartTextEditor';
+import { DotPhraseTextarea } from './DotPhraseTextarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Lightbulb } from 'lucide-react';
@@ -44,7 +44,7 @@ export function SmartPhraseDemo() {
         </CardContent>
       </Card>
 
-      <SmartTextEditor
+      <DotPhraseTextarea
         value={demoValue}
         onChange={setDemoValue}
         placeholder="Start typing or use /phrase + space to expand..."

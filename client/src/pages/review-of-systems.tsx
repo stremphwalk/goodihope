@@ -75,7 +75,7 @@ interface Template {
 
 type NoteType = 'admission' | 'progress' | 'consultation' | 'custom' | null;
 type NoteSubtype = 'general' | 'icu' | 'er' | 'clinic';
-import { SmartPMHSection } from "@/components/SmartPMHSection";
+import CleanPMHSection from "@/components/CleanPMHSection";
 import { SmartImpressionSection } from "@/components/SmartImpressionSection";
 import { MedicationSection } from "@/components/MedicationSectionNew";
 import { AllergiesSection } from "@/components/AllergiesSection";
@@ -429,11 +429,18 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   
   // State for live editing of PMH to prevent re-renders on every keystroke
   const [typingPmhText, setTypingPmhText] = useState(pmhText);
+  const pmhTextRef = useRef(pmhText);
   
-  // Sync live editing state if the persisted value changes
+  // Only sync live editing state if the persisted value changes from external source
+  // (not from our own blur handler)
   useEffect(() => {
-    setTypingPmhText(pmhText);
-  }, [pmhText]);
+    // Only sync if pmhText changed from an external source (template, reset, etc.)
+    // not from our own handlePMHBlur update
+    if (pmhText !== pmhTextRef.current && pmhText !== typingPmhText) {
+      setTypingPmhText(pmhText);
+    }
+    pmhTextRef.current = pmhText;
+  }, [pmhText, typingPmhText]);
 
   const { 
     value: impressionText, 
@@ -1754,20 +1761,36 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       setCurrentText(newGeneratedText);
       setNote(newGeneratedText);
     } else {
-      const diff = dmp.current.diff_main(initialGeneratedText, currentText);
-      dmp.current.diff_cleanupSemantic(diff);
-      const patch = dmp.current.patch_make(diff);
-      const [patchedText] = dmp.current.patch_apply(patch, newGeneratedText);
-      
-      setCurrentText(patchedText);
-      setInitialGeneratedText(newGeneratedText);
-      setNote(patchedText);
+      // Improved diff/patch logic to better preserve manual edits
+      try {
+        const diff = dmp.current.diff_main(initialGeneratedText, currentText);
+        dmp.current.diff_cleanupSemantic(diff);
+        const patch = dmp.current.patch_make(diff);
+        const [patchedText, success] = dmp.current.patch_apply(patch, newGeneratedText);
+        
+        if (success && patchedText) {
+          setCurrentText(patchedText);
+          setInitialGeneratedText(newGeneratedText);
+          setNote(patchedText);
+        } else {
+          // Fallback: if patch fails, preserve current text and update initial
+          setInitialGeneratedText(newGeneratedText);
+          // Keep current text as is - don't overwrite manual edits
+        }
+      } catch (error) {
+        console.warn('Diff/patch failed, preserving manual edits:', error);
+        // On error, preserve current text and update initial
+        setInitialGeneratedText(newGeneratedText);
+        // Keep current text as is - don't overwrite manual edits
+      }
     }
   }, [generateTextFromOptions, initialGeneratedText, currentText]);
 
   const handleNoteChange = (newText: string) => {
     setCurrentText(newText);
     setNote(newText);
+    // Ensure the note state is marked as dirty for persistence
+    noteState.setLivePreviewContent(newText);
   };
 
   const resetToGenerated = () => {
@@ -1840,18 +1863,14 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     }
   }, [noteType, admissionType, progressType, loadTemplatesForNoteType]);
 
-  useEffect(() => {
-    handleOptionChange();
-  }, [medications, processedLabValues, pmhText, noteType, admissionType, progressType, chiefComplaint, selectedPeSystems, intubationValues, impressionText, selectedSymptoms, selectedTemplate]);
-
   // On blur, commit the live typing text to the main state to trigger a note update.
   const handlePMHBlur = useCallback((updatedText?: string) => {
-    if (updatedText !== undefined) {
-      setPmhText(updatedText);
-    } else {
-      setPmhText(typingPmhText);
+    const newText = updatedText !== undefined ? updatedText : typingPmhText;
+    // Only update if the text actually changed to prevent feedback loops
+    if (newText !== pmhText) {
+      setPmhText(newText);
     }
-  }, [typingPmhText, setPmhText]);
+  }, [typingPmhText, setPmhText, pmhText]);
   
   const timeoutRef = useRef<NodeJS.Timeout[]>([]);
   
@@ -1927,6 +1946,13 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   }, [activeTab, getTabOrder]);
 
   const isManuallyEdited = currentText !== initialGeneratedText && initialGeneratedText !== "";
+
+  useEffect(() => {
+    // Only regenerate if there are no manual edits, or if this is the first time
+    if (!isManuallyEdited || initialGeneratedText === "") {
+      handleOptionChange();
+    }
+  }, [medications, processedLabValues, pmhText, noteType, admissionType, progressType, chiefComplaint, selectedPeSystems, intubationValues, impressionText, selectedSymptoms, selectedTemplate, isManuallyEdited, initialGeneratedText, handleOptionChange]);
 
   const renderMainContent = () => {
     const sectionTitle: Record<string, string> = {
@@ -2242,12 +2268,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       case "pmh":
         return (
           <SectionWrapper title={sectionTitle["pmh"]} sectionKey="pmh" controls={pmhControls}>
-            <SmartPMHSection
-              value={typingPmhText}
-              onChange={setTypingPmhText}
-              onBlur={handlePMHBlur}
-              defaultContent={getSectionDefaultContent("pmh")}
-            />
+            <CleanPMHSection />
           </SectionWrapper>
         );
       case "meds":

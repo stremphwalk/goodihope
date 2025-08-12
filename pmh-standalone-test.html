@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PMH Editor Standalone Test</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f9fafb;
+        }
+        .container {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 24px;
+        }
+        .title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #1f2937;
+        }
+        .subtitle {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 24px;
+        }
+        .test-area {
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .chip {
+            display: inline-block;
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 8px 12px;
+            margin: 4px;
+            border-radius: 16px;
+            border: 1px solid #bfdbfe;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        .chip:hover {
+            background: #bfdbfe;
+            transform: scale(0.98);
+        }
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+            font-size: 14px;
+            resize: vertical;
+            outline: none;
+        }
+        textarea:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        .controls {
+            margin-top: 12px;
+            display: flex;
+            gap: 8px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        button.secondary {
+            background: #6b7280;
+        }
+        button.secondary:hover {
+            background: #4b5563;
+        }
+        .preview {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 16px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            display: none;
+        }
+        .preview.show {
+            display: block;
+        }
+        .test-instructions {
+            background: #fef3c7;
+            border: 1px solid #fbbf24;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+        }
+        .test-result {
+            margin-top: 12px;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .success { background: #dcfce7; color: #166534; }
+        .error { background: #fecaca; color: #991b1b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">🏥 PMH Editor Component Test</h1>
+        <p class="subtitle">Testing the core functionality without the full application</p>
+        
+        <div class="test-instructions">
+            <strong>📋 Test Instructions:</strong>
+            <ul>
+                <li><strong>Chips:</strong> Click blue buttons to insert conditions</li>
+                <li><strong>Tab:</strong> Type "htn" then press Tab for autocomplete</li>
+                <li><strong>Space:</strong> Type "dm " (with space) for auto-expansion</li>
+                <li><strong>Enter:</strong> Press Enter for new lines with proper spacing</li>
+                <li><strong>Preview:</strong> Click "Show Preview" to see EHR format</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="test-area">
+            <div style="margin-bottom: 16px;">
+                <strong>Quick Insert Chips:</strong><br>
+                <div id="chips-container"></div>
+            </div>
+            
+            <textarea 
+                id="pmh-textarea" 
+                placeholder="Enter past medical history items...
+
+Try these tests:
+- Type 'htn' then Tab (should show autocomplete)
+- Type 'dm ' with space (should expand)  
+- Click chips above to insert
+- Use Enter for new lines
+- Use Tab at line start to indent"
+            ></textarea>
+            
+            <div class="controls">
+                <button onclick="showPreview()">Show Preview</button>
+                <button onclick="copyText()" class="secondary">Copy EHR Format</button>
+                <button onclick="clearText()" class="secondary">Clear</button>
+            </div>
+            
+            <div id="preview" class="preview"></div>
+            <div id="test-results"></div>
+        </div>
+    </div>
+
+    <script type="text/babel">
+        // PMH Dictionary (simplified from your implementation)
+        const PMH_CHIPS = [
+            "Hypertension", "Type 2 diabetes mellitus", "Coronary artery disease", 
+            "Atrial fibrillation", "COPD", "Chronic kidney disease", "Heart failure", 
+            "Stroke/TIA", "Asthma", "GERD", "Hypothyroidism", "Osteoarthritis"
+        ];
+
+        const SYNONYMS = {
+            htn: "Hypertension", 
+            t2dm: "Type 2 diabetes mellitus", 
+            dm2: "Type 2 diabetes mellitus",
+            dm: "Diabetes mellitus", 
+            cad: "Coronary artery disease", 
+            af: "Atrial fibrillation",
+            afib: "Atrial fibrillation", 
+            copd: "COPD", 
+            ckd: "Chronic kidney disease",
+            chf: "Heart failure", 
+            hf: "Heart failure", 
+            tia: "Stroke/TIA",
+            gerd: "GERD", 
+            hypothyroid: "Hypothyroidism", 
+            oa: "Osteoarthritis"
+        };
+
+        // Core functions (simplified from your implementation)
+        function getCurrentLineInfo(text, cursor) {
+            const prev = text.lastIndexOf("\n", cursor - 1);
+            const next = text.indexOf("\n", cursor);
+            const start = prev === -1 ? 0 : prev + 1;
+            const end = next === -1 ? text.length : next;
+            return { start, end, line: text.slice(start, end), column: cursor - start };
+        }
+
+        function getTokenRange(line, column) {
+            if (!line) return null;
+            const isWord = (ch) => /[\p{L}\p{N}_\-]/u.test(ch);
+            let l = column - 1;
+            while (l >= 0 && isWord(line[l])) l--;
+            let r = column;
+            while (r < line.length && isWord(line[r])) r++;
+            return r - (l + 1) > 0 ? [l + 1, r] : null;
+        }
+
+        function replaceRange(s, start, end, replacement) {
+            return s.slice(0, start) + replacement + s.slice(end);
+        }
+
+        function parsePMH(raw) {
+            const items = [];
+            let cur = null;
+            for (const line of (raw || "").replace(/\r\n?/g, "\n").split("\n")) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                
+                const isContext = /^\s+-\s/.test(line) || /^\s+\S/.test(line);
+                if (isContext) {
+                    const ctx = line.replace(/^\s+/, "").replace(/^-(\s+)?/, "").trimEnd();
+                    if (!cur) {
+                        cur = { title: ctx, context: [] };
+                        items.push(cur);
+                    } else {
+                        cur.context.push(ctx);
+                    }
+                } else {
+                    cur = { title: trimmed, context: [] };
+                    items.push(cur);
+                }
+            }
+            return items;
+        }
+
+        function renderPMH(items, indentSpaces = 4) {
+            const ind = Array(Math.max(0, indentSpaces)).fill(" ").join("");
+            const out = [];
+            items.forEach((it, idx) => {
+                out.push(`${idx + 1}. ${it.title}`);
+                it.context.forEach(c => out.push(`${ind}- ${c}`));
+                if (idx < items.length - 1) out.push("");
+            });
+            return out.join("\n");
+        }
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', function() {
+            const textarea = document.getElementById('pmh-textarea');
+            const chipsContainer = document.getElementById('chips-container');
+            const preview = document.getElementById('preview');
+            const testResults = document.getElementById('test-results');
+
+            // Create chips
+            PMH_CHIPS.forEach(chip => {
+                const button = document.createElement('button');
+                button.className = 'chip';
+                button.textContent = chip;
+                button.onclick = () => insertChip(chip);
+                chipsContainer.appendChild(button);
+            });
+
+            // Add event listeners
+            textarea.addEventListener('keydown', handleKeyDown);
+            textarea.addEventListener('input', updateTests);
+
+            function insertChip(text) {
+                const cursor = textarea.selectionStart;
+                const value = textarea.value;
+                const { line, column } = getCurrentLineInfo(value, cursor);
+                
+                let insertion = text;
+                let newCursor = cursor + text.length;
+                
+                if (line.trim() === '' || column === 0 || /^\s*$/.test(line.slice(0, column))) {
+                    insertion = text;
+                } else {
+                    insertion = `\n${text}`;
+                    newCursor = cursor + 1 + text.length;
+                }
+                
+                const newValue = replaceRange(value, cursor, cursor, insertion);
+                textarea.value = newValue;
+                textarea.focus();
+                textarea.setSelectionRange(newCursor, newCursor);
+                updateTests();
+                showResult('✅ Chip inserted successfully', 'success');
+            }
+
+            function handleKeyDown(e) {
+                const cursor = textarea.selectionStart;
+                const value = textarea.value;
+                const { line, column, start: lineStart } = getCurrentLineInfo(value, cursor);
+
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const isIndented = /^\s+/.test(line);
+                    const indent = isIndented ? "    " : "";
+                    const newValue = replaceRange(value, cursor, cursor, `\n${indent}`);
+                    const newCursor = cursor + 1 + indent.length;
+                    
+                    textarea.value = newValue;
+                    setTimeout(() => {
+                        textarea.focus();
+                        textarea.setSelectionRange(newCursor, newCursor);
+                    }, 0);
+                    updateTests();
+                    showResult('✅ Enter key: New line with proper indentation', 'success');
+                    return;
+                }
+
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const isLineStart = column === 0 || /^\s*$/.test(line.slice(0, column));
+                    
+                    if (isLineStart) {
+                        const newValue = replaceRange(value, cursor, cursor, "    ");
+                        const newCursor = cursor + 4;
+                        textarea.value = newValue;
+                        setTimeout(() => {
+                            textarea.focus();
+                            textarea.setSelectionRange(newCursor, newCursor);
+                        }, 0);
+                        updateTests();
+                        showResult('✅ Tab indent: Added 4 spaces', 'success');
+                    } else {
+                        const tokenRange = getTokenRange(line, column);
+                        if (tokenRange) {
+                            const [tokenStart, tokenEnd] = tokenRange;
+                            const word = line.slice(tokenStart, tokenEnd);
+                            const matches = Object.keys(SYNONYMS).filter(k => 
+                                k.toLowerCase().startsWith(word.toLowerCase())
+                            );
+                            
+                            if (matches.length > 0) {
+                                const expansion = SYNONYMS[matches[0]];
+                                const globalStart = lineStart + tokenStart;
+                                const globalEnd = lineStart + tokenEnd;
+                                const newValue = replaceRange(value, globalStart, globalEnd, expansion);
+                                const newCursor = globalStart + expansion.length;
+                                
+                                textarea.value = newValue;
+                                setTimeout(() => {
+                                    textarea.focus();
+                                    textarea.setSelectionRange(newCursor, newCursor);
+                                }, 0);
+                                updateTests();
+                                showResult(`✅ Tab autocomplete: "${word}" → "${expansion}"`, 'success');
+                            } else {
+                                showResult(`❌ No autocomplete found for "${word}"`, 'error');
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                if (e.key === ' ') {
+                    const tokenRange = getTokenRange(line, column);
+                    if (tokenRange) {
+                        const [tokenStart, tokenEnd] = tokenRange;
+                        const word = line.slice(tokenStart, tokenEnd);
+                        if (SYNONYMS[word.toLowerCase()]) {
+                            const expansion = SYNONYMS[word.toLowerCase()];
+                            const globalStart = lineStart + tokenStart;
+                            const globalEnd = lineStart + tokenEnd;
+                            const newValue = replaceRange(value, globalStart, globalEnd, expansion + ' ');
+                            const newCursor = globalStart + expansion.length + 1;
+                            
+                            e.preventDefault();
+                            textarea.value = newValue;
+                            setTimeout(() => {
+                                textarea.focus();
+                                textarea.setSelectionRange(newCursor, newCursor);
+                            }, 0);
+                            updateTests();
+                            showResult(`✅ Space expansion: "${word}" → "${expansion}"`, 'success');
+                            return;
+                        }
+                    }
+                }
+            }
+
+            function updateTests() {
+                const value = textarea.value;
+                const items = parsePMH(value);
+                const rendered = renderPMH(items);
+                preview.textContent = rendered || "No items entered";
+            }
+
+            function showResult(message, type) {
+                testResults.innerHTML = `<div class="test-result ${type}">${message}</div>`;
+                setTimeout(() => {
+                    testResults.innerHTML = '';
+                }, 3000);
+            }
+
+            // Global functions for buttons
+            window.showPreview = function() {
+                updateTests();
+                preview.classList.toggle('show');
+                const button = event.target;
+                button.textContent = preview.classList.contains('show') ? 'Hide Preview' : 'Show Preview';
+            };
+
+            window.copyText = function() {
+                updateTests();
+                navigator.clipboard.writeText(preview.textContent).then(() => {
+                    showResult('✅ EHR format copied to clipboard', 'success');
+                }).catch(() => {
+                    showResult('❌ Failed to copy to clipboard', 'error');
+                });
+            };
+
+            window.clearText = function() {
+                textarea.value = '';
+                preview.textContent = '';
+                preview.classList.remove('show');
+                showResult('✅ Text cleared', 'success');
+            };
+
+            // Initial update
+            updateTests();
+        });
+    </script>
+</body>
+</html>

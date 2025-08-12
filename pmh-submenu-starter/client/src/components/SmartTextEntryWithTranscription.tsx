@@ -34,7 +34,6 @@ interface SmartTextEntryWithTranscriptionProps {
   transcriptionConfig?: object;
   className?: string;
   disabled?: boolean;
-  targetTextareaRef?: React.RefObject<HTMLTextAreaElement>; // NEW
 }
 
 export function SmartTextEntryWithTranscription({
@@ -53,7 +52,6 @@ export function SmartTextEntryWithTranscription({
   transcriptionConfig = {},
   className,
   disabled = false,
-  targetTextareaRef, // NEW
   ...props
 }: SmartTextEntryWithTranscriptionProps) {
   const { language } = useLanguage();
@@ -74,10 +72,9 @@ export function SmartTextEntryWithTranscription({
   const handleTranscriptionResult = useCallback((result) => {
     const { text, confidence } = result;
     
-    const targetRef = targetTextareaRef?.current ?? textareaRef.current;
-    if (text && targetRef) {
+    if (text && textareaRef.current) {
       const currentValue = value || '';
-      const cursorPosition = targetRef.selectionStart || 0;
+      const cursorPosition = textareaRef.current.selectionStart || 0;
       
       const { text: newText, cursorPosition: newCursor } = formatTranscriptionForInsertion(
         currentValue,
@@ -92,8 +89,10 @@ export function SmartTextEntryWithTranscription({
       
       // Focus and position cursor
       setTimeout(() => {
-        targetRef.focus();
-        targetRef.setSelectionRange(newCursor, newCursor);
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newCursor, newCursor);
+        }
       }, 0);
     }
     
@@ -101,7 +100,7 @@ export function SmartTextEntryWithTranscription({
     if (showOverlay) {
       setTimeout(() => setShowOverlay(false), 2000);
     }
-  }, [value, onChange, showOverlay, targetTextareaRef]);
+  }, [value, onChange, showOverlay]);
   
   // Handle transcription error
   const handleTranscriptionError = useCallback((error) => {

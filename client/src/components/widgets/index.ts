@@ -8,7 +8,7 @@ import './prednisoneWeanWidgetRegistration';
 // Export components for use elsewhere
 export { MedicationWidget } from './MedicationWidget';
 export { AllergiesWidget } from './AllergiesWidget';
-export { PMHWidget } from './PMHWidget';
+export { default as PMHWidget } from './PMHWidget';
 export { ImpressionWidget } from './ImpressionWidget';
 export { PrednisoneWeanWidget } from './PrednisoneWeanWidget';
 export { WidgetWrapper } from '../WidgetWrapper';

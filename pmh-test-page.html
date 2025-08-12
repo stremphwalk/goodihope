@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PMH Editor Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+        .test-title { font-weight: bold; color: #333; margin-bottom: 10px; }
+        .test-steps { margin-left: 20px; }
+        .test-steps li { margin: 5px 0; }
+        .expected { color: #0066cc; font-style: italic; }
+        .warning { background: #fff3cd; padding: 10px; border-radius: 4px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🏥 PMH Editor Testing Guide</h1>
+    
+    <div class="warning">
+        <strong>⚠️ Prerequisites:</strong> Make sure your dev server is running on <a href="http://localhost:5001" target="_blank">http://localhost:5001</a>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">🔍 Where to Find PMH Editor</div>
+        <ul class="test-steps">
+            <li>Navigate to Review of Systems page</li>
+            <li>Look for "Past Medical History" section</li>
+            <li>Should see the new editor with chips at the top</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">⌨️ Keyboard Shortcuts Test</div>
+        <ul class="test-steps">
+            <li><strong>Enter Test:</strong> Type "Hypertension" → Press Enter
+                <div class="expected">Expected: New line with proper spacing</div>
+            </li>
+            <li><strong>Tab Indent:</strong> At start of line → Press Tab
+                <div class="expected">Expected: 4-space indentation</div>
+            </li>
+            <li><strong>Tab Autocomplete:</strong> Type "htn" → Press Tab
+                <div class="expected">Expected: Autocomplete popup showing "Hypertension"</div>
+            </li>
+            <li><strong>Space Expansion:</strong> Type "dm " (with space)
+                <div class="expected">Expected: Auto-expands to "Diabetes mellitus "</div>
+            </li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">🔘 Quick Insert Chips</div>
+        <ul class="test-steps">
+            <li>Click any blue chip button (e.g., "Hypertension")</li>
+            <li class="expected">Expected: Condition inserted at cursor position</li>
+            <li>Try clicking multiple chips</li>
+            <li class="expected">Expected: Each appears on new line</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">📋 Preview & Copy Test</div>
+        <ul class="test-steps">
+            <li>Enter some conditions with details (use Tab to indent details)</li>
+            <li>Click "Show Preview" button</li>
+            <li class="expected">Expected: Shows numbered EHR format</li>
+            <li>Click "Copy EHR Format"</li>
+            <li class="expected">Expected: Formatted text copied to clipboard</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">📝 Sample Test Data</div>
+        <div>Try entering this text to test formatting:</div>
+        <pre style="background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 4px;">
+Hypertension
+    Well controlled on lisinopril 10mg daily
+    Last BP reading 125/80 mmHg
+
+Type 2 diabetes mellitus  
+    A1C 7.1% (target &lt;7%)
+    On metformin 1000mg twice daily
+    
+Coronary artery disease
+    History of NSTEMI 2019
+    On dual antiplatelet therapy
+    Last echo shows EF 55%
+        </pre>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">🎤 Transcription Test (if enabled)</div>
+        <ul class="test-steps">
+            <li>Look for microphone/transcription button</li>
+            <li>Click to start voice input</li>
+            <li>Say: "Patient has hypertension well controlled"</li>
+            <li class="expected">Expected: Text appears at cursor position in PMH editor</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">🐛 What to Look For</div>
+        <ul class="test-steps">
+            <li><strong>✅ Working:</strong> Autocomplete popups, proper indentation, chip insertion</li>
+            <li><strong>❌ Issues:</strong> Console errors, broken shortcuts, missing chips</li>
+            <li><strong>🔍 Check:</strong> Browser console (F12) for any error messages</li>
+        </ul>
+    </div>
+
+    <div style="margin-top: 30px; padding: 15px; background: #e8f5e8; border-radius: 8px;">
+        <strong>🎉 Success Criteria:</strong>
+        <ul>
+            <li>All keyboard shortcuts work as described</li>
+            <li>Chips insert conditions properly</li>
+            <li>Preview shows proper EHR formatting</li>
+            <li>Copy function works</li>
+            <li>No console errors</li>
+        </ul>
+    </div>
+</body>
+</html>

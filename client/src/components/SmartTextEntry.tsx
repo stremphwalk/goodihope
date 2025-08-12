@@ -86,7 +86,7 @@ export function SmartTextEntry({
   const persistedState = usePersistedState(
     persistenceKey || `smart-text-entry-${title}`,
     value || '',
-    value,
+    undefined, // Don't pass parent value to prevent sync issues
     parentOnChange,
     false // Disable session backup to prevent unwanted restoration
   );
@@ -96,6 +96,20 @@ export function SmartTextEntry({
   const [hasUserEdited, setHasUserEdited] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const userExplicitlyDeletedRef = useRef(false); // Track when user intentionally clears content
+  const lastParentValue = useRef(value);
+  
+  // Only sync from parent when it's a meaningful change (template load, reset, etc.)
+  // Not when it's just the same value coming back from our own blur
+  useEffect(() => {
+    if (value !== lastParentValue.current && value !== localValue) {
+      // Only sync if this is a significant change (not empty to empty)
+      const isSignificantChange = value.trim() !== '' || lastParentValue.current.trim() !== '';
+      if (isSignificantChange && !isFocused) {
+        setLocalValue(value);
+      }
+    }
+    lastParentValue.current = value;
+  }, [value, localValue, isFocused, setLocalValue]);
   
   // Dot phrase state
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -668,8 +682,9 @@ export function SmartTextEntry({
     
     setIsFocused(false);
     
-    // Always update parent with current local value on blur - this ensures deletions are preserved
-    if (parentOnChange) {
+    // Update parent only if updateOnBlurOnly is true or value changed
+    // This prevents unnecessary updates that cause feedback loops
+    if (updateOnBlurOnly && parentOnChange) {
       parentOnChange(localValue);
     }
     
@@ -683,12 +698,10 @@ export function SmartTextEntry({
       dropdownMouseDownRef.current = false;
     }, 100);
     
-    // Sync to parent using persisted state - but respect explicit deletions
-    if (!userExplicitlyDeletedRef.current || localValue.trim().length > 0) {
-      persistedState.syncToParent();
-    }
+    // Sync to parent - always preserves user's current value including deletions
+    persistedState.syncToParent();
     onBlur?.(localValue);
-  }, [persistedState, onBlur, calendarIsOpen, parentOnChange, localValue]);
+  }, [persistedState, onBlur, calendarIsOpen, parentOnChange, localValue, updateOnBlurOnly]);
 
   // Auto-activate smart options when expanded
   useEffect(() => {

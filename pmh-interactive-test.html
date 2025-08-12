@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 PMH Textarea Interactive Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .test-container {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 20px 0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .test-field {
+            margin: 16px 0;
+            padding: 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        
+        .test-field.focused {
+            border-color: #3b82f6;
+            background: #f0f9ff;
+        }
+        
+        .test-field.just-blurred {
+            border-color: #10b981;
+            background: #f0fdf4;
+        }
+        
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 40px;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .debug-panel {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 16px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status.success { background: #10b981; color: white; }
+        .status.error { background: #ef4444; color: white; }
+        .status.warning { background: #f59e0b; color: white; }
+        .status.info { background: #3b82f6; color: white; }
+        
+        .test-instructions {
+            background: #fffbeb;
+            border: 2px solid #f59e0b;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        
+        .test-step {
+            margin: 8px 0;
+            padding: 8px;
+            background: #f8fafc;
+            border-left: 4px solid #3b82f6;
+        }
+        
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+        
+        .metric {
+            background: #f8fafc;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1f2937;
+        }
+        
+        .metric-label {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 PMH Textarea Interactive Deletion Test</h1>
+    <p><strong>Goal:</strong> Test if the SimplePMHTextarea component properly handles text deletion without regeneration.</p>
+    
+    <div class="test-instructions">
+        <h3>📋 Test Instructions</h3>
+        <div class="test-step">1. Type "Hypertension" in the textarea below</div>
+        <div class="test-step">2. Click outside to blur and save</div>
+        <div class="test-step">3. Click back in to focus</div>
+        <div class="test-step">4. Select all (Ctrl/Cmd+A) and delete</div>
+        <div class="test-step">5. Check if text stays deleted or regenerates</div>
+    </div>
+    
+    <div class="test-container">
+        <h3>🎯 Test Subject: Simulated SimplePMHTextarea</h3>
+        
+        <div id="testField1" class="test-field">
+            <label><strong>PMH Entry #1:</strong></label><br>
+            <textarea id="textarea1" placeholder="Enter main medical condition..." rows="2"></textarea>
+        </div>
+        
+        <div class="metrics">
+            <div class="metric">
+                <div class="metric-value" id="focusCount">0</div>
+                <div class="metric-label">Focus Events</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="blurCount">0</div>
+                <div class="metric-label">Blur Events</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="changeCount">0</div>
+                <div class="metric-label">Change Events</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="saveCount">0</div>
+                <div class="metric-label">Parent Updates</div>
+            </div>
+        </div>
+        
+        <div class="debug-panel" id="debugLog">
+            <div>🔍 Debug Log - Watch the component behavior:</div>
+        </div>
+    </div>
+    
+    <div class="test-container">
+        <h3>📊 Current Status</h3>
+        <div id="testStatus">
+            <span class="status info">READY</span> Waiting for user interaction...
+        </div>
+        <div style="margin-top: 12px;">
+            <strong>Local Value:</strong> "<span id="localValue"></span>"<br>
+            <strong>Parent Value:</strong> "<span id="parentValue"></span>"<br>
+            <strong>Is Focused:</strong> <span id="focusStatus">false</span>
+        </div>
+    </div>
+
+    <script>
+        // Simulate SimplePMHTextarea component behavior
+        class SimplePMHTextareaSimulator {
+            constructor(textareaId, entryId = 'entry-1') {
+                this.textarea = document.getElementById(textareaId);
+                this.entryId = entryId;
+                this.localValue = '';
+                this.parentValue = '';
+                this.isFocused = false;
+                this.prevEntryId = entryId;
+                
+                // Metrics
+                this.focusCount = 0;
+                this.blurCount = 0;
+                this.changeCount = 0;
+                this.saveCount = 0;
+                
+                this.setupEventListeners();
+                this.updateDisplay();
+            }
+            
+            log(message, type = 'info') {
+                const debugLog = document.getElementById('debugLog');
+                const timestamp = new Date().toLocaleTimeString();
+                const typeEmoji = {
+                    info: '📝',
+                    success: '✅',
+                    error: '❌',
+                    warning: '⚠️',
+                    focus: '🎯',
+                    blur: '👆',
+                    change: '✏️',
+                    save: '💾'
+                };
+                
+                debugLog.innerHTML += `<div>[${timestamp}] ${typeEmoji[type] || '📝'} ${message}</div>`;
+                debugLog.scrollTop = debugLog.scrollHeight;
+            }
+            
+            setupEventListeners() {
+                // Simulate handleFocus
+                this.textarea.addEventListener('focus', () => {
+                    this.focusCount++;
+                    this.isFocused = true;
+                    this.log(`Focus event - isFocused = true`, 'focus');
+                    this.updateDisplay();
+                    this.updateFieldVisual(true);
+                });
+                
+                // Simulate handleChange
+                this.textarea.addEventListener('input', (e) => {
+                    this.changeCount++;
+                    this.localValue = e.target.value;
+                    this.log(`Change event - localValue = "${this.localValue}"`, 'change');
+                    this.updateDisplay();
+                });
+                
+                // Simulate handleBlur
+                this.textarea.addEventListener('blur', () => {
+                    this.blurCount++;
+                    this.isFocused = false;
+                    this.log(`Blur event - isFocused = false`, 'blur');
+                    
+                    // Simulate onChange call to parent
+                    if (this.localValue !== this.parentValue) {
+                        this.saveCount++;
+                        this.log(`Calling parent onChange: "${this.parentValue}" → "${this.localValue}"`, 'save');
+                        this.parentValue = this.localValue;
+                        
+                        // Simulate parent re-render triggering useEffect
+                        setTimeout(() => {
+                            this.simulateUseEffect();
+                        }, 0);
+                    }
+                    
+                    this.updateDisplay();
+                    this.updateFieldVisual(false, true);
+                });
+            }
+            
+            // Simulate the problematic useEffect[value]
+            simulateUseEffect() {
+                this.log(`useEffect[value] triggered - isFocused=${this.isFocused}, parentValue="${this.parentValue}"`, 'warning');
+                
+                if (!this.isFocused) {
+                    this.log(`🚨 PROBLEM: Overwriting localValue with parentValue while not focused!`, 'error');
+                    this.localValue = this.parentValue;
+                    this.textarea.value = this.parentValue;
+                    this.updateDisplay();
+                } else {
+                    this.log(`✅ PROTECTED: Not updating localValue while focused`, 'success');
+                }
+            }
+            
+            updateDisplay() {
+                document.getElementById('localValue').textContent = this.localValue;
+                document.getElementById('parentValue').textContent = this.parentValue;
+                document.getElementById('focusStatus').textContent = this.isFocused;
+                document.getElementById('focusCount').textContent = this.focusCount;
+                document.getElementById('blurCount').textContent = this.blurCount;
+                document.getElementById('changeCount').textContent = this.changeCount;
+                document.getElementById('saveCount').textContent = this.saveCount;
+                
+                // Update test status
+                const status = document.getElementById('testStatus');
+                if (this.localValue === '' && this.parentValue !== '' && !this.isFocused) {
+                    status.innerHTML = '<span class="status error">FAILED</span> Text was regenerated after deletion!';
+                } else if (this.localValue === '' && this.parentValue === '') {
+                    status.innerHTML = '<span class="status success">PASSED</span> Text deletion successful!';
+                } else if (this.isFocused) {
+                    status.innerHTML = '<span class="status info">EDITING</span> User is currently editing...';
+                } else {
+                    status.innerHTML = '<span class="status warning">TESTING</span> Follow the test instructions above.';
+                }
+            }
+            
+            updateFieldVisual(focused = false, justBlurred = false) {
+                const field = document.getElementById('testField1');
+                field.className = 'test-field';
+                if (focused) field.className += ' focused';
+                if (justBlurred) field.className += ' just-blurred';
+                
+                if (justBlurred) {
+                    setTimeout(() => {
+                        field.className = 'test-field';
+                    }, 2000);
+                }
+            }
+        }
+        
+        // Initialize the simulator
+        const simulator = new SimplePMHTextareaSimulator('textarea1');
+        
+        // Add some helpful keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key === 'r') {
+                    e.preventDefault();
+                    location.reload();
+                }
+            }
+        });
+        
+        simulator.log('🚀 PMH Textarea Simulator initialized', 'success');
+        simulator.log('👆 Click in the textarea above to start testing', 'info');
+    </script>
+</body>
+</html>
