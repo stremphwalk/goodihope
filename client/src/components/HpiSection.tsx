@@ -3,7 +3,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { rosSymptomOptions } from '@/constants/rosSymptomOptions';
 import { generateHpiParagraph, type SelectedSymptom } from '@/utils/symptomTextUtils';
 import { Button } from '@/components/ui/button';
-import { Plus, Trash2, Edit3 } from 'lucide-react';
+import { CheckCircle, XCircle, MinusCircle, RotateCcw } from 'lucide-react';
 import { usePersistedState } from '@/hooks/usePersistedState';
 
 export interface HpiSectionProps {
@@ -14,68 +14,57 @@ export interface HpiSectionProps {
 export function HpiSection({ selectedSymptoms, setSelectedSymptoms }: HpiSectionProps) {
   const { language } = useLanguage();
   const { value: hpiText, setValue: setHpiText } = usePersistedState<string>('medical_hpi_text', '');
-  
-  // Debug logging
-  console.log('HpiSection rendering with language:', language);
-  console.log('HpiSection selectedSymptoms:', selectedSymptoms);
-  
-  // Local state for the new symptom form
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newSymptomSystem, setNewSymptomSystem] = useState<string>('');
-  const [newSymptomKey, setNewSymptomKey] = useState<string>('');
-  const [newSymptomSeverity, setNewSymptomSeverity] = useState<string>('');
-  const [newSymptomNote, setNewSymptomNote] = useState<string>('');
-  const [isNegative, setIsNegative] = useState(false);
+  const [expandedSystems, setExpandedSystems] = useState<Set<string>>(new Set());
 
-  // Handler: Add a new symptom to the selection
-  const handleAddSymptom = () => {
-    if (!newSymptomSystem || !newSymptomKey) return;
-    
-    const symptomData: SelectedSymptom = {
-      key: newSymptomKey,
-      present: !isNegative,
-      severity: (newSymptomSeverity.trim() as 'mild' | 'moderate' | 'severe') || undefined,
-      note: newSymptomNote.trim() || undefined
-    };
-    
+  // Toggle symptom state: null -> present -> absent -> null
+  const toggleSymptom = (systemKey: string, symptomKey: string) => {
     setSelectedSymptoms(prev => {
       const updated = { ...prev };
-      if (!updated[newSymptomSystem]) {
-        updated[newSymptomSystem] = new Set();
+      if (!updated[systemKey]) {
+        updated[systemKey] = new Set();
       }
-      // Remove any existing entry with same key
-      const systemSet = new Set(updated[newSymptomSystem]);
-      systemSet.forEach(item => {
-        if (item.key === newSymptomKey) systemSet.delete(item);
-      });
-      systemSet.add(symptomData);
-      updated[newSymptomSystem] = systemSet;
+      
+      const systemSet = new Set(updated[systemKey]);
+      const existing = Array.from(systemSet).find(item => item.key === symptomKey);
+      
+      // Remove existing entry
+      if (existing) {
+        systemSet.delete(existing);
+      }
+      
+      // Determine new state based on current state
+      if (!existing) {
+        // null -> present
+        systemSet.add({ key: symptomKey, present: true });
+      } else if (existing.present) {
+        // present -> absent (pertinent negative)
+        systemSet.add({ key: symptomKey, present: false });
+      }
+      // absent -> null (no add, just removal above)
+      
+      // Clean up empty sets
+      if (systemSet.size === 0) {
+        delete updated[systemKey];
+      } else {
+        updated[systemKey] = systemSet;
+      }
+      
       return updated;
     });
-    
-    // Reset form
-    setNewSymptomSystem('');
-    setNewSymptomKey('');
-    setNewSymptomSeverity('');
-    setNewSymptomNote('');
-    setIsNegative(false);
-    setShowAddForm(false);
   };
 
-  // Handler: Remove a symptom from selection
-  const handleRemoveSymptom = (system: string, symptomKey: string) => {
-    setSelectedSymptoms(prev => {
-      const updated = { ...prev };
-      if (updated[system]) {
-        const systemSet = new Set(Array.from(updated[system]).filter(item => item.key !== symptomKey));
-        if (systemSet.size === 0) {
-          delete updated[system];
-        } else {
-          updated[system] = systemSet;
-        }
-      }
-      return updated;
-    });
+  // Get current state of a symptom
+  const getSymptomState = (systemKey: string, symptomKey: string): 'present' | 'absent' | null => {
+    const symSet = selectedSymptoms[systemKey];
+    if (!symSet) return null;
+    const symObj = Array.from(symSet).find(item => item.key === symptomKey);
+    if (!symObj) return null;
+    return symObj.present ? 'present' : 'absent';
+  };
+
+  // Clear all selections
+  const clearAll = () => {
+    setSelectedSymptoms(() => ({}));
   };
 
   // Handler: Generate HPI text
@@ -92,21 +81,42 @@ export function HpiSection({ selectedSymptoms, setSelectedSymptoms }: HpiSection
     }
   }, [language]);
 
-  // Collect symptoms for display
-  const allSymptoms: { system: string; symptom: SelectedSymptom }[] = [];
-  Object.entries(selectedSymptoms).forEach(([system, symSet]) => {
-    symSet.forEach(sym => {
-      allSymptoms.push({ system, symptom: sym });
+  // Toggle system expansion
+  const toggleSystemExpansion = (systemKey: string) => {
+    setExpandedSystems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(systemKey)) {
+        newSet.delete(systemKey);
+      } else {
+        newSet.add(systemKey);
+      }
+      return newSet;
     });
-  });
+  };
+
+  // Check if system has any selections
+  const systemHasSelections = (systemKey: string): boolean => {
+    const symSet = selectedSymptoms[systemKey];
+    return symSet ? symSet.size > 0 : false;
+  };
+
+  // Count selections in system
+  const getSystemSelectionCount = (systemKey: string): { positive: number; negative: number } => {
+    const symSet = selectedSymptoms[systemKey];
+    if (!symSet) return { positive: 0, negative: 0 };
+    
+    let positive = 0;
+    let negative = 0;
+    symSet.forEach(sym => {
+      if (sym.present) positive++;
+      else negative++;
+    });
+    
+    return { positive, negative };
+  };
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6 relative">
-      {/* DEBUG: New HPI Section Marker */}
-      <div className="bg-green-500 text-white p-2 text-center font-bold">
-        NEW HPI SECTION LOADED - REDESIGN WORKING!
-      </div>
-      
+    <div className="w-full max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="text-center space-y-2">
         <div className="flex items-center justify-center gap-3">
@@ -121,180 +131,115 @@ export function HpiSection({ selectedSymptoms, setSelectedSymptoms }: HpiSection
         </div>
         <p className="text-sm text-gray-600 max-w-lg mx-auto">
           {language === 'fr' 
-            ? 'Ajoutez les symptômes pertinents et générez le paragraphe HMA.'
-            : 'Add relevant symptoms and generate the HPI paragraph.'
+            ? 'Cliquez sur les symptômes pour les marquer comme présents ou absents.'
+            : 'Click symptoms to mark them as present or absent.'
           }
         </p>
       </div>
 
-      {/* Main content area */}
-      <div className="bg-white/90 border border-gray-200 rounded-xl p-4 shadow-sm">
-        {/* Symptom list */}
-        <div className="space-y-3">
-          {allSymptoms.length > 0 ? (
-            allSymptoms.map(({ system, symptom }) => {
-              const systemObj = (rosSymptomOptions as any)[system];
-              const symInfo = systemObj?.symptoms.find((s: any) => s.key === symptom.key);
-              const symLabel = symInfo ? (language === 'fr' ? symInfo.fr : symInfo.en) : symptom.key;
-              const systemLabel = systemObj ? (language === 'fr' ? systemObj.label.fr : systemObj.label.en) : system;
-              
-              return (
-                <div key={`${system}-${symptom.key}`} className="flex items-start justify-between bg-gray-50 border rounded-lg p-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-800">{symLabel}</span>
-                      {symptom.present ? (
+      {/* Quick actions */}
+      <div className="flex justify-center gap-2">
+        <Button
+          onClick={clearAll}
+          variant="outline"
+          size="sm"
+        >
+          <RotateCcw className="w-4 h-4" />
+          {language === 'fr' ? 'Réinitialiser' : 'Clear All'}
+        </Button>
+      </div>
+
+      {/* Systems and symptoms */}
+      <div className="bg-white/90 border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        {Object.entries(rosSymptomOptions).map(([systemKey, systemData], index) => {
+          const isExpanded = expandedSystems.has(systemKey) || systemHasSelections(systemKey);
+          const { positive, negative } = getSystemSelectionCount(systemKey);
+          
+          return (
+            <div key={systemKey} className={index > 0 ? 'border-t' : ''}>
+              {/* System header */}
+              <div 
+                className="px-4 py-3 bg-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors"
+                onClick={() => toggleSystemExpansion(systemKey)}
+              >
+                <div className="flex items-center gap-3">
+                  <h3 className="font-medium text-gray-800">
+                    {language === 'fr' ? systemData.label.fr : systemData.label.en}
+                  </h3>
+                  {(positive > 0 || negative > 0) && (
+                    <div className="flex gap-2">
+                      {positive > 0 && (
                         <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">
-                          {language === 'fr' ? 'Présent' : 'Present'}
+                          {positive} {language === 'fr' ? 'présent' : 'present'}
                         </span>
-                      ) : (
+                      )}
+                      {negative > 0 && (
                         <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded">
-                          {language === 'fr' ? 'Absent' : 'Absent'}
+                          {negative} {language === 'fr' ? 'pertinent négatif' : 'pertinent negative'}
                         </span>
                       )}
                     </div>
-                    {symptom.severity && (
-                      <span className="text-sm text-gray-600">
-                        {language === 'fr' ? 'Sévérité' : 'Severity'}: {symptom.severity}
-                      </span>
-                    )}
-                    {symptom.note && (
-                      <div className="text-sm text-gray-600 mt-1">{symptom.note}</div>
-                    )}
-                    <span className="text-xs text-gray-500">{systemLabel}</span>
-                  </div>
-                  <button 
-                    onClick={() => handleRemoveSymptom(system, symptom.key)} 
-                    className="text-red-500 hover:text-red-700 p-1"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  )}
                 </div>
-              );
-            })
-          ) : (
-            <p className="text-sm text-gray-500 text-center py-4">
-              {language === 'fr' ? 'Aucun symptôme ajouté.' : 'No symptoms added yet.'}
-            </p>
-          )}
-        </div>
-
-        {/* Add symptom form */}
-        {showAddForm ? (
-          <div className="border-t pt-4 mt-4 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <select 
-                value={newSymptomSystem} 
-                onChange={e => {
-                  setNewSymptomSystem(e.target.value);
-                  setNewSymptomKey('');
-                }}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">{language === 'fr' ? 'Choisir un système...' : 'Choose system...'}</option>
-                {Object.entries(rosSymptomOptions).map(([key, val]) => (
-                  <option key={key} value={key}>
-                    {language === 'fr' ? val.label.fr : val.label.en}
-                  </option>
-                ))}
-              </select>
+                <svg 
+                  className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
               
-              <select 
-                value={newSymptomKey} 
-                onChange={e => setNewSymptomKey(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={!newSymptomSystem}
-              >
-                <option value="">{language === 'fr' ? 'Choisir un symptôme...' : 'Choose symptom...'}</option>
-                {newSymptomSystem && (rosSymptomOptions as any)[newSymptomSystem]?.symptoms.map((sym: any) => (
-                  <option key={sym.key} value={sym.key}>
-                    {language === 'fr' ? sym.fr : sym.en}
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            {newSymptomKey && (
-              <>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input 
-                      type="checkbox" 
-                      checked={isNegative}
-                      onChange={e => setIsNegative(e.target.checked)}
-                      className="rounded border-gray-300"
-                    />
-                    {language === 'fr' ? 'Marquer comme absent (négatif pertinent)' : 'Mark as absent (pertinent negative)'}
-                  </label>
+              {/* Symptoms list */}
+              {isExpanded && (
+                <div className="px-4 py-3 bg-white">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {systemData.symptoms.map((symptom: any) => {
+                      const state = getSymptomState(systemKey, symptom.key);
+                      
+                      return (
+                        <div 
+                          key={symptom.key} 
+                          className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          <span className="text-sm text-gray-700 flex-1">
+                            {language === 'fr' ? symptom.fr : symptom.en}
+                          </span>
+                          <button
+                            onClick={() => toggleSymptom(systemKey, symptom.key)}
+                            className={`p-1 rounded-lg transition-colors ${
+                              state === 'present' 
+                                ? 'text-green-600 bg-green-50 hover:bg-green-100' 
+                                : state === 'absent' 
+                                ? 'text-red-600 bg-red-50 hover:bg-red-100' 
+                                : 'text-gray-400 hover:bg-gray-100'
+                            }`}
+                          >
+                            {state === 'present' ? (
+                              <CheckCircle className="w-5 h-5" />
+                            ) : state === 'absent' ? (
+                              <XCircle className="w-5 h-5" />
+                            ) : (
+                              <div className="w-5 h-5 border-2 border-gray-300 rounded-full" />
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                
-                {!isNegative && (
-                  <select
-                    value={newSymptomSeverity}
-                    onChange={e => setNewSymptomSeverity(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">{language === 'fr' ? 'Sévérité (optionnel)' : 'Severity (optional)'}</option>
-                    <option value="mild">{language === 'fr' ? 'Léger' : 'Mild'}</option>
-                    <option value="moderate">{language === 'fr' ? 'Modéré' : 'Moderate'}</option>
-                    <option value="severe">{language === 'fr' ? 'Sévère' : 'Severe'}</option>
-                  </select>
-                )}
-                
-                <input 
-                  type="text" 
-                  value={newSymptomNote} 
-                  onChange={e => setNewSymptomNote(e.target.value)}
-                  placeholder={language === 'fr' ? 'Détails supplémentaires (optionnel)' : 'Additional details (optional)'}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </>
-            )}
-            
-            <div className="flex gap-2">
-              <Button
-                onClick={handleAddSymptom}
-                disabled={!newSymptomKey}
-                size="sm"
-              >
-                <Plus className="w-4 h-4" />
-                {language === 'fr' ? 'Ajouter' : 'Add'}
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowAddForm(false);
-                  setNewSymptomSystem('');
-                  setNewSymptomKey('');
-                  setNewSymptomSeverity('');
-                  setNewSymptomNote('');
-                  setIsNegative(false);
-                }}
-                variant="outline"
-                size="sm"
-              >
-                {language === 'fr' ? 'Annuler' : 'Cancel'}
-              </Button>
+              )}
             </div>
-          </div>
-        ) : (
-          <div className="border-t pt-4 mt-4">
-            <Button
-              onClick={() => setShowAddForm(true)}
-              variant="outline"
-              size="sm"
-            >
-              <Plus className="w-4 h-4" />
-              {language === 'fr' ? 'Ajouter un symptôme' : 'Add Symptom'}
-            </Button>
-          </div>
-        )}
+          );
+        })}
       </div>
 
       {/* Generate button */}
       <div className="text-center">
         <Button 
           onClick={handleGenerateHpi}
-          disabled={allSymptoms.length === 0}
+          disabled={Object.keys(selectedSymptoms).length === 0}
         >
           {language === 'fr' ? 'Générer HMA' : 'Generate HPI'}
         </Button>
