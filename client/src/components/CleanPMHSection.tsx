@@ -4,7 +4,7 @@ import { PMHEditor } from "@/components/pmh/PMHEditor";
 interface CleanPMHSectionProps {
   value?: string;
   onChange?: (value: string) => void;
-  onBlur?: () => void;
+  onBlur?: (value?: string) => void;
 }
 
 export default function CleanPMHSection({ value, onChange, onBlur }: CleanPMHSectionProps) {
@@ -14,7 +14,7 @@ export default function CleanPMHSection({ value, onChange, onBlur }: CleanPMHSec
       onChange={(raw, items, rendered) => {
         onChange?.(raw);
       }}
-      onBlur={onBlur}
+      onBlur={(raw) => onBlur?.(raw)}
     />
   );
 }

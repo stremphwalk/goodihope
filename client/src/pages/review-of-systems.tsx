@@ -3,6 +3,7 @@ import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMe
 import { rosSymptomOptions } from "@/constants/rosSymptomOptions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { RosSection } from '@/components/RosSection';
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -82,6 +83,7 @@ import { AllergiesSection } from "@/components/AllergiesSection";
 import { SocialHistorySection } from "@/components/SocialHistorySection";
 import { ChiefComplaintSection, type ChiefComplaintData } from "@/components/ChiefComplaintSection";
 import { type MedicationData, formatMedicationsForNote } from "@/lib/medicationUtils";
+import { type SelectedSymptom } from "@/utils/symptomTextUtils";
 import { LabTextPaste } from "@/components/LabTextPaste";
 import { LabSettingsPopover } from "@/components/LabSettingsPopover";
 import { LabValuesDisplay, LabValuesDisplayHandle } from "@/components/LabValuesDisplay";
@@ -329,16 +331,11 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   
   // ROS state
   const [selectedSystem, setSelectedSystem] = useState<string | null>(null);
-  interface SymptomObject {
-    key: string;
-    severity?: 'mild' | 'moderate' | 'severe';
-    note?: string;
-  }
   // Persisted HPI symptom selections so they survive sub-menu switches and re-renders
   const {
     value: selectedSymptoms,
     setValue: setSelectedSymptoms,
-  } = usePersistedState<Record<string, Set<SymptomObject>>>(
+  } = usePersistedState<Record<string, Set<SelectedSymptom>>>(
     'medical_selected_symptoms',
     {},
     undefined,
@@ -421,6 +418,12 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     value: hpiText, 
     setValue: setHpiText 
   } = usePersistedState<string>('medical_hpi_text', "");
+
+  // Add ROS text persistence
+  const {
+    value: rosText,
+    setValue: setRosText
+  } = usePersistedState<string>('medical_ros_text', "");
 
   const { 
     value: pmhText, 
@@ -874,7 +877,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       homeMedications: [],
       hospitalMedications: []
     });
-    setSelectedSymptoms({} as Record<string, Set<SymptomObject>>);
+    setSelectedSymptoms({} as Record<string, Set<SelectedSymptom>>);
     setSelectedPeSystems(new Set());
     setIntubationValues({});
     setPmhText('');
@@ -1276,7 +1279,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
           
           let rosText = '';
           if (Object.keys(selectedSymptoms).length > 0) {
-            const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<SymptomObject>]) => {
+            const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<SelectedSymptom>]) => {
               const symptomList = Array.from(symptoms);
               if (symptomList.length === 0) return '';
               const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string, description: {en: string, fr: string}}[]} >)[system];
@@ -1575,7 +1578,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
 
   const generateRosText = useCallback(() => {
     if (Object.keys(selectedSymptoms).length === 0) return "";
-    const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<SymptomObject>]) => {
+    const rosSentences = Object.entries(selectedSymptoms).map(([system, symptoms]: [string, Set<SelectedSymptom>]) => {
       const symptomList = Array.from(symptoms);
       if (symptomList.length === 0) return '';
       const systemObj = (rosSymptomOptions as Record<string, {symptoms: {key: string, en: string, fr: string, description: {en: string, fr: string}}[]} >)[system];
@@ -1689,13 +1692,20 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     const header = language === 'fr' ? "HISTOIRE DE LA MALADIE ACTUELLE :" : "HISTORY OF PRESENT ILLNESS:";
     const content = hpiText || (language === 'fr' ? "[Entrer l'HMA]" : "[Enter HPI]");
     
-    const rosText = generateRosText();
-    const fullContent = rosText ? 
-      (content.trim().endsWith('.') ? `${content} ${rosText}` : `${content}. ${rosText}`) : 
-      content;
+    return `${header}\n${content}`;
+  }, [language, hpiText]);
+
+  // Separate ROS text generation function
+  const generateROSText = useCallback((customContent?: string) => {
+    if (customContent && customContent.trim()) {
+      return customContent;
+    }
     
-    return `${header}\n${fullContent}`;
-  }, [language, hpiText, generateRosText]);
+    const header = language === 'fr' ? "REVUE DES SYSTÈMES :" : "REVIEW OF SYSTEMS:";
+    const content = rosText || (language === 'fr' ? "[Entrer la RS]" : "[Enter ROS]");
+    
+    return `${header}\n${content}`;
+  }, [language, rosText]);
 
   const generateAllergiesSocialText = useCallback((customContent?: string) => {
     if (customContent && customContent.trim()) {
@@ -1717,41 +1727,41 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
     if (noteType === "admission") {
       if (isICU) {
         if (language === 'fr') {
-          sections.push(`MOTIF D'ADMISSION :\n${chiefComplaint.customComplaint || '[Entrer le motif d\'admission]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`MOTIF D'ADMISSION :\n${chiefComplaint.customComplaint || '[Entrer le motif d\'admission]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generateROSText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         } else {
-          sections.push(`CHIEF COMPLAINT:\n${chiefComplaint.customComplaint || '[Enter chief complaint]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`CHIEF COMPLAINT:\n${chiefComplaint.customComplaint || '[Enter chief complaint]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generateROSText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         }
       } else {
         if (language === 'fr') {
-          sections.push(`MOTIF D'ADMISSION :\n${chiefComplaint.customComplaint || '[Entrer le motif d\'admission]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`MOTIF D'ADMISSION :\n${chiefComplaint.customComplaint || '[Entrer le motif d\'admission]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generateROSText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         } else {
-          sections.push(`CHIEF COMPLAINT:\n${chiefComplaint.customComplaint || '[Enter chief complaint]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`CHIEF COMPLAINT:\n${chiefComplaint.customComplaint || '[Enter chief complaint]'}\n\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generateROSText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         }
       }
     } else if (noteType === "progress") {
       if (isICU) {
         if (language === 'fr') {
-          sections.push(`NOTE D'ÉVOLUTION :\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`NOTE D'ÉVOLUTION :\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generateROSText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         } else {
-          sections.push(`PROGRESS NOTE:\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`PROGRESS NOTE:\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generateROSText()}\n\n${generatePhysicalExamText()}\n\n${generateIntubationText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         }
       } else {
         if (language === 'fr') {
-          sections.push(`NOTE D'ÉVOLUTION :\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`NOTE D'ÉVOLUTION :\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generateROSText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         } else {
-          sections.push(`PROGRESS NOTE:\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+          sections.push(`PROGRESS NOTE:\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generateROSText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
         }
       }
     } else if (noteType === "consultation") {
       if (language === 'fr') {
-        sections.push(`NOTE DE CONSULTATION :\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        sections.push(`NOTE DE CONSULTATION :\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generateROSText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
       } else {
-        sections.push(`CONSULTATION NOTE:\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
+        sections.push(`CONSULTATION NOTE:\n${generatePMHText()}\n\n${generateAllergiesText()}\n\n${generateSocialHistoryText()}\n\n${generateMedicationsText()}\n\n${generateHPIText()}\n\n${generateROSText()}\n\n${generatePhysicalExamText()}\n\n${generateLabValuesText()}\n\n${generateImageryText()}\n\n${generateImpressionText()}`);
       }
     }
 
     return sections.join('\n\n');
-  }, [noteType, language, chiefComplaint, generateHPIText, generatePMHText, generateAllergiesText, generateSocialHistoryText, generateMedicationsText, generateRosText, generatePhysicalExamText, generateIntubationText, generateLabValuesText, generateImageryText, generateImpressionText, admissionType, progressType]);
+  }, [noteType, language, chiefComplaint, generateHPIText, generateROSText, generatePMHText, generateAllergiesText, generateSocialHistoryText, generateMedicationsText, generatePhysicalExamText, generateIntubationText, generateLabValuesText, generateImageryText, generateImpressionText, admissionType, progressType]);
 
   const handleOptionChange = useCallback(() => {
     const newGeneratedText = generateTextFromOptions();
@@ -1968,6 +1978,9 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
       "ventilation": "Ventilation Parameters",
       "custom": language === 'fr' ? 'Note Personnalisée' : 'Custom Note'
     };
+
+    console.log('DEBUG: selectedSubOption =', selectedSubOption);
+    console.log('DEBUG: Available sections:', Object.keys(sectionTitle));
 
     switch (selectedSubOption) {
       case "note-type":
@@ -2253,16 +2266,25 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
           <SectionWrapper title={sectionTitle["hpi"]} sectionKey="hpi">
             <HpiSection
               selectedSymptoms={selectedSymptoms}
-              setSelectedSymptoms={handleSetSelectedSymptoms}
+              setSelectedSymptoms={(updater) => {
+                // Preserve global scroll before applying potentially heavy updates
+                preserveBeforeUpdate();
+                handleSetSelectedSymptoms(updater);
+              }}
             />
           </SectionWrapper>
         );
       case "ros":
         return (
           <SectionWrapper title={sectionTitle["ros"]} sectionKey="ros">
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600 whitespace-normal text-wrap">Review of systems examination.</p>
-            </div>
+            <RosSection
+              selectedSymptoms={selectedSymptoms}
+              setSelectedSymptoms={(updater) => {
+                // Preserve global scroll before applying potentially heavy updates
+                preserveBeforeUpdate();
+                handleSetSelectedSymptoms(updater);
+              }}
+            />
           </SectionWrapper>
         );
       case "pmh":
@@ -2271,7 +2293,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
             <CleanPMHSection
               value={typingPmhText}
               onChange={setTypingPmhText}
-              onBlur={() => handlePMHBlur()}
+              onBlur={(raw) => handlePMHBlur(raw)}
             />
           </SectionWrapper>
         );
@@ -2812,7 +2834,7 @@ function ReviewOfSystems({ selectedMenu, setSelectedMenu, selectedSubOption, set
   const contentRef = useRef<HTMLDivElement>(null);
   const [scrollPosition, setScrollPosition] = useState(0);
 
-  const handleSetSelectedSymptoms = useCallback((updater: (prev: Record<string, Set<SymptomObject>>) => Record<string, Set<SymptomObject>>) => {
+  const handleSetSelectedSymptoms = useCallback((updater: (prev: Record<string, Set<SelectedSymptom>>) => Record<string, Set<SelectedSymptom>>) => {
     if (contentRef.current) {
       setScrollPosition(contentRef.current.scrollTop);
     }

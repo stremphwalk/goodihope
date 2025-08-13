@@ -53,4 +53,43 @@ export const rosSymptomOptions = {
       { key: "incontinence", en: "Incontinence", fr: "Incontinence", description: { en: "Involuntary leakage of urine", fr: "Fuite involontaire d'urine" } },
     ],
   },
+  rheumatologic: {
+    label: { en: "Rheumatologic", fr: "Rhumatologique" },
+    symptoms: [
+      { key: "arthralgia", en: "Arthralgia", fr: "Arthralgie", description: { en: "Joint pain", fr: "Douleur articulaire" } },
+      { key: "morning_stiffness", en: "Morning stiffness", fr: "Raideur matinale", description: { en: "Stiffness worse in the morning", fr: "Raideur pire le matin" } },
+      { key: "myalgia", en: "Myalgia", fr: "Myalgie", description: { en: "Muscle pain", fr: "Douleur musculaire" } },
+      { key: "rash_photosensitivity", en: "Photosensitive rash", fr: "Éruption photosensible", description: { en: "Rash worse with sun exposure", fr: "Éruption aggravée par le soleil" } },
+      { key: "raynaud", en: "Raynaud phenomenon", fr: "Phénomène de Raynaud", description: { en: "Color changes in fingers with cold", fr: "Changements de couleur des doigts au froid" } },
+      { key: "sicca", en: "Sicca symptoms", fr: "Symptômes de sécheresse", description: { en: "Dry eyes and mouth", fr: "Sécheresse oculaire et buccale" } },
+    ],
+  },
+  hematologic: {
+    label: { en: "Hematologic", fr: "Hématologique" },
+    symptoms: [
+      { key: "easy_bruising", en: "Easy bruising", fr: "Ecchymoses faciles", description: { en: "Bruise easily", fr: "Se fait des bleus facilement" } },
+      { key: "bleeding", en: "Bleeding", fr: "Saignements", description: { en: "Nose/gum bleeding or prolonged bleeding", fr: "Saignement du nez/des gencives ou prolongé" } },
+      { key: "recurrent_infections", en: "Recurrent infections", fr: "Infections récurrentes", description: { en: "Frequent infections", fr: "Infections fréquentes" } },
+      { key: "lymphadenopathy", en: "Lymphadenopathy", fr: "Adénopathies", description: { en: "Enlarged lymph nodes", fr: "Ganglions enflés" } },
+    ],
+  },
+  endocrine: {
+    label: { en: "Endocrine", fr: "Endocrinien" },
+    symptoms: [
+      { key: "polyuria", en: "Polyuria", fr: "Polyurie", description: { en: "Urinate frequently", fr: "Mictions fréquentes" } },
+      { key: "polydipsia", en: "Polydipsia", fr: "Polydipsie", description: { en: "Excessive thirst", fr: "Soif excessive" } },
+      { key: "heat_intolerance", en: "Heat intolerance", fr: "Intolérance à la chaleur", description: { en: "Difficulty tolerating heat", fr: "Intolérance à la chaleur" } },
+      { key: "cold_intolerance", en: "Cold intolerance", fr: "Intolérance au froid", description: { en: "Difficulty tolerating cold", fr: "Intolérance au froid" } },
+      { key: "weight_change", en: "Weight change", fr: "Changement de poids", description: { en: "Unintentional weight loss or gain", fr: "Perte ou gain de poids involontaire" } },
+    ],
+  },
+  ophthalmologic: {
+    label: { en: "Ophthalmologic", fr: "Ophtalmologique" },
+    symptoms: [
+      { key: "vision_changes", en: "Vision changes", fr: "Troubles visuels", description: { en: "Blurred or double vision", fr: "Vision floue ou double" } },
+      { key: "eye_pain", en: "Eye pain", fr: "Douleur oculaire", description: { en: "Pain in or around the eye", fr: "Douleur dans ou autour de l'œil" } },
+      { key: "redness", en: "Redness", fr: "Rougeur", description: { en: "Red eyes", fr: "Yeux rouges" } },
+      { key: "photophobia", en: "Photophobia", fr: "Photophobie", description: { en: "Light sensitivity", fr: "Sensibilité à la lumière" } },
+    ],
+  },
 };

@@ -1,24 +1,19 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { rosSymptomOptions } from "@/constants/rosSymptomOptions";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { ClipboardList, HeartPulse, Activity, Apple, Brain, Shield, Search, Undo2, ChevronDown, ChevronRight, Expand, Minimize } from "lucide-react";
+import { ClipboardList, HeartPulse, Activity, Apple, Brain, Shield, Search, Undo2, ChevronDown, ChevronRight, Expand, Minimize, Bone, Droplet, Sun, Eye } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SymptomDetailsModal } from '@/components/SymptomDetailsModal';
 import { Button } from '@/components/ui/button';
-
-interface SymptomObject {
-  key: string;
-  severity?: 'mild' | 'moderate' | 'severe';
-  note?: string;
-}
+import { type SelectedSymptom } from '@/utils/symptomTextUtils';
 
 interface RosSymptomAccordionProps {
-  selectedSymptoms: Record<string, Set<SymptomObject>>;
-  setSelectedSymptoms: (updater: (prev: Record<string, Set<SymptomObject>>) => Record<string, Set<SymptomObject>>) => void;
+  selectedSymptoms: Record<string, Set<SelectedSymptom>>;
+  setSelectedSymptoms: (updater: (prev: Record<string, Set<SelectedSymptom>>) => Record<string, Set<SelectedSymptom>>) => void;
 }
 
 const systemIcons: Record<string, React.ReactNode> = {
@@ -27,15 +22,12 @@ const systemIcons: Record<string, React.ReactNode> = {
   cardiovascular: <HeartPulse className="w-5 h-5 text-rose-600 bg-rose-100 rounded-full p-0.5" />,
   gastrointestinal: <Apple className="w-5 h-5 text-yellow-600 bg-yellow-100 rounded-full p-0.5" />,
   genitourinary: <Shield className="w-5 h-5 text-emerald-600 bg-emerald-100 rounded-full p-0.5" />,
+  rheumatologic: <Bone className="w-5 h-5 text-amber-700 bg-amber-100 rounded-full p-0.5" />,
+  hematologic: <Droplet className="w-5 h-5 text-red-700 bg-red-100 rounded-full p-0.5" />,
+  endocrine: <Sun className="w-5 h-5 text-orange-600 bg-orange-100 rounded-full p-0.5" />,
+  ophthalmologic: <Eye className="w-5 h-5 text-sky-700 bg-sky-100 rounded-full p-0.5" />,
+  default: <ClipboardList className="w-5 h-5 text-cyan-600 bg-cyan-100 rounded-full p-0.5" />
 };
-
-const systemOrder = [
-  "neurologic",
-  "respiratory",
-  "cardiovascular",
-  "gastrointestinal",
-  "genitourinary"
-];
 
 export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
   selectedSymptoms,
@@ -45,12 +37,24 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
   const getLabel = (obj: { en: string; fr: string }) => language === "fr" ? obj.fr : obj.en;
   const getDescription = (obj: { en: string; fr: string }) => language === "fr" ? obj.fr : obj.en;
 
+  // Compute system order from available options to ensure coverage of all systems
+  const systemOrder = useMemo(() => Object.keys(rosSymptomOptions), []);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedSystems, setExpandedSystems] = useState<Set<string>>(new Set(systemOrder));  // All expanded by default
-  const [selectedSymptomForEdit, setSelectedSymptomForEdit] = useState<{system: string; symptom: SymptomObject} | null>(null);
-  const [actionHistory, setActionHistory] = useState<Array<{ system: string; symptom: SymptomObject; action: 'add' | 'remove' }>>([]);
+  const [selectedSymptomForEdit, setSelectedSymptomForEdit] = useState<{system: string; symptom: SelectedSymptom} | null>(null);
+  const [actionHistory, setActionHistory] = useState<Array<{ system: string; symptom: SelectedSymptom; action: 'add' | 'remove' }>>([]);
   const shiftPressed = useRef(false);
   const lastSelected = useRef<{system: string; index: number} | null>(null);
+
+  // Keep expanded state in sync if systems change (e.g., after code updates)
+  useEffect(() => {
+    setExpandedSystems(prev => {
+      const next = new Set<string>();
+      systemOrder.forEach(k => next.add(k));
+      return next;
+    });
+  }, [systemOrder]);
 
   // All systems expanded? For global toggle
   const allExpanded = expandedSystems.size === systemOrder.length;
@@ -94,10 +98,10 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
       return (selectedSymptoms[system]?.size || 0) === symptoms.length;
     });
     setSelectedSymptoms(() => {
-      const newObj: Record<string, Set<SymptomObject>> = {};
+      const newObj: Record<string, Set<SelectedSymptom>> = {};
       systemOrder.forEach(systemKey => {
         const symptoms = rosSymptomOptions[systemKey as keyof typeof rosSymptomOptions].symptoms;
-        newObj[systemKey] = allSelected ? new Set() : new Set(symptoms.map(s => ({ key: s.key })));  // Toggle: select if not all, unselect if all
+        newObj[systemKey] = allSelected ? new Set() : new Set(symptoms.map(s => ({ key: s.key, present: true })));
       });
       return newObj;
     });
@@ -108,7 +112,7 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
       const symptoms = rosSymptomOptions[systemKey as keyof typeof rosSymptomOptions].symptoms;
       const currentSet = prev[systemKey] || new Set();
       const allSystemSelected = currentSet.size === symptoms.length;
-      const newSet = allSystemSelected ? new Set<SymptomObject>() : new Set(symptoms.map(s => ({ key: s.key })));
+      const newSet = allSystemSelected ? new Set<SelectedSymptom>() : new Set(symptoms.map(s => ({ key: s.key, present: true })));
       return { ...prev, [systemKey]: newSet };
     });
   };
@@ -118,7 +122,7 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
       const newObj = { ...prev };
       if (!newObj[systemKey]) newObj[systemKey] = new Set();
       const systemSet = new Set(newObj[systemKey]);
-      let symptomObj = Array.from(systemSet).find(s => s.key === symptomKey) || { key: symptomKey };
+      let symptomObj = Array.from(systemSet).find(s => s.key === symptomKey) || { key: symptomKey, present: true };
 
       if (systemSet.has(symptomObj)) {
         setActionHistory(prev => [...prev, {system: systemKey, symptom: symptomObj, action: 'remove' as 'remove'}].slice(-5));
@@ -135,7 +139,7 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
             return newObj; // Edge case: Prevent invalid adds
           }
           for (let i = start; i <= end; i++) {
-            const multiSymptom = { key: symptoms[i].key };
+            const multiSymptom = { key: symptoms[i].key, present: true };
             if (!Array.from(systemSet).some(s => s.key === multiSymptom.key)) {
               systemSet.add(multiSymptom);
             }
@@ -192,9 +196,9 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
 
   return (
     <TooltipProvider>
-      <div className="w-full space-y-6">
+      <div className="w-full space-y-5">
         {/* Global Controls */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
@@ -228,8 +232,8 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
             const allSymptoms = systemObj.symptoms;
             const filtered = filteredSymptoms(systemKey);
             const rawSet = selectedSymptoms[systemKey] as any;
-            const selectedSet: Set<SymptomObject> =
-              rawSet instanceof Set ? rawSet : Array.isArray(rawSet) ? new Set(rawSet) : new Set<SymptomObject>();
+            const selectedSet: Set<SelectedSymptom> =
+              rawSet instanceof Set ? rawSet : Array.isArray(rawSet) ? new Set(rawSet) : new Set<SelectedSymptom>();
             const selectedCount = selectedSet.size;
             const completion = (selectedCount / allSymptoms.length) * 100;
             const isExpanded = expandedSystems.has(systemKey);
@@ -238,7 +242,7 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
             return (
               <div
                 key={systemKey}
-                className="bg-white rounded-xl shadow p-3 flex flex-col transition-shadow hover:shadow-md"  // Subtle CSS hover, no pulse
+                className="bg-gradient-to-br from-white to-gray-50 rounded-xl border border-gray-200 p-3 flex flex-col transition-shadow hover:shadow-md"
               >
                 {/* System Header */}
                 <button
@@ -246,7 +250,7 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
                   className="flex items-center justify-between mb-2 cursor-pointer hover:bg-gray-50 p-2 rounded transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    {systemIcons[systemKey] || <ClipboardList className="w-5 h-5 text-cyan-600 bg-cyan-100 rounded-full p-0.5" />}
+                    {systemIcons[systemKey] || systemIcons.default}
                     <h3 className="text-base font-semibold text-gray-900">
                       {getLabel(systemObj.label)}
                     </h3>
@@ -266,16 +270,16 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
                   size="sm" 
                   onClick={() => handleSelectAllSystem(systemKey)}
                   className="mb-2 self-end"
-                  disabled={allSymptoms.length === 0}  // Edge case: Disable if no symptoms
+                  disabled={allSymptoms.length === 0}
                 >
                   {allSystemSelected ? (language === 'fr' ? 'Réinitialiser' : 'Reset') : (language === 'fr' ? 'Tout Sélectionner' : 'Select All')}
                 </Button>
 
                 {/* Symptoms List */}
                 {isExpanded && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 transition-all duration-300 ease-in-out">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 transition-all duration-300 ease-in-out">
                     {filtered.map((symptom, idx) => {
-                      const symptomObj = Array.from(selectedSet).find(s => s.key === symptom.key) || { key: symptom.key };
+                      const symptomObj = Array.from(selectedSet).find(s => s.key === symptom.key) || { key: symptom.key, present: true };
                       const isSelected = selectedSet.has(symptomObj);
                       const hasDetails = symptomObj.severity || symptomObj.note;
 
@@ -283,8 +287,8 @@ export const RosSymptomAccordion: React.FC<RosSymptomAccordionProps> = ({
                         <Tooltip key={symptom.key}>
                           <TooltipTrigger asChild>
                             <div
-                              className={`flex items-center px-2 py-1 rounded-full cursor-pointer transition-colors border hover:bg-blue-50 focus-within:ring-2 focus-within:ring-blue-200 ${
-                                isSelected ? 'bg-cyan-100 border-cyan-200' : ''
+                              className={`flex items-center px-2 py-1.5 rounded-full cursor-pointer transition-colors border hover:bg-blue-50 focus-within:ring-2 focus-within:ring-blue-200 ${
+                                isSelected ? 'bg-cyan-50 border-cyan-200' : 'bg-white'
                               } ${hasDetails ? 'ring-1 ring-cyan-300' : ''}`}
                               onClick={() => handleSymptomToggle(systemKey, symptom.key, idx)}
                               onDoubleClick={() => setSelectedSymptomForEdit({system: systemKey, symptom: symptomObj})}

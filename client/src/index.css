@@ -254,19 +254,20 @@ body {
     @apply bg-white border border-gray-200;
     border-radius: 0.25rem;
     width: 100%;
-    height: calc(100vh - 120px);
-    min-height: calc(100vh - 120px);
-    max-height: calc(100vh - 120px);
-    overflow: hidden;
+    /* Remove fixed viewport height and overflow to allow parent scroller and sticky buttons */
+    /* height: calc(100vh - 120px); */
+    /* min-height: calc(100vh - 120px); */
+    /* max-height: calc(100vh - 120px); */
+    /* overflow: hidden; */
     display: flex;
     flex-direction: column;
-    flex: 1;
   }
 
   .medical-section-content {
     @apply p-6;
+    /* Let outer container handle scrolling to avoid nested scroll issues */
+    /* overflow-y: auto; */
     flex: 1;
-    overflow-y: auto;
     min-height: 0;
   }
   

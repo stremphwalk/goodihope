@@ -1,405 +1,306 @@
-import React, { useState, useEffect, useCallback, memo, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import RosSymptomAccordion from './RosSymptomAccordion';
+import { rosSymptomOptions } from '@/constants/rosSymptomOptions';
+import { generateHpiParagraph, type SelectedSymptom } from '@/utils/symptomTextUtils';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-
-import { Star, AlertCircle, CheckCircle } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';  // Assuming auth for user ID
-
-interface SymptomObject {
-  key: string;
-  severity?: 'mild' | 'moderate' | 'severe';
-  note?: string;
-}
-
-interface Preset {
-  id: string;
-  title: string;
-  isFavorite: boolean;
-  symptoms: Record<string, SymptomObject[]>;
-}
+import { Plus, Trash2, Edit3 } from 'lucide-react';
+import { usePersistedState } from '@/hooks/usePersistedState';
 
 export interface HpiSectionProps {
-  selectedSymptoms: Record<string, Set<SymptomObject>>;
-  setSelectedSymptoms: (updater: (prev: Record<string, Set<SymptomObject>>) => Record<string, Set<SymptomObject>>) => void;
+  selectedSymptoms: Record<string, Set<SelectedSymptom>>;
+  setSelectedSymptoms: (updater: (prev: Record<string, Set<SelectedSymptom>>) => Record<string, Set<SelectedSymptom>>) => void;
 }
 
-export function HpiSection({ selectedSymptoms: globalSelectedSymptoms, setSelectedSymptoms: setGlobalSelectedSymptoms }: HpiSectionProps) {
+export function HpiSection({ selectedSymptoms, setSelectedSymptoms }: HpiSectionProps) {
   const { language } = useLanguage();
-  const { toast } = useToast();
-  const auth = useAuth();
-  const [presetTitle, setPresetTitle] = useState('');
-  const [presets, setPresets] = useState<Preset[]>([]);
-  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [lastRequestTime, setLastRequestTime] = useState(0);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const { value: hpiText, setValue: setHpiText } = usePersistedState<string>('medical_hpi_text', '');
+  
+  // Debug logging
+  console.log('HpiSection rendering with language:', language);
+  console.log('HpiSection selectedSymptoms:', selectedSymptoms);
+  
+  // Local state for the new symptom form
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newSymptomSystem, setNewSymptomSystem] = useState<string>('');
+  const [newSymptomKey, setNewSymptomKey] = useState<string>('');
+  const [newSymptomSeverity, setNewSymptomSeverity] = useState<string>('');
+  const [newSymptomNote, setNewSymptomNote] = useState<string>('');
+  const [isNegative, setIsNegative] = useState(false);
 
-  const [localSelectedSymptoms, setLocalSelectedSymptoms] = useState<Record<string, Set<SymptomObject>>>(globalSelectedSymptoms);
-
-  // Keep parent state in sync whenever the local selection changes
-  useEffect(() => {
-    setGlobalSelectedSymptoms(() => localSelectedSymptoms);
-  }, [localSelectedSymptoms, setGlobalSelectedSymptoms]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    };
-
-    if (isDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isDropdownOpen]);
-
-  const loadPresets = useCallback(async () => {
-    if (!auth.user?.id_token || !auth.isAuthenticated) {
-      console.log('[DEBUG] HpiSection: Not authenticated, skipping loadPresets');
-      return;
-    }
-    console.log('[DEBUG] HpiSection: Starting loadPresets');
-    setLoading(true);
-    try {
-      const response = await fetch('/api/user-presets', {
-        headers: { Authorization: `Bearer ${auth.user.id_token}` },
-      });
-      if (!response.ok) throw new Error('Failed to load presets');
-      const data: Preset[] = await response.json();
-      
-      // Validate that data is an array before calling .sort()
-      if (!Array.isArray(data)) {
-        console.error('Presets API response is not an array:', data);
-        setPresets([]);
-        return;
-      }
-      
-      // Sort favorites first
-      setPresets(data.sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0)));
-      console.log('[DEBUG] HpiSection: Loaded presets successfully');
-    } catch (err: any) {
-      console.error('HPI preset loading error:', err);
-      // Only show toast for network errors, not for expected database unavailability
-      if (err?.message && !err.message.includes('Database') && !err.message.includes('503')) {
-        toast({ title: 'Error', description: 'Failed to load presets', variant: 'destructive' });
-      }
-      setPresets([]); // Set empty array on error
-    } finally {
-      setLoading(false);
-    }
-  }, [auth.user?.id_token, auth.isAuthenticated, toast]);
-
-  useEffect(() => {
-    if (auth.user?.id_token && !loading && auth.isAuthenticated) {
-      const now = Date.now();
-      // Prevent requests more frequent than 2 seconds
-      if (now - lastRequestTime > 2000) {
-        console.log('[DEBUG] HpiSection: Loading presets, token changed or initial load');
-        setLastRequestTime(now);
-        loadPresets().catch(() => {
-          // Silently handle load failures - component will work without presets
-          console.log('[DEBUG] HpiSection: Preset loading failed, continuing without presets');
-        });
-      } else {
-        console.log('[DEBUG] HpiSection: Skipping request, too frequent');
-      }
-    } else {
-      console.log('[DEBUG] HpiSection: Not authenticated or no token, skipping request');
-    }
-  }, [auth.user?.id_token, auth.isAuthenticated, loadPresets]); // Fixed dependencies
-
-  const savePreset = async () => {
-    if (!auth.user?.id_token || !auth.isAuthenticated) {
-      console.log('[DEBUG] HpiSection: Not authenticated, skipping savePreset');
-      return;
-    }
+  // Handler: Add a new symptom to the selection
+  const handleAddSymptom = () => {
+    if (!newSymptomSystem || !newSymptomKey) return;
     
-    if (Object.keys(localSelectedSymptoms).length === 0) {
-      setError(language === 'fr' ? 'Aucune sélection à sauvegarder' : 'No selections to save');
-      return;
-    }
-    if (!presetTitle.trim()) {
-      setError('Title required');
-      return;
-    }
-    if (presets.length >= 20) {
-      setError(language === 'fr' ? 'Limite de 20 préréglages' : 'Max 20 presets');
-      return;
-    }
-    if (presets.some(p => p.title === presetTitle.trim())) {
-      setError('Duplicate title');
-      return;
-    }
-    setError('');
-    setLoading(true);
-    try {
-      const symptomsObj: Record<string, SymptomObject[]> = {};
-      Object.entries(localSelectedSymptoms).forEach(([system, set]) => {
-        symptomsObj[system] = Array.from(set);
+    const symptomData: SelectedSymptom = {
+      key: newSymptomKey,
+      present: !isNegative,
+      severity: (newSymptomSeverity.trim() as 'mild' | 'moderate' | 'severe') || undefined,
+      note: newSymptomNote.trim() || undefined
+    };
+    
+    setSelectedSymptoms(prev => {
+      const updated = { ...prev };
+      if (!updated[newSymptomSystem]) {
+        updated[newSymptomSystem] = new Set();
+      }
+      // Remove any existing entry with same key
+      const systemSet = new Set(updated[newSymptomSystem]);
+      systemSet.forEach(item => {
+        if (item.key === newSymptomKey) systemSet.delete(item);
       });
-      const newPreset = {
-        title: presetTitle.trim(),
-        isFavorite: false,
-        symptoms: symptomsObj,
-      };
-      const response = await fetch('/api/user-presets', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${auth.user?.id_token}`,
-        },
-        body: JSON.stringify(newPreset),
-      });
-      if (!response.ok) throw new Error('Failed to save preset');
-      const saved: Preset = await response.json();
-      setPresets(prev => [...prev, saved].sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0)));
-      setPresetTitle('');
-      toast({ title: 'Success', description: 'Preset saved' });
-    } catch (err) {
-      console.error(err);
-      toast({ title: 'Error', description: 'Failed to save preset', variant: 'destructive' });
-    } finally {
-      setLoading(false);
-    }
+      systemSet.add(symptomData);
+      updated[newSymptomSystem] = systemSet;
+      return updated;
+    });
+    
+    // Reset form
+    setNewSymptomSystem('');
+    setNewSymptomKey('');
+    setNewSymptomSeverity('');
+    setNewSymptomNote('');
+    setIsNegative(false);
+    setShowAddForm(false);
   };
 
-  const applyPreset = (presetId: string) => {
-    const preset = presets.find(p => p.id === presetId);
-    if (!preset) return;
-    setLocalSelectedSymptoms(() => {
-      const newObj: Record<string, Set<SymptomObject>> = {};
-      Object.entries(preset.symptoms).forEach(([system, arr]) => {
-        newObj[system] = new Set(arr);
-      });
-      return newObj;
+  // Handler: Remove a symptom from selection
+  const handleRemoveSymptom = (system: string, symptomKey: string) => {
+    setSelectedSymptoms(prev => {
+      const updated = { ...prev };
+      if (updated[system]) {
+        const systemSet = new Set(Array.from(updated[system]).filter(item => item.key !== symptomKey));
+        if (systemSet.size === 0) {
+          delete updated[system];
+        } else {
+          updated[system] = systemSet;
+        }
+      }
+      return updated;
     });
   };
 
-  const toggleFavorite = async (presetId: string, event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    if (!auth.user?.id_token || !auth.isAuthenticated) {
-      console.log('[DEBUG] HpiSection: Not authenticated, skipping toggleFavorite');
-      return;
-    }
-    
-    const preset = presets.find(p => p.id === presetId);
-    if (!preset) return;
-    
-    // Optimistically update the UI
-    const updatedPresets = presets.map(p => 
-      p.id === presetId ? { ...p, isFavorite: !p.isFavorite } : p
-    ).sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
-    
-    setPresets(updatedPresets);
-    
-    try {
-      const response = await fetch(`/api/user-presets/${presetId}`, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${auth.user?.id_token}`,
-        },
-        body: JSON.stringify({ isFavorite: !preset.isFavorite }),
-      });
-      if (!response.ok) throw new Error('Failed to update favorite');
-      // Keep the optimistic update
-    } catch (err) {
-      console.error(err);
-      // Revert on error
-      setPresets(prev => prev.map(p => 
-        p.id === presetId ? { ...p, isFavorite: preset.isFavorite } : p
-      ).sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0)));
-      toast({ title: 'Error', description: 'Failed to toggle favorite', variant: 'destructive' });
-    }
+  // Handler: Generate HPI text
+  const handleGenerateHpi = () => {
+    const hpiParagraph = generateHpiParagraph(selectedSymptoms, language);
+    setHpiText(hpiParagraph);
   };
 
-  const handleConfirm = () => {
-    setGlobalSelectedSymptoms(() => localSelectedSymptoms);
-    toast({ title: 'Success', description: 'Selections confirmed and note updated' });
-  };
+  // Effect: Regenerate HPI text on language change if already generated
+  useEffect(() => {
+    if (hpiText && Object.keys(selectedSymptoms).length > 0) {
+      const regeneratedText = generateHpiParagraph(selectedSymptoms, language);
+      setHpiText(regeneratedText);
+    }
+  }, [language]);
+
+  // Collect symptoms for display
+  const allSymptoms: { system: string; symptom: SelectedSymptom }[] = [];
+  Object.entries(selectedSymptoms).forEach(([system, symSet]) => {
+    symSet.forEach(sym => {
+      allSymptoms.push({ system, symptom: sym });
+    });
+  });
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-6 relative">
-      {/* Enhanced Header */}
+    <div className="w-full max-w-4xl mx-auto space-y-6 relative">
+      {/* DEBUG: New HPI Section Marker */}
+      <div className="bg-green-500 text-white p-2 text-center font-bold">
+        NEW HPI SECTION LOADED - REDESIGN WORKING!
+      </div>
+      
+      {/* Header */}
       <div className="text-center space-y-2">
-        <div className="flex items-center justify-center gap-2">
-          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+        <div className="flex items-center justify-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-cyan-100 to-blue-100 rounded-xl flex items-center justify-center shadow-sm">
             <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
           </div>
-          <h2 className="text-lg font-semibold text-gray-800">
+          <h2 className="text-xl font-semibold text-gray-900 tracking-tight">
             {language === 'fr' ? 'Histoire de la Maladie Actuelle' : 'History of Present Illness'}
           </h2>
         </div>
-        <p className="text-sm text-gray-600 max-w-md mx-auto">
+        <p className="text-sm text-gray-600 max-w-lg mx-auto">
           {language === 'fr' 
-            ? 'Sélectionnez les systèmes et symptômes pour créer une HMA structurée et organisée.'
-            : 'Select systems and symptoms to create a structured and organized HPI.'
+            ? 'Ajoutez les symptômes pertinents et générez le paragraphe HMA.'
+            : 'Add relevant symptoms and generate the HPI paragraph.'
           }
         </p>
       </div>
 
-      {/* Enhanced Preset UI */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 space-y-4 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-          <h3 className="text-sm font-semibold text-gray-700">
-            {language === 'fr' ? 'Gestion des Préréglages HPI' : 'HPI Preset Management'}
-          </h3>
-        </div>
-        
-        <div className="flex gap-2">
-          <Input
-            placeholder={language === 'fr' ? 'Titre du préréglage...' : 'Preset title...'}
-            value={presetTitle}
-            onChange={e => setPresetTitle(e.target.value)}
-            className="flex-1 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-          />
-          <Button 
-            onClick={savePreset} 
-            disabled={loading || !presetTitle.trim()}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md transition-colors"
-          >
-            {loading ? (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                {language === 'fr' ? 'Sauvegarde...' : 'Saving...'}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                </svg>
-                {language === 'fr' ? 'Sauvegarder' : 'Save'}
-              </div>
-            )}
-          </Button>
-        </div>
-        
-        {error && (
-          <div className="text-xs text-red-600 flex items-center gap-1 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-            <AlertCircle className="w-4 h-4" />
-            {error}
-          </div>
-        )}
-        {presets.length > 0 ? (
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">
-              {language === 'fr' ? 'Sélectionner un préréglage' : 'Select a preset'}
-            </label>
-            <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="w-full flex items-center justify-between bg-white border border-gray-300 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-md px-3 py-2 text-sm"
-              >
-                <span className={selectedPresetId ? 'text-gray-900' : 'text-gray-500'}>
-                  {selectedPresetId 
-                    ? presets.find(p => p.id === selectedPresetId)?.title 
-                    : (language === 'fr' ? 'Choisir un préréglage...' : 'Choose a preset...')
-                  }
-                </span>
-                <svg className={`w-4 h-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
+      {/* Main content area */}
+      <div className="bg-white/90 border border-gray-200 rounded-xl p-4 shadow-sm">
+        {/* Symptom list */}
+        <div className="space-y-3">
+          {allSymptoms.length > 0 ? (
+            allSymptoms.map(({ system, symptom }) => {
+              const systemObj = (rosSymptomOptions as any)[system];
+              const symInfo = systemObj?.symptoms.find((s: any) => s.key === symptom.key);
+              const symLabel = symInfo ? (language === 'fr' ? symInfo.fr : symInfo.en) : symptom.key;
+              const systemLabel = systemObj ? (language === 'fr' ? systemObj.label.fr : systemObj.label.en) : system;
               
-              {isDropdownOpen && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 shadow-lg rounded-md max-h-60 overflow-y-auto">
-                  {presets.map(preset => (
-                    <div
-                      key={preset.id}
-                      className="flex items-center justify-between px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                      onClick={() => {
-                        applyPreset(preset.id);
-                        setSelectedPresetId(preset.id);
-                        setIsDropdownOpen(false);
-                      }}
-                    >
-                      <div className="flex items-center flex-1">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={(e) => toggleFavorite(preset.id, e)}
-                          className="mr-2 h-6 w-6 hover:bg-yellow-100 rounded-full"
-                        >
-                          <Star className={`w-4 h-4 ${preset.isFavorite ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400'}`} />
-                        </Button>
-                        <span className="text-sm font-medium text-gray-900">{preset.title}</span>
-                      </div>
-                      {preset.isFavorite && (
-                        <span className="text-xs text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full">
-                          {language === 'fr' ? 'Favori' : 'Favorite'}
+              return (
+                <div key={`${system}-${symptom.key}`} className="flex items-start justify-between bg-gray-50 border rounded-lg p-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-800">{symLabel}</span>
+                      {symptom.present ? (
+                        <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">
+                          {language === 'fr' ? 'Présent' : 'Present'}
+                        </span>
+                      ) : (
+                        <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded">
+                          {language === 'fr' ? 'Absent' : 'Absent'}
                         </span>
                       )}
                     </div>
-                  ))}
+                    {symptom.severity && (
+                      <span className="text-sm text-gray-600">
+                        {language === 'fr' ? 'Sévérité' : 'Severity'}: {symptom.severity}
+                      </span>
+                    )}
+                    {symptom.note && (
+                      <div className="text-sm text-gray-600 mt-1">{symptom.note}</div>
+                    )}
+                    <span className="text-xs text-gray-500">{systemLabel}</span>
+                  </div>
+                  <button 
+                    onClick={() => handleRemoveSymptom(system, symptom.key)} 
+                    className="text-red-500 hover:text-red-700 p-1"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
-              )}
-            </div>
-            <p className="text-xs text-gray-500">
-              {language === 'fr' 
-                ? `${presets.length} préréglage${presets.length > 1 ? 's' : ''} disponible${presets.length > 1 ? 's' : ''}`
-                : `${presets.length} preset${presets.length > 1 ? 's' : ''} available`
-              }
+              );
+            })
+          ) : (
+            <p className="text-sm text-gray-500 text-center py-4">
+              {language === 'fr' ? 'Aucun symptôme ajouté.' : 'No symptoms added yet.'}
             </p>
+          )}
+        </div>
+
+        {/* Add symptom form */}
+        {showAddForm ? (
+          <div className="border-t pt-4 mt-4 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <select 
+                value={newSymptomSystem} 
+                onChange={e => {
+                  setNewSymptomSystem(e.target.value);
+                  setNewSymptomKey('');
+                }}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">{language === 'fr' ? 'Choisir un système...' : 'Choose system...'}</option>
+                {Object.entries(rosSymptomOptions).map(([key, val]) => (
+                  <option key={key} value={key}>
+                    {language === 'fr' ? val.label.fr : val.label.en}
+                  </option>
+                ))}
+              </select>
+              
+              <select 
+                value={newSymptomKey} 
+                onChange={e => setNewSymptomKey(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={!newSymptomSystem}
+              >
+                <option value="">{language === 'fr' ? 'Choisir un symptôme...' : 'Choose symptom...'}</option>
+                {newSymptomSystem && (rosSymptomOptions as any)[newSymptomSystem]?.symptoms.map((sym: any) => (
+                  <option key={sym.key} value={sym.key}>
+                    {language === 'fr' ? sym.fr : sym.en}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {newSymptomKey && (
+              <>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input 
+                      type="checkbox" 
+                      checked={isNegative}
+                      onChange={e => setIsNegative(e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    {language === 'fr' ? 'Marquer comme absent (négatif pertinent)' : 'Mark as absent (pertinent negative)'}
+                  </label>
+                </div>
+                
+                {!isNegative && (
+                  <select
+                    value={newSymptomSeverity}
+                    onChange={e => setNewSymptomSeverity(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">{language === 'fr' ? 'Sévérité (optionnel)' : 'Severity (optional)'}</option>
+                    <option value="mild">{language === 'fr' ? 'Léger' : 'Mild'}</option>
+                    <option value="moderate">{language === 'fr' ? 'Modéré' : 'Moderate'}</option>
+                    <option value="severe">{language === 'fr' ? 'Sévère' : 'Severe'}</option>
+                  </select>
+                )}
+                
+                <input 
+                  type="text" 
+                  value={newSymptomNote} 
+                  onChange={e => setNewSymptomNote(e.target.value)}
+                  placeholder={language === 'fr' ? 'Détails supplémentaires (optionnel)' : 'Additional details (optional)'}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </>
+            )}
+            
+            <div className="flex gap-2">
+              <Button
+                onClick={handleAddSymptom}
+                disabled={!newSymptomKey}
+                size="sm"
+              >
+                <Plus className="w-4 h-4" />
+                {language === 'fr' ? 'Ajouter' : 'Add'}
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowAddForm(false);
+                  setNewSymptomSystem('');
+                  setNewSymptomKey('');
+                  setNewSymptomSeverity('');
+                  setNewSymptomNote('');
+                  setIsNegative(false);
+                }}
+                variant="outline"
+                size="sm"
+              >
+                {language === 'fr' ? 'Annuler' : 'Cancel'}
+              </Button>
+            </div>
           </div>
         ) : (
-          <div className="text-center py-4">
-            <div className="w-12 h-12 mx-auto mb-3 bg-blue-100 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <p className="text-sm text-gray-600">
-              {language === 'fr' 
-                ? 'Aucun préréglage sauvegardé. Créez votre premier préréglage ci-dessus.'
-                : 'No presets saved yet. Create your first preset above.'
-              }
-            </p>
+          <div className="border-t pt-4 mt-4">
+            <Button
+              onClick={() => setShowAddForm(true)}
+              variant="outline"
+              size="sm"
+            >
+              <Plus className="w-4 h-4" />
+              {language === 'fr' ? 'Ajouter un symptôme' : 'Add Symptom'}
+            </Button>
           </div>
         )}
       </div>
 
-      {/* Divider */}
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-gray-200" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-white px-2 text-gray-500">
-            {language === 'fr' ? 'Sélection des Symptômes' : 'Symptom Selection'}
-          </span>
-        </div>
-      </div>
-
-      {/* Symptom Accordion and Confirm Button */}
-      <div className="relative pb-16"> {/* Added padding bottom to make space for sticky button */}
-        <RosSymptomAccordion selectedSymptoms={localSelectedSymptoms} setSelectedSymptoms={setLocalSelectedSymptoms} />
-        <div className="sticky bottom-0 flex justify-end pr-4"> {/* Changed to justify-end and added padding-right */}
-          <Button 
-            onClick={handleConfirm}
-            className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-2"
-          >
-            <CheckCircle className="w-5 h-5" />
-            {language === 'fr' ? 'Confirmer Sélections' : 'Confirm Selections'}
-          </Button>
-        </div>
+      {/* Generate button */}
+      <div className="text-center">
+        <Button 
+          onClick={handleGenerateHpi}
+          disabled={allSymptoms.length === 0}
+        >
+          {language === 'fr' ? 'Générer HMA' : 'Generate HPI'}
+        </Button>
       </div>
     </div>
   );
 }
 
-export default memo(HpiSection);
+export default HpiSection;

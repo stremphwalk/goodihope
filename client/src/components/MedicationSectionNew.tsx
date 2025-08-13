@@ -175,10 +175,21 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
   const [orderingQueue, setOrderingQueue] = useState<string[]>([]);
   const { language } = useLanguage();
 
+  // Local edit buffer to avoid parent re-renders until confirm
+  const [localMedications, setLocalMedications] = useState<MedicationData>(medications);
+  const [hasPendingChanges, setHasPendingChanges] = useState(false);
+
+  // Keep local buffer in sync with external changes when no pending local edits
+  useEffect(() => {
+    if (!hasPendingChanges) {
+      setLocalMedications(medications);
+    }
+  }, [medications, hasPendingChanges]);
+
   // Load dosages for new medications
   useEffect(() => {
     const loadDosages = async () => {
-      const allMeds = [...medications.homeMedications, ...medications.hospitalMedications];
+      const allMeds = [...localMedications.homeMedications, ...localMedications.hospitalMedications];
       const newMeds = allMeds.filter(med => !med.isCustom && !medicationDosages[med.name]);
       
       if (newMeds.length === 0) return;
@@ -198,83 +209,87 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
     };
 
     loadDosages();
-  }, [medications.homeMedications.length, medications.hospitalMedications.length]);
+  }, [localMedications.homeMedications.length, localMedications.hospitalMedications.length]);
+
+  const markDirty = () => setHasPendingChanges(true);
 
   const handleHomeMedicationAdd = (medicationName: string, isCustom: boolean = false) => {
     const medication = createMedication(medicationName, isCustom);
-    const updatedHomeMeds = [...medications.homeMedications, medication];
-    onMedicationsChange({
-      ...medications,
+    const updatedHomeMeds = [...localMedications.homeMedications, medication];
+    setLocalMedications({
+      ...localMedications,
       homeMedications: updatedHomeMeds
     });
+    markDirty();
   };
 
   const handleHospitalMedicationAdd = (medicationName: string, isCustom: boolean = false) => {
     const medication = createMedication(medicationName, isCustom);
-    const updatedHospitalMeds = [...medications.hospitalMedications, medication];
-    onMedicationsChange({
-      ...medications,
+    const updatedHospitalMeds = [...localMedications.hospitalMedications, medication];
+    setLocalMedications({
+      ...localMedications,
       hospitalMedications: updatedHospitalMeds
     });
+    markDirty();
   };
 
   const handleMedicationTextExtracted = useCallback((extractedMeds: SelectedMedication[], isInpatient: boolean) => {
     if (isInpatient) {
-      // Add to hospital medications, filtering out duplicates based on name + dosage + frequency
       const newMeds = extractedMeds.filter(extracted => {
         const extractedKey = `${extracted.name}-${extracted.dosage}-${extracted.frequency}`;
-        return !medications.hospitalMedications.some(hospital => {
+        return !localMedications.hospitalMedications.some(hospital => {
           const existingKey = `${hospital.name}-${hospital.dosage}-${hospital.frequency}`;
           return existingKey === extractedKey;
         });
       });
-      
       if (newMeds.length > 0) {
-        onMedicationsChange({
-          ...medications,
-          hospitalMedications: [...medications.hospitalMedications, ...newMeds]
+        setLocalMedications({
+          ...localMedications,
+          hospitalMedications: [...localMedications.hospitalMedications, ...newMeds]
         });
+        markDirty();
       }
     } else {
-      // Add to home medications, filtering out duplicates based on name + dosage + frequency
       const newMeds = extractedMeds.filter(extracted => {
         const extractedKey = `${extracted.name}-${extracted.dosage}-${extracted.frequency}`;
-        return !medications.homeMedications.some(home => {
+        return !localMedications.homeMedications.some(home => {
           const existingKey = `${home.name}-${home.dosage}-${home.frequency}`;
           return existingKey === extractedKey;
         });
       });
-      
       if (newMeds.length > 0) {
-        onMedicationsChange({
-          ...medications,
-          homeMedications: [...medications.homeMedications, ...newMeds]
+        setLocalMedications({
+          ...localMedications,
+          homeMedications: [...localMedications.homeMedications, ...newMeds]
         });
+        markDirty();
       }
     }
-  }, [medications, onMedicationsChange]);
+  }, [localMedications]);
 
   const handleHomeMedicationRemove = (medicationName: string) => {
-    const updatedHomeMeds = medications.homeMedications.filter(med => med.name !== medicationName);
-    onMedicationsChange({
-      ...medications,
+    const updatedHomeMeds = localMedications.homeMedications.filter(med => med.name !== medicationName);
+    setLocalMedications({
+      ...localMedications,
       homeMedications: updatedHomeMeds
     });
+    markDirty();
   };
 
   const handleHospitalMedicationRemove = (medicationName: string) => {
-    const updatedHospitalMeds = medications.hospitalMedications.filter(med => med.name !== medicationName);
-    onMedicationsChange({
-      ...medications,
+    const updatedHospitalMeds = localMedications.hospitalMedications.filter(med => med.name !== medicationName);
+    setLocalMedications({
+      ...localMedications,
       hospitalMedications: updatedHospitalMeds
     });
+    markDirty();
   };
 
   // Click-to-reorder functionality
   const handleMedicationClick = (medicationId: string, isHome: boolean) => {
     if (!reorderMode) return;
     
-    const targetMeds = isHome ? medications.homeMedications : medications.hospitalMedications;
+    const targetMeds = isHome ? localMedications.homeMedications : localMedications.hospitalMedications;
     const clickedMed = targetMeds.find(med => med.id === medicationId);
     if (!clickedMed) return;
     
@@ -293,7 +308,7 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
 
   const applyNewOrder = (isHome: boolean) => {
     const sectionKey = isHome ? 'home' : 'hospital';
-    const targetMeds = isHome ? medications.homeMedications : medications.hospitalMedications;
+    const targetMeds = isHome ? localMedications.homeMedications : localMedications.hospitalMedications;
 
     // Get medications in queue order for this section
     const sectionQueue = orderingQueue
@@ -313,14 +328,15 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
     ];
 
     // Update the state with the new order
-    onMedicationsChange({
-      ...medications,
+    setLocalMedications({
+      ...localMedications,
       [isHome ? 'homeMedications' : 'hospitalMedications']: reorderedMeds
-    });
+    } as MedicationData);
 
     // Clear queue and exit reorder mode
     setOrderingQueue(prev => prev.filter(key => !key.startsWith(sectionKey)));
     setReorderMode(false);
+    markDirty();
   };
 
   const cancelReorder = () => {
@@ -329,7 +345,7 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
   };
 
   const sortMedications = (isHome: boolean, sortBy: 'alphabetical' | 'category' | 'importance' | 'reset') => {
-    const targetMeds = isHome ? medications.homeMedications : medications.hospitalMedications;
+    const targetMeds = isHome ? localMedications.homeMedications : localMedications.hospitalMedications;
     let sortedMeds = [...targetMeds];
     
     // Auto-categorize medications if they don't have categories or have wrong categories
@@ -360,59 +376,61 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
         break;
     }
     
-    onMedicationsChange({
-      ...medications,
+    setLocalMedications({
+      ...localMedications,
       [isHome ? 'homeMedications' : 'hospitalMedications']: sortedMeds
-    });
+    } as MedicationData);
+    markDirty();
   };
 
   const updateMedicationDosage = (medicationName: string, dosage: string, isHome: boolean) => {
-    const targetMeds = isHome ? medications.homeMedications : medications.hospitalMedications;
-    const otherMeds = isHome ? medications.hospitalMedications : medications.homeMedications;
+    const targetMeds = isHome ? localMedications.homeMedications : localMedications.hospitalMedications;
+    const otherMeds = isHome ? localMedications.hospitalMedications : localMedications.homeMedications;
     
     const updatedMeds = targetMeds.map(med => 
       med.name === medicationName ? { ...med, dosage } : med
     );
     
-    onMedicationsChange({
-      ...medications,
+    setLocalMedications({
+      ...localMedications,
       homeMedications: isHome ? updatedMeds : otherMeds,
       hospitalMedications: isHome ? otherMeds : updatedMeds
     });
+    markDirty();
   };
 
   const updateMedicationFrequency = (medicationName: string, frequency: string, isHome: boolean) => {
-    const targetMeds = isHome ? medications.homeMedications : medications.hospitalMedications;
-    const otherMeds = isHome ? medications.hospitalMedications : medications.homeMedications;
+    const targetMeds = isHome ? localMedications.homeMedications : localMedications.hospitalMedications;
+    const otherMeds = isHome ? localMedications.hospitalMedications : localMedications.homeMedications;
     
     const updatedMeds = targetMeds.map(med => 
       med.name === medicationName ? { ...med, frequency } : med
     );
     
-    onMedicationsChange({
-      ...medications,
+    setLocalMedications({
+      ...localMedications,
       homeMedications: isHome ? updatedMeds : otherMeds,
       hospitalMedications: isHome ? otherMeds : updatedMeds
     });
+    markDirty();
   };
 
   const toggleMedicationDiscontinued = (medicationId: string, isHome: boolean) => {
-    const targetMeds = isHome ? medications.homeMedications : medications.hospitalMedications;
-    const otherMeds = isHome ? medications.hospitalMedications : medications.homeMedications;
+    const targetMeds = isHome ? localMedications.homeMedications : localMedications.hospitalMedications;
+    const otherMeds = isHome ? localMedications.hospitalMedications : localMedications.homeMedications;
     const updatedMeds = targetMeds.map(med =>
       med.id === medicationId ? { ...med, isDiscontinued: !med.isDiscontinued } : med
     );
-    onMedicationsChange({
-      ...medications,
+    setLocalMedications({
+      ...localMedications,
       homeMedications: isHome ? updatedMeds : otherMeds,
       hospitalMedications: isHome ? otherMeds : updatedMeds
     });
+    markDirty();
   };
 
-
-
-  const getHomeMedicationNames = () => medications.homeMedications.map(med => med.name);
-  const getHospitalMedicationNames = () => medications.hospitalMedications.map(med => med.name);
+  const getHomeMedicationNames = () => localMedications.homeMedications.map(med => med.name);
+  const getHospitalMedicationNames = () => localMedications.hospitalMedications.map(med => med.name);
 
   const renderMedicationList = (meds: SelectedMedication[], isHome: boolean) => {
     const sectionKey = isHome ? 'home' : 'hospital';
@@ -524,7 +542,17 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
     );
   };
 
-  const medicationCount = medications.homeMedications.length + medications.hospitalMedications.length;
+  const medicationCount = localMedications.homeMedications.length + localMedications.hospitalMedications.length;
+
+  const handleDiscardChanges = () => {
+    setLocalMedications(medications);
+    setHasPendingChanges(false);
+  };
+
+  const handleConfirmChanges = () => {
+    onMedicationsChange(localMedications);
+    setHasPendingChanges(false);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -537,7 +565,7 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
         </span>
       </div>
       {/* Main Content (no extra card/box, just spacing) */}
-      <div className="flex-1 overflow-y-auto min-h-0 space-y-8 p-6">
+      <div className="flex-1 overflow-y-auto min-h-0 space-y-8 p-6 relative pb-16">
         {/* Medication Text Paste Component - moved inside scrollable area */}
         <div className="mb-6">
           <MedicationTextPaste onMedicationsExtracted={handleMedicationTextExtracted} />
@@ -550,7 +578,7 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
               {language === 'fr' ? 'Médicaments à domicile' : 'Home Medications'}
             </h4>
             <span className="text-sm text-gray-500">
-              ({medications.homeMedications.length})
+              ({localMedications.homeMedications.length})
             </span>
           </div>
           <div className="flex flex-col md:flex-row md:items-center gap-2 mb-2">
@@ -564,18 +592,21 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
               onMedicationsExtracted={(extractedMeds, isHome) => {
                 if (isHome) {
                   const newMeds = extractedMeds.filter(extracted => 
-                    !medications.homeMedications.some(home => home.name === extracted.name)
+                    !localMedications.homeMedications.some(home => home.name === extracted.name)
                   );
-                  onMedicationsChange({
-                    ...medications,
-                    homeMedications: [...medications.homeMedications, ...newMeds]
-                  });
+                  if (newMeds.length > 0) {
+                    setLocalMedications({
+                      ...localMedications,
+                      homeMedications: [...localMedications.homeMedications, ...newMeds]
+                    });
+                    markDirty();
+                  }
                 }
               }}
             />
           </div>
           {/* Reorder/Sort Controls */}
-          {medications.homeMedications.length > 1 && (
+          {localMedications.homeMedications.length > 1 && (
             <div className="flex gap-2 mb-2">
               <Button
                 variant="ghost"
@@ -605,7 +636,7 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
               </Button>
             </div>
           )}
-          {renderMedicationList(medications.homeMedications, true)}
+          {renderMedicationList(localMedications.homeMedications, true)}
         </div>
         {/* Hospital Medications */}
         <div className="space-y-3">
@@ -615,7 +646,7 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
               {language === 'fr' ? 'Médicaments hospitaliers' : 'Hospital Medications'}
             </h4>
             <span className="text-sm text-gray-500">
-              ({medications.hospitalMedications.length})
+              ({localMedications.hospitalMedications.length})
             </span>
           </div>
           <div className="flex flex-col md:flex-row md:items-center gap-2 mb-2">
@@ -629,18 +660,21 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
               onMedicationsExtracted={(extractedMeds, isHome) => {
                 if (!isHome) {
                   const newMeds = extractedMeds.filter(extracted => 
-                    !medications.hospitalMedications.some(hosp => hosp.name === extracted.name)
+                    !localMedications.hospitalMedications.some(hosp => hosp.name === extracted.name)
                   );
-                  onMedicationsChange({
-                    ...medications,
-                    hospitalMedications: [...medications.hospitalMedications, ...newMeds]
-                  });
+                  if (newMeds.length > 0) {
+                    setLocalMedications({
+                      ...localMedications,
+                      hospitalMedications: [...localMedications.hospitalMedications, ...newMeds]
+                    });
+                    markDirty();
+                  }
                 }
               }}
             />
           </div>
           {/* Reorder/Sort Controls */}
-          {medications.hospitalMedications.length > 1 && (
+          {localMedications.hospitalMedications.length > 1 && (
             <div className="flex gap-2 mb-2">
               <Button
                 variant="ghost"
@@ -670,8 +704,29 @@ export function MedicationSection({ medications, onMedicationsChange }: Medicati
               </Button>
             </div>
           )}
-          {renderMedicationList(medications.hospitalMedications, false)}
+          {renderMedicationList(localMedications.hospitalMedications, false)}
         </div>
+
+        {/* Floating Action Chips */}
+        {hasPendingChanges && (
+          <div className="sticky bottom-0 flex justify-end gap-2 pr-4 pb-4">
+            <Button 
+              onClick={handleDiscardChanges}
+              variant="outline"
+              className="bg-white hover:bg-gray-50 text-gray-700 border-gray-300 px-4 py-2 rounded-full shadow-lg flex items-center gap-2"
+            >
+              <X className="w-4 h-4" />
+              {language === 'fr' ? 'Annuler' : 'Discard'}
+            </Button>
+            <Button 
+              onClick={handleConfirmChanges}
+              className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-2"
+            >
+              <CheckCircle className="w-5 h-5" />
+              {language === 'fr' ? 'Confirmer les modifications' : 'Confirm Changes'}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

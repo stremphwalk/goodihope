@@ -9,7 +9,7 @@ import type { PMHItem, PMHPreferences } from "@/types/pmh";
 interface PMHEditorProps {
   initialValue?: string;
   onChange?: (raw: string, items: PMHItem[], rendered: string) => void;
-  onBlur?: () => void;
+  onBlur?: (raw: string, items: PMHItem[], rendered: string) => void;
   preferences?: Partial<PMHPreferences>;
   className?: string;
 }
@@ -19,7 +19,7 @@ export interface PMHEditorRef {
   focus: () => void;
 }
 
-const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
+const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({ 
   initialValue = "",
   onChange,
   onBlur,
@@ -44,12 +44,13 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
     ...preferences
   };
 
-  // Parse and render only on blur or explicit updates
-  const updateParsedContent = useCallback(() => {
+  // Commit parse/render and emit change
+  const commitParsedContent = useCallback(() => {
     const newItems = parsePMH(value);
     const newRendered = renderPMH(newItems, prefs.indentSpaces);
     setParsedItems(newItems);
     onChange?.(value, newItems, newRendered);
+    return { raw: value, items: newItems, rendered: newRendered };
   }, [value, onChange, prefs.indentSpaces]);
 
   const hideAutocomplete = useCallback(() => {
@@ -258,26 +259,19 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const cursor = textarea.selectionStart;
-    const { line, column, start: lineStart } = getCurrentLineInfo(value, cursor);
-    const isLineEmpty = line.trim() === "";
-    const isAtLineStart = column === 0 || /^\s*$/.test(line.slice(0, column));
+    // Preserve current selection to avoid disruptive cursor jumps
+    const prevStart = textarea.selectionStart;
+    const prevEnd = textarea.selectionEnd;
 
-    let insertion = label;
-    let newCursor = cursor + label.length;
-
-    if (isLineEmpty || isAtLineStart) {
-      insertion = label;
-    } else {
-      insertion = `\n${label}`;
-      newCursor = cursor + 1 + label.length;
-    }
-
-    const newValue = replaceRange(value, cursor, cursor, insertion);
+    // Always append chip on a new line at the end of existing content
+    const needsLeadingNewline = value.length > 0 && !value.endsWith("\n");
+    const appended = `${needsLeadingNewline ? "\n" : ""}${label}\n`;
+    const newValue = value + appended;
     setValue(newValue);
 
-    // Keep focus without setTimeout
-    textarea.setSelectionRange(newCursor, newCursor);
+    // Restore focus and previous selection smoothly
+    textarea.focus();
+    textarea.setSelectionRange(prevStart, prevEnd);
   }, [value]);
 
 
@@ -302,7 +296,13 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
   return (
     <div className={`space-y-4 ${className}`}>
       {/* Chips */}
-      <div className="space-y-2">
+      <div className="space-y-2" onMouseDown={(e)=>{
+        const target = e.target as HTMLElement;
+        if (target && target.getAttribute && target.getAttribute('data-pmh-chip') === '1') {
+          // Prevent textarea from losing focus before chip insertion
+          e.preventDefault();
+        }
+      }}>
         <div className="text-sm font-medium text-gray-700">Quick Insert:</div>
         <ChipBar onInsert={insertChip} />
       </div>
@@ -314,17 +314,23 @@ const PMHEditor = forwardRef<PMHEditorRef, PMHEditorProps>(({
           value={value}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          onBlur={() => {
-            // Always update parsed content on blur to ensure live preview updates
-            updateParsedContent();
-            onBlur?.();
+          onBlur={(ev) => {
+            // Ignore blur when interaction comes from PMH chip click
+            const related = (ev as React.FocusEvent<HTMLTextAreaElement>).relatedTarget as HTMLElement | null;
+            if (related && related.getAttribute && related.getAttribute('data-pmh-chip') === '1') {
+              // Focus will be restored immediately; skip commit here
+              return;
+            }
+            // Commit and emit latest content on blur to ensure live preview updates
+            const result = commitParsedContent();
+            onBlur?.(result.raw, result.items, result.rendered);
           }}
-          placeholder="Enter past medical history items...
+          placeholder={`Enter past medical history items...
 Tab at start: add context point (- )
 Tab at end of diagnosis: create context underneath
 Tab at end of context: add another context
 Tab on word: autocomplete
-Enter in context: new diagnosis line"
+Enter in context: new diagnosis line`}
           className="w-full h-48 p-3 border rounded-lg font-mono text-sm resize-vertical focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         
